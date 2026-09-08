@@ -8,7 +8,7 @@ const panel=()=>document.getElementById(ID);
 
 function patchUi(){
   const p=panel(); if(!p) return false;
-  const title=p.querySelector('.h span'); if(title) title.textContent='Sell Link This v1.4';
+  const title=p.querySelector('.h span'); if(title) title.textContent='Sell Like This v1.5';
   [...p.querySelectorAll('.row.muted')].forEach(x=>x.remove());
   if(!p.querySelector('[data-ebay-actions]')){
     const box=document.createElement('div');
@@ -47,6 +47,7 @@ function partsFromDisplay(display){
   return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:a[2]||'',country:a[3]||''};
 }
 function maskedPostal(v){return /[*xX]/.test(String(v||''));}
+function countryDisplay(v){const n={US:'United States',USA:'United States',GB:'United Kingdom',UK:'United Kingdom',AU:'Australia',CA:'Canada'};return n[String(v||'').toUpperCase()]||v;}
 function labelControl(re,root=document){
   for(const l of root.querySelectorAll('label')){
     const txt=clean(l.innerText||l.textContent);if(!re.test(txt))continue;
@@ -61,8 +62,7 @@ function labelControl(re,root=document){
 function setControl(el,value){
   if(!el||value==null||value==='')return false; value=String(value);
   if(el.tagName==='SELECT'){
-    const wanted=clean(value).toLowerCase(), names={US:'United States',USA:'United States',GB:'United Kingdom',UK:'United Kingdom',AU:'Australia',CA:'Canada'};
-    const alt=clean(names[value.toUpperCase()]||value).toLowerCase();
+    const wanted=clean(value).toLowerCase(),alt=clean(countryDisplay(value)).toLowerCase();
     const o=[...el.options].find(x=>clean(x.value).toLowerCase()===wanted||clean(x.textContent).toLowerCase()===wanted||clean(x.textContent).toLowerCase()===alt);if(!o)return false;
     el.value=o.value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return true;
   }
@@ -70,14 +70,14 @@ function setControl(el,value){
   if(!(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement))return false;
   const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
   const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;setter?setter.call(el,value):el.value=value;
-  el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));el.blur?.();return true;
+  el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Tab'}));el.blur?.();return true;
 }
-async function setCombo(re,value,root=document){
+async function setCombo(re,value,root=document,isCountry=false){
   if(!value)return false;const c=labelControl(re,root);if(!c)return false;
-  if(c.tagName==='SELECT'||c instanceof HTMLInputElement||c instanceof HTMLTextAreaElement)return setControl(c,value);
+  const wanted=isCountry?countryDisplay(value):value;
+  if(c.tagName==='SELECT'||c instanceof HTMLInputElement||c instanceof HTMLTextAreaElement)return setControl(c,wanted);
   c.click();await sleep(250);
-  const names={US:'United States',USA:'United States',GB:'United Kingdom',UK:'United Kingdom',AU:'Australia',CA:'Canada'};
-  const targets=[clean(value).toLowerCase(),clean(names[String(value).toUpperCase()]||value).toLowerCase()];
+  const targets=[clean(value).toLowerCase(),clean(wanted).toLowerCase()];
   const o=[...document.querySelectorAll('[role="option"],li,button')].filter(visible).find(x=>targets.includes(clean(x.innerText||x.textContent).toLowerCase()));
   if(o){o.click();await sleep(150);return true}return false;
 }
@@ -85,22 +85,52 @@ function locationAnchor(){
   const all=[...document.querySelectorAll('h1,h2,h3,h4,label,legend,span,div')].filter(visible);
   return all.find(x=>/^(item location|located in)$/i.test(clean(x.innerText||x.textContent)))||all.find(x=>/item location/i.test(clean(x.innerText||x.textContent))&&clean(x.innerText||x.textContent).length<120)||null;
 }
-async function openLocationEditor(){
-  const anchor=locationAnchor();if(!anchor)return document;
-  let p=anchor;for(let i=0;i<7&&p;i++,p=p.parentElement){
-    const btn=[...p.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/edit|change|update/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.innerText||x.textContent||''))));
-    if(btn){btn.click();await sleep(500);return document.querySelector('[role="dialog"]')||document}
+async function waitForLocationForm(){
+  for(let i=0;i<25;i++){
+    const root=document.querySelector('[role="dialog"]')||document;
+    const city=labelControl(/^(city\s*,\s*state|city|town|suburb)$/i,root);
+    const zip=labelControl(/^(zip|zip code|postal code|postcode)$/i,root);
+    const country=labelControl(/^(country|country\s+or\s+region|country\/region)$/i,root);
+    if(city||zip||country)return root;
+    await sleep(120);
   }
   return document.querySelector('[role="dialog"]')||document;
 }
+async function openLocationEditor(){
+  const anchor=locationAnchor();
+  if(anchor){
+    let p=anchor;for(let i=0;i<7&&p;i++,p=p.parentElement){
+      const btn=[...p.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/edit|change|update/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.innerText||x.textContent||''))));
+      if(btn){btn.click();break}
+    }
+  }
+  return await waitForLocationForm();
+}
+function findDoneButton(root=document){
+  const scopes=[root,document].filter(Boolean);
+  for(const scope of scopes){
+    const btn=[...scope.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/^(done|save|apply|confirm|update)$/i.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))));
+    if(btn)return btn;
+  }
+  return null;
+}
 async function applyLocation(parts){
   const root=await openLocationEditor();let changed=0;
-  changed+=await setCombo(/^(country|country\/region)$/i,parts.country,root)?1:0;
-  changed+=setControl(labelControl(/^(city|town|suburb)$/i,root),parts.city)?1:0;
-  changed+=await setCombo(/^(state|province|state\/province|region)$/i,parts.stateOrProvince,root)?1:0;
+  changed+=await setCombo(/^(country|country\s+or\s+region|country\/region)$/i,parts.country,root,true)?1:0;
+  const cityState=[parts.city,parts.stateOrProvince].filter(Boolean).join(', ');
+  const combined=labelControl(/^city\s*,\s*state$/i,root);
+  if(combined&&cityState) changed+=setControl(combined,cityState)?1:0;
+  else {
+    changed+=setControl(labelControl(/^(city|town|suburb)$/i,root),parts.city)?1:0;
+    changed+=await setCombo(/^(state|province|state\/province|region)$/i,parts.stateOrProvince,root)?1:0;
+  }
   if(parts.postalCode&&!maskedPostal(parts.postalCode))changed+=setControl(labelControl(/^(zip|zip code|postal code|postcode)$/i,root),parts.postalCode)?1:0;
   if(!changed&&parts.display)changed+=setControl(labelControl(/^(item location|located in|location)$/i,root),parts.display)?1:0;
-  if(changed){await sleep(250);const scope=document.querySelector('[role="dialog"]')||root;const save=[...scope.querySelectorAll('button')].filter(visible).find(x=>/^(save|apply|done|confirm|update)$/i.test(clean(x.innerText||x.textContent)));if(save){save.click();await sleep(300)}}
+  if(changed){
+    await sleep(350);
+    const done=findDoneButton(root);
+    if(done){done.click();await sleep(450)}
+  }
   return changed>0;
 }
 function writeLocation(row,state,msg){if(!row)return;row.innerHTML='<b>Item Location:</b> <span class="'+state+'">'+String(msg||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';}
@@ -112,7 +142,7 @@ const display=parseDisplayFromRow(row);if(!display)return;
 const parts=partsFromDisplay(display);
 try{
   const ok=await applyLocation(parts);
-  if(ok)writeLocation(row,'ok',display+(maskedPostal(parts.postalCode)?' — ZIP sorgente mascherato, copiati i campi disponibili':' — copiato dalla sorgente'));
-  else writeLocation(row,'warn','sorgente: '+display+' — eBay non espone un campo modificabile utilizzabile');
-}catch(e){console.warn('Sell Link This location',e);writeLocation(row,'warn','sorgente: '+display+' — copia automatica non riuscita');}
+  if(ok)writeLocation(row,'ok',display+(maskedPostal(parts.postalCode)?' — ZIP sorgente mascherato; copiati Country e City/State, poi Done':' — copiato dalla sorgente e confermato con Done'));
+  else writeLocation(row,'warn','sorgente: '+display+' — campi Item Location non modificabili automaticamente');
+}catch(e){console.warn('Sell Like This location',e);writeLocation(row,'warn','sorgente: '+display+' — copia automatica non riuscita');}
 })();
