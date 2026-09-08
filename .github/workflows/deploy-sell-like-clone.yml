@@ -1,0 +1,42 @@
+name: Deploy Sell Like Clone Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps-script/zzzzzzzz_CloneSellLikeWeb.gs'
+      - 'scripts/deploy-apps-script.mjs'
+      - '.github/workflows/deploy-sell-like-clone.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-sell-like-clone
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Deploy only Sell Like Clone backend
+        env:
+          GAS_SCRIPT_ID: ${{ secrets.GAS_SCRIPT_ID }}
+          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+          GAS_SOURCE_PATH: apps-script/zzzzzzzz_CloneSellLikeWeb.gs
+          GAS_TARGET_NAME: zzzzzzzz_CloneSellLikeWeb
+          GAS_MANIFEST_FILE: appsscript
+        run: node scripts/deploy-apps-script.mjs
