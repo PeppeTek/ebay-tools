@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const V='v1.1';
+const V='v1.2';
 const ID='capitan-sell-like-clone';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
 const SOURCE_KEY='capitan-sell-like-last-source-item';
@@ -8,18 +8,19 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
-function idFromText(v){const s=String(v||'');for(const re of[/[?&](?:itemId|itemid|sourceItemId|originalItemId)=(\d{9,15})/i,/\/itm\/(?:[^/?#]+\/)?(\d{9,15})(?:[/?#]|$)/i,/\b(\d{9,15})\b/]){const m=s.match(re);if(m)return m[1]}return''}
-function detectSourceItemId(){const u=new URL(location.href);for(const k of['itemId','itemid','sourceItemId','originalItemId']){const v=u.searchParams.get(k);if(/^\d{9,15}$/.test(String(v||'')))return String(v)}let id=idFromText(location.href);if(id)return id;id=idFromText(document.referrer);if(id)return id;return''}
+function idFromTrustedText(v){const s=String(v||'');for(const re of[/[?&](?:itemId|itemid|sourceItemId|originalItemId)=(\d{9,12})/i,/\/itm\/(?:[^/?#]+\/)?(\d{9,12})(?:[/?#]|$)/i]){const m=s.match(re);if(m)return m[1]}return''}
+function idFromManual(v){const s=String(v||'');return idFromTrustedText(s)||((s.match(/\b(\d{9,12})\b/)||[])[1]||'')}
+function detectSourceItemId(){const u=new URL(location.href);for(const k of['itemId','itemid','sourceItemId','originalItemId']){const v=u.searchParams.get(k);if(/^\d{9,12}$/.test(String(v||'')))return String(v)}let id=idFromTrustedText(location.href);if(id)return id;id=idFromTrustedText(document.referrer);if(id)return id;return''}
 const isEbay=/^(?:www\.)?ebay\.[a-z.]{2,20}$/i.test(location.hostname);
 const pageText=clean((document.querySelector('h1')?.innerText||'')+' '+(document.body?.innerText||'').slice(0,6000));
 const looksLikeEditor=/\/sl\/list|\/sell\//i.test(location.pathname)||/complete your listing|list it|photos & video|item specifics/i.test(pageText);
 if(!isEbay||!looksLikeEditor){alert('Questa non sembra la pagina di modifica eBay aperta da “Sell one like this”.');return}
 let itemId=detectSourceItemId();
-if(!/^\d{9,15}$/.test(itemId)){
+if(!/^\d{9,12}$/.test(itemId)){
   const previous=localStorage.getItem(SOURCE_KEY)||'';
-  const entered=prompt('eBay ha aperto il nuovo editor senza mantenere l’Item ID nella URL. Incolla qui l’Item ID della listing originale oppure il suo link eBay:',previous)||'';
-  itemId=idFromText(entered);
-  if(!/^\d{9,15}$/.test(itemId)){alert('Item ID sorgente non trovato. Torna alla listing originale, copia il link o l’Item ID e riprova.');return}
+  const entered=prompt('eBay non ha mantenuto un Item ID sorgente affidabile nella URL. Incolla qui il link della listing originale oppure il suo Item ID:',previous)||'';
+  itemId=idFromManual(entered);
+  if(!/^\d{9,12}$/.test(itemId)){alert('Item ID sorgente non valido. Incolla il link della listing originale oppure un Item ID eBay valido.');return}
 }
 localStorage.setItem(SOURCE_KEY,itemId);
 document.getElementById(ID)?.remove();
