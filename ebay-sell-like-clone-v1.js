@@ -24,8 +24,8 @@ function jsonp(u){return new Promise((resolve,reject)=>{const cb='__capitanClone
 function labelControl(re){for(const l of document.querySelectorAll('label')){const txt=clean(l.innerText||l.textContent);if(!re.test(txt))continue;let c=l.htmlFor?document.getElementById(l.htmlFor):l.querySelector('input,textarea,select,[role="combobox"]');if(c)return c;let p=l.parentElement;for(let i=0;i<4&&p;i++,p=p.parentElement){c=p.querySelector('input,textarea,select,[role="combobox"]');if(c)return c}}return null}
 function candidates(sel,re){return [...document.querySelectorAll(sel)].filter(e=>!e.disabled).sort((a,b)=>(visible(b)?1:0)-(visible(a)?1:0)).find(e=>re.test(clean([e.name,e.id,e.getAttribute('aria-label'),e.placeholder].join(' '))))||null}
 function nativeSet(el,value){if(!el)return false;const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const set=Object.getOwnPropertyDescriptor(proto,'value')?.set;set?set.call(el,String(value)):el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));el.blur?.();return true}
-function setPrice(v){const el=labelControl(/^(price|buy it now price|fixed price)$/i)||candidates('input',/(^|\b)(price|binprice|startprice)(\b|$)/i);return el&&nativeSet(el,Number(v).toFixed(2))}
-function setQuantity(v){const el=labelControl(/^quantity$/i)||candidates('input',/(^|\b)(quantity|qty)(\b|$)/i);return el&&nativeSet(el,String(v))}
+function setPrice(v){const el=labelControl(/^(price|buy it now price|fixed price)$/i)||candidates('input',/(^|\b)(price|binprice|startprice)(\b|$)/i);return !!(el&&nativeSet(el,Number(v).toFixed(2)))}
+function setQuantity(v){const el=labelControl(/^quantity$/i)||candidates('input',/(^|\b)(quantity|qty)(\b|$)/i);return !!(el&&nativeSet(el,String(v)))}
 async function setConditionNew(){const c=labelControl(/condition/i)||candidates('select,[role="combobox"]',/condition/i);if(c&&c.tagName==='SELECT'){const o=[...c.options].find(o=>/^new$/i.test(clean(o.textContent))||/^1000$/.test(String(o.value)));if(o){c.value=o.value;c.dispatchEvent(new Event('change',{bubbles:true}));return true}}
   const section=[...document.querySelectorAll('section,div')].find(x=>/\bcondition\b/i.test(clean(x.querySelector('h2,h3,label')?.textContent||''))&&clean(x.innerText).length<1500);
   if(section){const btn=[...section.querySelectorAll('button,[role="option"],[role="radio"]')].find(x=>/^new$/i.test(clean(x.innerText||x.textContent)));if(btn){btn.click();await sleep(300);return true}}
@@ -40,11 +40,11 @@ try{
   const ep=endpoint();if(!ep)throw Error('URL backend mancante.');status.textContent='Recupero listing sorgente e preparazione descrizione AI…';
   const data=await jsonp(ep);if(!data||!data.ok)throw Error(data?.error||'Risposta backend non valida');
   add('Titolo / Item Specifics','ok','lasciati invariati');
-  add('Prezzo',setPrice(data.targetPrice)?'ok':'warn',setPrice(data.targetPrice)?`${Number(data.targetPrice).toFixed(2)} (-2%)`:'campo non trovato');
-  add('Quantità',setQuantity(data.quantity)?'ok':'warn',setQuantity(data.quantity)?String(data.quantity):'campo non trovato');
-  add('Condizione',(await setConditionNew())?'ok':'warn',(await setConditionNew())?'New':'controlla manualmente');
+  const priceOk=setPrice(data.targetPrice);add('Prezzo',priceOk?'ok':'warn',priceOk?`${Number(data.targetPrice).toFixed(2)} (-2%)`:'campo non trovato');
+  const qtyOk=setQuantity(data.quantity);add('Quantità',qtyOk?'ok':'warn',qtyOk?String(data.quantity):'campo non trovato');
+  const conditionOk=await setConditionNew();add('Condizione',conditionOk?'ok':'warn',conditionOk?'New':'controlla manualmente');
   await enableHtmlMode();
-  add('Descrizione',setDescription(data.descriptionHtml)?'ok':'warn',setDescription(data.descriptionHtml)?'template HTML + AI inserito':'editor HTML non trovato');
+  const descOk=setDescription(data.descriptionHtml);add('Descrizione',descOk?'ok':'warn',descOk?'template HTML + AI inserito':'editor HTML non trovato');
   status.textContent='Caricamento foto nello stesso ordine…';
   try{const n=await uploadImages(data.images||[]);add('Foto','ok',`${n}/${(data.images||[]).length} inviate all’uploader eBay`)}catch(e){add('Foto','warn',e.message+' — lascia la pagina aperta e verifica manualmente')}
   add('Policy','ok','non modificate');
