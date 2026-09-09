@@ -10,6 +10,8 @@ const panel=document.getElementById(PANEL_ID);if(!panel||document.getElementById
 const sourceText=clean(panel.innerText||'');
 const itemId=(sourceText.match(/Source Item ID:\s*(\d{9,12})/i)||[])[1]||'';
 if(!itemId)return;
+const priceMatch=sourceText.match(/Prezzo:\s*([0-9]+(?:[.,][0-9]+)?)/i);
+const currentSalePrice=priceMatch?Number(String(priceMatch[1]).replace(',','.')):null;
 const actions=panel.querySelector('[data-ebay-actions]');
 const wrap=document.createElement('div');wrap.id=EXT_ID;wrap.style.cssText='padding:0 14px 10px;background:#fff';wrap.innerHTML='<div id="capitan-amazon-status" style="padding:7px 0 0;font-size:12px"></div><div id="capitan-amazon-results"></div>';
 if(actions)panel.insertBefore(wrap,actions);else (panel.querySelector('.b')||panel).appendChild(wrap);
@@ -34,7 +36,8 @@ function ensureBreakEvenRow(){
   const steps=panel.querySelector('#steps');if(!steps)return null;
   let row=panel.querySelector('#capitan-break-even-row');if(row)return row;
   const priceRow=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo:/i.test(clean(r.innerText||r.textContent)));
-  row=document.createElement('div');row.id='capitan-break-even-row';row.className='row';row.innerHTML='<b>Break Even Price:</b> <span id="capitan-break-even-value">—</span> <a href="#" id="capitan-pricing-open" style="margin-left:6px;color:#3665f3;text-decoration:underline;font-size:11px;font-weight:600">aggiorna tariffe</a>';
+  row=document.createElement('div');row.id='capitan-break-even-row';row.className='row';row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px';
+  row.innerHTML='<span><b>Break Even Price:</b> <span id="capitan-break-even-value">—</span></span><a href="#" id="capitan-pricing-open" style="margin-left:auto;color:#3665f3;text-decoration:underline;font-size:12px;font-weight:400;white-space:nowrap">aggiorna tariffe</a>';
   if(priceRow)priceRow.insertAdjacentElement('afterend',row);else steps.prepend(row);
   row.querySelector('#capitan-pricing-open').addEventListener('click',e=>{e.preventDefault();openPricingModal()});
   return row;
@@ -42,29 +45,26 @@ function ensureBreakEvenRow(){
 function breakEvenValueEl(){ensureBreakEvenRow();return panel.querySelector('#capitan-break-even-value')}
 function selectedRows(){return [...results.querySelectorAll('input.capitan-amazon-choice:checked')].map(el=>lastMatches.find(x=>x.asin===el.value)).filter(Boolean)}
 function selectedAsins(){return selectedRows().map(x=>x.asin).filter(Boolean)}
-function calcBreakEven(cost,r){
-  cost=Number(cost);if(!isFinite(cost)||cost<=0)return null;
+function calcMaxBreakEvenCostFromSalePrice(salePrice,r){
+  salePrice=Number(salePrice);if(!isFinite(salePrice)||salePrice<=0)return null;
   const feeRate=(r.ebayFee||0)+(r.internationalFee||0)+(r.marketingFee||0);
   const variableFeeMultiplier=(1+(r.salesTaxEstimate||0))*feeRate*(1+(r.vatOnFees||0));
   const fixedFeeWithVat=(r.fixedFee||0)*(1+(r.vatOnFees||0));
-  const d=1-variableFeeMultiplier;if(d<=0)return null;
-  return Math.round(((cost+fixedFeeWithVat)/d)*100)/100;
+  const value=(salePrice*(1-variableFeeMultiplier))-fixedFeeWithVat;
+  return value>0?Math.round(value*100)/100:null;
 }
 function recalcBreakEven(){
   const el=breakEvenValueEl();if(!el)return;
-  const rows=selectedRows().filter(x=>isFinite(Number(x.price))&&Number(x.price)>0);
-  if(!rows.length){el.textContent='—';return}
-  const cheapest=rows.reduce((a,b)=>Number(a.price)<=Number(b.price)?a:b);
-  const value=calcBreakEven(Number(cheapest.price),pricingRates);
-  el.textContent=value==null?'—':`${value.toFixed(2)} ${cheapest.currency||'USD'}`;
+  const value=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);
+  el.textContent=value==null?'—':`${value.toFixed(2)} USD`;
 }
 
 function render(list){
   lastMatches=Array.isArray(list)?list.slice(0,5):[];results.innerHTML='';
-  if(!lastMatches.length){results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match Amazon sufficientemente affidabile.</div>';recalcBreakEven();return}
+  if(!lastMatches.length){results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match Amazon sufficientemente affidabile.</div>';return}
   const box=document.createElement('div');box.style.cssText='margin-top:8px;border:1px solid #ddd;border-radius:8px;overflow:hidden';
   lastMatches.forEach((x,i)=>{const r=document.createElement('label');r.style.cssText='display:grid;grid-template-columns:24px 1fr auto;gap:8px;align-items:center;padding:8px 9px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px';const price=x.price==null||x.price===''?'—':`${Number(x.price).toFixed(2)} ${esc(x.currency||'USD')}`;r.innerHTML=`<input type="checkbox" class="capitan-amazon-choice" value="${esc(x.asin||'')}" ${i===0?'checked':''} style="width:16px;height:16px;border-radius:0;accent-color:#111"><a href="${esc(x.url||('https://www.amazon.com/dp/'+(x.asin||'')))}" target="_blank" rel="noopener" style="color:#111;text-decoration:none"><b>${esc(x.asin||'')}</b></a><span>${price}</span>`;box.appendChild(r)});
-  results.appendChild(box);box.addEventListener('change',e=>{if(e.target.matches('input.capitan-amazon-choice'))recalcBreakEven()});recalcBreakEven();
+  results.appendChild(box);
 }
 
 function findSkuField(){
