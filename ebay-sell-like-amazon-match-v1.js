@@ -37,7 +37,7 @@ function ensureBreakEvenRow(){
   let row=panel.querySelector('#capitan-break-even-row');if(row)return row;
   const priceRow=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo:/i.test(clean(r.innerText||r.textContent)));
   row=document.createElement('div');row.id='capitan-break-even-row';row.className='row';row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px';
-  row.innerHTML='<span><b>Break Even Price:</b> <span id="capitan-break-even-value">—</span></span><a href="#" id="capitan-pricing-open" style="margin-left:auto;color:#3665f3;text-decoration:underline;font-size:12px;font-weight:400;white-space:nowrap">aggiorna tariffe</a>';
+  row.innerHTML='<span><b>Break Even Price:</b> <span id="capitan-break-even-value">—</span></span><button type="button" id="capitan-pricing-open" title="Aggiorna tariffe" aria-label="Aggiorna tariffe" style="margin-left:auto;width:28px;height:28px;padding:0;border:0;background:transparent;color:#3665f3;font-size:18px;line-height:28px;cursor:pointer;border-radius:50%">⚙</button>';
   if(priceRow)priceRow.insertAdjacentElement('afterend',row);else steps.prepend(row);
   row.querySelector('#capitan-pricing-open').addEventListener('click',e=>{e.preventDefault();openPricingModal()});
   return row;
@@ -57,6 +57,9 @@ function recalcBreakEven(){
   const el=breakEvenValueEl();if(!el)return;
   const value=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);
   el.textContent=value==null?'—':`${value.toFixed(2)} USD`;
+  const danger=value!=null&&isFinite(currentSalePrice)&&value>currentSalePrice;
+  el.style.color=danger?'#b42318':'';
+  el.style.fontWeight=danger?'700':'';
 }
 
 function render(list){
