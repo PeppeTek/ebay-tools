@@ -10,6 +10,18 @@ function patchUi(){
   const p=panel(); if(!p) return false;
   const title=p.querySelector('.h span'); if(title) title.textContent='Sell Like This v1.4';
   [...p.querySelectorAll('.row.muted')].forEach(x=>x.remove());
+
+  // Close button: fixed to the real top-right corner of the panel.
+  const closeBtn=p.querySelector('[data-close]');
+  if(closeBtn){
+    closeBtn.style.cssText='position:absolute;top:12px;right:12px;width:30px;height:30px;padding:0;border:1px solid #bbb;border-radius:8px;background:#fff;cursor:pointer;font-size:16px;line-height:28px;z-index:5';
+  }
+
+  // Remove the redundant publication row from the summary.
+  [...p.querySelectorAll('#steps .row')].forEach(r=>{
+    if(/^Pubblicazione:/i.test(clean(r.innerText||r.textContent))) r.remove();
+  });
+
   if(!p.querySelector('[data-ebay-actions]')){
     const box=document.createElement('div');
     box.setAttribute('data-ebay-actions','1');
@@ -17,6 +29,14 @@ function patchUi(){
     box.innerHTML='<button data-ebay-action="list" style="height:44px;border:0;border-radius:24px;background:#1668e8;color:#fff;font-weight:700;font-size:14px;">List it</button><button data-ebay-action="save" style="height:42px;border:1px solid #111;border-radius:22px;background:#fff;color:#111;font-size:14px;">Save for later</button><button data-ebay-action="preview" style="height:42px;border:1px solid #111;border-radius:22px;background:#fff;color:#111;font-size:14px;">Preview</button>';
     p.appendChild(box);
     box.addEventListener('click',e=>{const b=e.target.closest('button[data-ebay-action]');if(!b)return;triggerNativeAction(b.dataset.ebayAction);});
+  }
+
+  // Move the completion message to the bottom, immediately before the action buttons.
+  const actions=p.querySelector('[data-ebay-actions]');
+  const status=p.querySelector('#st');
+  if(actions&&status&&status.nextElementSibling!==actions){
+    status.style.cssText='padding:9px 14px;border-top:1px solid #eee;border-bottom:0;background:#fff;line-height:1.35';
+    actions.parentNode.insertBefore(status,actions);
   }
   return true;
 }
@@ -111,7 +131,6 @@ async function applyLocation(parts){
   const cityState=[parts.city,parts.stateOrProvince].filter(Boolean).join(', ');
 
   if(country&&parts.country)await setChoice(country,parts.country,true);
-  // ZIP prima: eBay usa il CAP per validare/normalizzare City, State.
   if(zip&&resolvedPostal)await typeLikeUser(zip,resolvedPostal);
   await sleep(450);
   if(city&&cityState)await typeLikeUser(city,cityState);
@@ -133,7 +152,8 @@ const display=parseDisplayFromRow(row);if(!display)return;
 const parts=partsFromDisplay(display);
 try{
   const result=await applyLocation(parts);
-  if(result.ok)writeLocation(row,'ok',parts.city+', '+parts.stateOrProvince+', '+result.postal+', '+parts.country+' — location salvata e verificata');
+  if(result.ok)writeLocation(row,'ok',parts.city+', '+parts.stateOrProvince+', '+result.postal+', '+parts.country);
   else writeLocation(row,'warn','sorgente: '+display+' — '+result.reason);
 }catch(e){console.warn('Sell Like This location',e);writeLocation(row,'warn','sorgente: '+display+' — copia automatica non riuscita');}
+patchUi();
 })();
