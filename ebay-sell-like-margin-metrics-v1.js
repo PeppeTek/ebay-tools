@@ -1,7 +1,7 @@
 javascript:(()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-margin-metrics-v1';
+const PATCH_ID='capitan-margin-metrics-v2';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
@@ -15,8 +15,8 @@ function breakEven(){const p=panel();const el=p?.querySelector('#capitan-break-e
 function selectedAmazonCost(){const p=panel();if(!p)return null;const vals=[...p.querySelectorAll('input.capitan-amazon-choice:checked')].map(ch=>{const label=ch.closest('label');if(!label)return null;const spans=[...label.querySelectorAll('span')];const txt=clean((spans[spans.length-1]?.textContent)||label.textContent||'');const m=txt.match(/([0-9]+(?:[.,][0-9]+)?)\s*(?:USD|EUR|GBP|CAD|AUD)?\s*$/i);return m?Number(String(m[1]).replace(',','.')):null}).filter(v=>isFinite(v));return vals.length?Math.min(...vals):null}
 function ensureRows(){
   const p=panel();const steps=p?.querySelector('#steps');if(!steps)return null;
-  const priceRow=rows().find(r=>/^Prezzo:/i.test(clean(r.innerText||r.textContent)));
-  if(priceRow){const b=priceRow.querySelector('b');if(b)b.textContent='Prezzo di vendita (-2%):'}
+  const priceRow=rows().find(r=>/^Prezzo:/i.test(clean(r.innerText||r.textContent))||/^Prezzo di vendita \(-2%\):/i.test(clean(r.innerText||r.textContent)));
+  if(priceRow){const b=priceRow.querySelector('b');if(b&&b.textContent!=='Prezzo di vendita (-2%):')b.textContent='Prezzo di vendita (-2%):'}
   let be=p.querySelector('#capitan-break-even-row');if(!be)return null;
   const defs=[
     ['capitan-margin-break','Margine netto rispetto break price'],
@@ -27,21 +27,28 @@ function ensureRows(){
   defs.forEach(([id,label])=>{let r=p.querySelector('#'+id);if(!r){r=document.createElement('div');r.id=id;r.className='row';r.innerHTML=`<b>${label}:</b> <span data-value>—</span>`;anchor.insertAdjacentElement('afterend',r)}anchor=r});
   return p;
 }
+function setMetric(p,id,val,dynamic=false){
+  const el=p.querySelector('#'+id+' [data-value]');if(!el)return;
+  const nextText=money(val), nextWeight=(dynamic&&val==null)?'400':'700', nextColor=isFinite(val)?(val<0?'#b42318':'#137333'):'';
+  if(el.textContent!==nextText)el.textContent=nextText;
+  if(el.style.fontWeight!==nextWeight)el.style.fontWeight=nextWeight;
+  if(el.style.color!==nextColor)el.style.color=nextColor;
+}
 function refresh(){
   const p=ensureRows();if(!p)return false;
   const sale=salePrice(),be=breakEven(),cost=selectedAmazonCost();
   const mBreak=(isFinite(sale)&&isFinite(be))?sale-be:null;
   const mAmazon=(isFinite(cost)&&isFinite(sale))?cost-sale:null;
   const delta=(isFinite(mBreak)&&isFinite(mAmazon))?mBreak-mAmazon:null;
-  const set=(id,val,dynamic=false)=>{const el=p.querySelector('#'+id+' [data-value]');if(!el)return;el.textContent=money(val);el.style.fontWeight='700';if(dynamic&&val==null)el.style.fontWeight='400';el.style.color=isFinite(val)?(val<0?'#b42318':'#137333'):''};
-  set('capitan-margin-break',mBreak);
-  set('capitan-margin-amazon',mAmazon,true);
-  set('capitan-margin-delta',delta,true);
+  setMetric(p,'capitan-margin-break',mBreak);
+  setMetric(p,'capitan-margin-amazon',mAmazon,true);
+  setMetric(p,'capitan-margin-delta',delta,true);
   return isFinite(sale)&&isFinite(be);
 }
 
 document.addEventListener('change',e=>{if(e.target&&e.target.matches('input.capitan-amazon-choice'))setTimeout(refresh,0)},true);
 window.addEventListener('capitan-pricing-saved',()=>setTimeout(refresh,0));
-const obs=new MutationObserver(()=>refresh());obs.observe(document.body,{childList:true,subtree:true,characterData:true});
-let tries=0;const timer=setInterval(()=>{tries++;if(refresh()||tries>250)clearInterval(timer)},100);
+window.addEventListener('capitan-amazon-matches-rendered',()=>setTimeout(refresh,0));
+let tries=0;const timer=setInterval(()=>{tries++;refresh();if(tries>250)clearInterval(timer)},150);
+refresh();
 })();
