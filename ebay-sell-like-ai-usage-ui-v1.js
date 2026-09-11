@@ -32,7 +32,7 @@ async function render(aiBody){
       '<div id="capitan-ai-msg" style="min-height:16px;font-size:11px;margin-bottom:8px"></div>'+
       '<div style="font-size:13px;font-weight:700;margin:4px 0 8px">Ultime chiamate AI</div>'+
       '<div style="overflow:auto;border:1px solid #e5e7eb;border-radius:9px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#fafafa"><th style="padding:7px 5px;text-align:left">Data</th><th style="padding:7px 5px;text-align:left">Funzione</th><th style="padding:7px 5px;text-align:left">Modello</th><th style="padding:7px 5px;text-align:right">Token</th><th style="padding:7px 5px;text-align:right">Costo €</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" style="padding:14px;text-align:center;color:#777">Nessuna chiamata registrata ancora.</td></tr>')+'</tbody></table></div>'+
-      '<div style="font-size:10px;color:#777;margin-top:12px;line-height:1.4">Il costo è una stima calcolata dai token restituiti da Groq. Il saldo/fattura effettiva Groq non è disponibile tramite l\\'API pubblica usata dallo script.</div>';
+      '<div style="font-size:10px;color:#777;margin-top:12px;line-height:1.4">Il costo è una stima calcolata dai token restituiti da Groq. Il saldo/fattura effettiva Groq non è disponibile tramite l\'API pubblica usata dallo script.</div>';
     const save=aiBody.querySelector('#capitan-ai-fx-save');
     if(save)save.addEventListener('click',async()=>{
       const msg=aiBody.querySelector('#capitan-ai-msg');
