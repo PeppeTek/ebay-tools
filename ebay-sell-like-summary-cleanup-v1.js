@@ -27,9 +27,14 @@ function cleanup(){
   const be=p.querySelector('#capitan-break-even-value');
   if(be){be.style.color='#1668e8';be.style.fontWeight='700';}
 
-  // Remove the separator line above the completion message.
+  // Completion message: compact vertical spacing, aligned with the other rows.
   const status=p.querySelector('#st');
-  if(status){status.style.borderTop='0';}
+  if(status){
+    status.style.borderTop='0';
+    status.style.padding='4px 14px';
+    status.style.margin='0';
+    status.style.lineHeight='1.3';
+  }
 
   return true;
 }
