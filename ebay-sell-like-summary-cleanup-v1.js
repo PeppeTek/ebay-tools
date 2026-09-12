@@ -22,7 +22,7 @@ function cleanup(){
     discountRow=document.createElement('div');
     discountRow.id='capitan-discount-row';
     discountRow.className='row';
-    discountRow.innerHTML='<b>Riduzione prezzo:</b> <span class="ok">'+discountText()+'</span>';
+    discountRow.innerHTML='<b>Riduzione prezzo rispetto alla concorrenza:</b> <span class="ok">'+discountText()+'</span>';
     sourceRow.insertAdjacentElement('afterend',discountRow);
   }else if(discountRow){
     const span=discountRow.querySelector('span');
