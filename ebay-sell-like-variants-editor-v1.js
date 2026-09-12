@@ -125,8 +125,9 @@ async function createDimensions(scope,data){
 function candidateRows(scope){
   const root=scope||document;
   const rows=[...root.querySelectorAll('tr,[role="row"]')].filter(visible);
-  const cards=[...root.querySelectorAll('[data-testid*="variation" i],[class*="variation" i]')].filter(visible);
-  return [...new Set(rows.concat(cards))];
+  const cards=[...root.querySelectorAll('[data-testid*="variation" i],[class*="variation" i],[data-testid*="option" i],[class*="option" i]')].filter(visible);
+  const compact=[...root.querySelectorAll('div,li')].filter(x=>visible(x)&&clean(x.innerText||x.textContent||'').length<1200).filter(x=>x.querySelector('input,button,[role="button"],input[type="file"]'));
+  return [...new Set(rows.concat(cards,compact))];
 }
 function findRow(scope,v){
   const keys=keyText(v);if(!keys.length)return null;
@@ -166,11 +167,18 @@ async function run(data){
   if(!data||!data.hasVariations)return;
   const scope=await openEditor(data);if(!scope){console.warn('Variations editor non trovato');return}
   await createDimensions(scope,data);
-  let active=variationDialog()||scope;
-  for(let i=0;i<20;i++){if(fillRows(active,data)>0)break;await sleep(250);active=variationDialog()||active}
+  let active=variationEditorSurface(data)||variationDialog()||scope;
+  let prices=0;
+  for(let i=0;i<28;i++){
+    prices=fillRows(active,data);
+    if(prices>0)break;
+    await sleep(250);
+    active=variationEditorSurface(data)||variationDialog()||active;
+  }
   await assignImages(active,data);
-  const dlg=variationDialog();
-  if(dlg){const save=[...dlg.querySelectorAll('button,[role="button"]')].filter(visible).find(x=>/^(save|done|apply|confirm)$/i.test(clean(x.innerText||x.textContent||''))||/save.*variation/i.test(clean(x.innerText||x.textContent||'')));if(save){save.click();await sleep(500)}}
+  active=variationEditorSurface(data)||variationDialog()||active;
+  const save=[...active.querySelectorAll('button,[role="button"]')].filter(visible).find(x=>/^(save|done|apply|confirm|continue)$/i.test(clean(x.innerText||x.textContent||''))||/save.*variation|apply.*variation|done.*variation/i.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))));
+  if(save){save.click();await sleep(700)}
 }
 async function start(){
   for(let i=0;i<40;i++){const d=payload();if(d){await run(d);return}await sleep(200)}
