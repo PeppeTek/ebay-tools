@@ -103,63 +103,87 @@ async function setChoice(el,value,isCountry=false){
 function locationAnchor(){const all=[...document.querySelectorAll('h1,h2,h3,h4,label,legend,span,div')].filter(visible);return all.find(x=>/^(item location|located in)$/i.test(clean(x.innerText||x.textContent)))||all.find(x=>/item location/i.test(clean(x.innerText||x.textContent))&&clean(x.innerText||x.textContent).length<120)||null;}
 function settingsRoot(){const heads=[...document.querySelectorAll('h1,h2,h3,div,span')].filter(visible).filter(x=>/^your settings$/i.test(clean(x.innerText||x.textContent)));for(const h of heads){let p=h;for(let i=0;i<8&&p;i++,p=p.parentElement){if(/item location/i.test(clean(p.innerText||p.textContent))&&controlsIn(p).length>=2)return p}}return document.querySelector('[role="dialog"]')||document;}
 async function waitForLocationForm(){for(let i=0;i<40;i++){const root=settingsRoot();if(fieldByCaption(/^city\s*,\s*state$/i,root)||fieldByCaption(/^zip code$/i,root)||fieldByCaption(/^country or region$/i,root))return root;await sleep(120)}return settingsRoot();}
-let __capitanPageLockSnapshot=null;
-function capturePageInteractionState(){
-  if(__capitanPageLockSnapshot)return;
-  const html=document.documentElement,body=document.body;
-  __capitanPageLockSnapshot={
-    htmlStyle:html.getAttribute('style'),
-    bodyStyle:body&&body.getAttribute('style'),
-    inert:new Set([...document.querySelectorAll('[inert]')]),
-    ariaHidden:new Set([...document.querySelectorAll('[aria-hidden="true"]')])
-  };
-}
-function forcePageInteractive(){
+let __capitanLocationDialog=null;
+function normalizePageAfterLocation(){
   try{
-    const html=document.documentElement,body=document.body;
-    for(const el of [html,body].filter(Boolean)){
-      el.style.setProperty('overflow','auto','important');
-      el.style.setProperty('overflow-y','auto','important');
-      el.style.setProperty('pointer-events','auto','important');
-      el.style.setProperty('touch-action','auto','important');
-      if(getComputedStyle(el).position==='fixed'){
-        el.style.setProperty('position','relative','important');
-        el.style.setProperty('top','auto','important');
-        el.style.setProperty('width','auto','important');
-      }
-    }
-    const snap=__capitanPageLockSnapshot;
-    document.querySelectorAll('[inert]').forEach(el=>{if(!snap||!snap.inert.has(el))el.removeAttribute('inert')});
-    document.querySelectorAll('[aria-hidden="true"]').forEach(el=>{if(!snap||!snap.ariaHidden.has(el))el.removeAttribute('aria-hidden')});
-    document.querySelectorAll('[data-capitan-hidden-location],[data-capitan-hidden-location-parent]').forEach(el=>{
-      el.style.setProperty('pointer-events','none','important');
+    document.querySelectorAll('[data-capitan-hidden-location]').forEach(x=>{
+      x.style.opacity='';x.style.pointerEvents='';x.style.transition='';x.style.visibility='';
+      delete x.dataset.capitanHiddenLocation;
     });
-  }catch(_){}
-}
-function restorePageInteractionState(){
-  try{
-    const snap=__capitanPageLockSnapshot;
-    if(snap){
-      const html=document.documentElement,body=document.body;
-      if(snap.htmlStyle==null)html.removeAttribute('style');else html.setAttribute('style',snap.htmlStyle);
-      if(body){if(snap.bodyStyle==null)body.removeAttribute('style');else body.setAttribute('style',snap.bodyStyle)}
-    }else{
-      document.documentElement.style.removeProperty('overflow');
-      document.documentElement.style.removeProperty('overflow-y');
-      document.documentElement.style.removeProperty('pointer-events');
-      document.documentElement.style.removeProperty('touch-action');
-      if(document.body){
-        document.body.style.removeProperty('overflow');
-        document.body.style.removeProperty('overflow-y');
-        document.body.style.removeProperty('pointer-events');
-        document.body.style.removeProperty('touch-action');
+    document.querySelectorAll('[data-capitan-hidden-location-parent]').forEach(x=>{
+      x.style.background='';x.style.pointerEvents='';delete x.dataset.capitanHiddenLocationParent;
+    });
+    document.querySelectorAll('[data-capitan-hidden-location-backdrop]').forEach(x=>{
+      x.style.removeProperty('pointer-events');delete x.dataset.capitanHiddenLocationBackdrop;
+    });
+    for(const el of [document.documentElement,document.body].filter(Boolean)){
+      el.style.removeProperty('pointer-events');
+      el.style.removeProperty('touch-action');
+      if(getComputedStyle(el).overflow==='hidden'){
+        el.style.removeProperty('overflow');
+        el.style.removeProperty('overflow-y');
       }
     }
   }catch(_){}
-  __capitanPageLockSnapshot=null;
 }
-async function openLocationEditor(){capturePageInteractionState();const anchor=locationAnchor();if(anchor){let p=anchor;for(let i=0;i<8&&p;i++,p=p.parentElement){const btn=[...p.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/edit|change|update/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.innerText||x.textContent||''))));if(btn){btn.click();break}}}const root=await waitForLocationForm();forcePageInteractive();try{const dlg=(root&&root.closest&&root.closest('[role="dialog"],dialog'))||document.querySelector('[role="dialog"],dialog');if(dlg){dlg.dataset.capitanHiddenLocation='1';dlg.style.opacity='0';dlg.style.pointerEvents='none';dlg.style.transition='none';const parent=dlg.parentElement;if(parent){parent.dataset.capitanHiddenLocationParent='1';parent.style.background='transparent';parent.style.pointerEvents='none'}let a=dlg.parentElement;for(let i=0;i<5&&a;i++,a=a.parentElement){const cs=getComputedStyle(a);const r=a.getBoundingClientRect();if((cs.position==='fixed'||cs.position==='absolute')&&r.width>=innerWidth*.8&&r.height>=innerHeight*.8){a.dataset.capitanHiddenLocationBackdrop='1';a.style.setProperty('pointer-events','none','important')}}forcePageInteractive()} }catch(_){}forcePageInteractive();return root;}
-function restoreHiddenLocationEditor(){try{document.querySelectorAll('[data-capitan-hidden-location]').forEach(x=>{x.style.opacity='';x.style.pointerEvents='';x.style.transition='';delete x.dataset.capitanHiddenLocation});document.querySelectorAll('[data-capitan-hidden-location-parent]').forEach(x=>{x.style.background='';x.style.pointerEvents='';delete x.dataset.capitanHiddenLocationParent});document.querySelectorAll('[data-capitan-hidden-location-backdrop]').forEach(x=>{x.style.removeProperty('pointer-events');delete x.dataset.capitanHiddenLocationBackdrop})}catch(_){}restorePageInteractionState();}
+async function closeLocationDialog(){
+  const dlg=__capitanLocationDialog;
+  if(!dlg){normalizePageAfterLocation();return}
+  for(let i=0;i<12;i++){
+    if(!dlg.isConnected||!visible(dlg)){__capitanLocationDialog=null;normalizePageAfterLocation();return}
+    await sleep(100);
+  }
+  try{
+    const close=[...dlg.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>{
+      const t=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||''));
+      return /^(close|cancel|x|×)$/i.test(t)||/close dialog|dismiss/i.test(t);
+    });
+    if(close){close.click();await sleep(250)}
+    else{
+      dlg.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Escape',code:'Escape'}));
+      document.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Escape',code:'Escape'}));
+      await sleep(250);
+    }
+  }catch(_){}
+  __capitanLocationDialog=null;
+  normalizePageAfterLocation();
+}
+async function openLocationEditor(){
+  const anchor=locationAnchor();
+  if(anchor){
+    let p=anchor;
+    for(let i=0;i<8&&p;i++,p=p.parentElement){
+      const btn=[...p.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/edit|change|update/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.innerText||x.textContent||''))));
+      if(btn){btn.click();break}
+    }
+  }
+  const root=await waitForLocationForm();
+  try{
+    const dlg=(root&&root.closest&&root.closest('[role="dialog"],dialog'))||document.querySelector('[role="dialog"],dialog');
+    __capitanLocationDialog=dlg||null;
+    if(dlg){
+      dlg.dataset.capitanHiddenLocation='1';
+      dlg.style.opacity='0';
+      dlg.style.pointerEvents='none';
+      dlg.style.transition='none';
+      const parent=dlg.parentElement;
+      if(parent){
+        parent.dataset.capitanHiddenLocationParent='1';
+        parent.style.background='transparent';
+      }
+      let a=dlg.parentElement;
+      for(let i=0;i<5&&a;i++,a=a.parentElement){
+        const cs=getComputedStyle(a),r=a.getBoundingClientRect();
+        if((cs.position==='fixed'||cs.position==='absolute')&&r.width>=innerWidth*.8&&r.height>=innerHeight*.8){
+          a.dataset.capitanHiddenLocationBackdrop='1';
+          a.style.setProperty('pointer-events','none','important');
+        }
+      }
+    }
+  }catch(_){}
+  return root;
+}
+function restoreHiddenLocationEditor(){closeLocationDialog();}
 function findDoneButton(root=document){return [...document.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/^done$/i.test(clean(x.innerText||x.textContent||x.getAttribute('aria-label')||'')))||[...root.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/^(done|save|apply|confirm|update)$/i.test(clean(x.innerText||x.textContent||x.getAttribute('aria-label')||'')))||null;}
 function summaryText(){
   const p=panel();
@@ -173,10 +197,14 @@ function summaryMatches(parts,postal){
   return (!city||t.includes(city))&&(!state||t.includes(state))&&(!zip||t.includes(zip));
 }
 async function saveAndVerify(root,parts,postal){
-  const done=findDoneButton(root);if(!done){restoreHiddenLocationEditor();return false}done.click();
-  for(let i=0;i<30;i++){await sleep(180);if(summaryMatches(parts,postal)){restoreHiddenLocationEditor();return true}}
-  restoreHiddenLocationEditor();
-  return false;
+  let done=[...root.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/^(done|save|apply|confirm|update)$/i.test(clean(x.innerText||x.textContent||x.getAttribute('aria-label')||'')));
+  if(!done)done=findDoneButton(root);
+  if(!done){await closeLocationDialog();return false}
+  done.click();
+  let ok=false;
+  for(let i=0;i<30;i++){await sleep(180);if(summaryMatches(parts,postal)){ok=true;break}}
+  await closeLocationDialog();
+  return ok;
 }
 async function applyLocation(parts){
   const resolvedPostal=maskedPostal(parts.postalCode)?await resolveMaskedUsPostal(parts):clean(parts.postalCode);
@@ -195,7 +223,7 @@ async function applyLocation(parts){
 
   const cityOk=!city||!cityState||clean(city.value).toLowerCase()===clean(cityState).toLowerCase();
   const zipOk=!zip||!resolvedPostal||clean(zip.value)===clean(resolvedPostal);
-  if(!(cityOk&&zipOk)){restoreHiddenLocationEditor();return {ok:false,reason:'i campi eBay non hanno mantenuto i nuovi valori'}};
+  if(!(cityOk&&zipOk)){await closeLocationDialog();return {ok:false,reason:'i campi eBay non hanno mantenuto i nuovi valori'}};
 
   const ok=await saveAndVerify(root,parts,resolvedPostal);
   return {ok:ok,postal:resolvedPostal,reason:ok?'':'eBay ha ripristinato la location precedente dopo Done'};
@@ -211,6 +239,6 @@ try{
   const result=await applyLocation(parts);
   if(result.ok)writeLocation(row,'ok',parts.city+', '+parts.stateOrProvince+', '+result.postal+', '+parts.country);
   else writeLocation(row,'warn','sorgente: '+display+' — '+result.reason);
-}catch(e){restoreHiddenLocationEditor();console.warn('Sell Like This location',e);writeLocation(row,'warn','sorgente: '+display+' — copia automatica non riuscita');}
+}catch(e){await closeLocationDialog();console.warn('Sell Like This location',e);writeLocation(row,'warn','sorgente: '+display+' — copia automatica non riuscita');}
 patchUi();
 })();
