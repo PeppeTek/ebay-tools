@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-window-v1';
+const PATCH_ID='capitan-variants-window-v2';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const m=document.createElement('span');m.id=PATCH_ID;m.style.display='none';document.documentElement.appendChild(m);
@@ -48,13 +48,14 @@ async function automateChild(win){
   }catch(e){console.warn('Variant child automation failed',e);return false}
 }
 async function openInNewWindow(){
-  const st=state();if(!st||!st.data||!st.data.hasVariations)return false;
+  const st=state();if(!st||!st.data||!st.data.hasVariations){alert('Varianti non disponibili nel contesto corrente.');return false}
   let win=null;
   try{win=window.open(location.href,'_blank')}catch(_){}
-  if(!win)return false;
+  if(!win){alert('Il browser ha bloccato la nuova finestra. Consenti i popup per ebay.com e riprova.');return false}
   try{win.focus()}catch(_){}
   return await automateChild(win);
 }
+window.__capitanOpenVariantsWindow=openInNewWindow;
 function bindFallback(){
   document.addEventListener('click',async e=>{
     const b=e.target.closest('button,[role="button"],a');if(!b)return;
@@ -68,12 +69,4 @@ function bindFallback(){
   },true);
 }
 bindFallback();
-for(let i=0;i<40;i++){
-  if(state()?.data?.hasVariations){
-    const ok=await openInNewWindow();
-    if(ok)return;
-    break;
-  }
-  await sleep(150);
-}
 })();
