@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-editor-v3';
+const PATCH_ID='capitan-variants-editor-v4';
 const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
@@ -124,65 +124,122 @@ function isCreateVariationsPage(){
   const t=clean(document.body.innerText||document.body.textContent||'');
   return /create your variations/i.test(t)&&/attributes/i.test(t)&&/options/i.test(t)&&/continue/i.test(t)
 }
-function removeUnwantedAttributeChips(scope,data){
-  const wanted=new Set((data.dimensions||[]).map(d=>clean(d.name).toLowerCase()));
-  const chips=[...scope.querySelectorAll('button,[role="button"],span,div')].filter(visible).filter(x=>{
+function wizardRoot(){
+  const all=[...document.querySelectorAll('main,form,section,div')].filter(visible).filter(x=>{
     const t=clean(x.innerText||x.textContent||'');
-    return t.length>0&&t.length<80&&/\s*[×x]\s*$/.test(t)
+    return /Create your variations/i.test(t)&&/\bAttributes\b/i.test(t)&&/\bOptions\b/i.test(t)&&/\bContinue\b/i.test(t)&&t.length<12000;
   });
-  for(const chip of chips){
-    const raw=clean(chip.innerText||chip.textContent||'');
-    const name=clean(raw.replace(/\s*[×x]\s*$/,''));
-    if(!name||wanted.has(name.toLowerCase()))continue;
-    const close=[...chip.querySelectorAll('button,[role="button"]')].find(visible);
-    if(close)close.click();else chip.click();
+  return all.sort((a,b)=>clean(a.innerText||a.textContent||'').length-clean(b.innerText||b.textContent||'').length)[0]||document.body
+}
+function exactText(root,text){
+  const wanted=clean(text).toLowerCase();
+  return [...root.querySelectorAll('button,[role="button"],a,span,div,label,li,[role="option"]')].filter(visible).find(x=>clean(x.innerText||x.textContent||'').toLowerCase()===wanted)||null
+}
+function clickExact(root,text){
+  const x=exactText(root,text);if(!x)return false;
+  const clickable=x.closest('button,[role="button"],a,label,[role="option"],li')||x;
+  clickable.click();return true
+}
+async function waitUntil(fn,ms=4000,step=100){
+  const end=Date.now()+ms;
+  while(Date.now()<end){const v=fn();if(v)return v;await sleep(step)}
+  return null
+}
+async function removeExistingAttributes(root,data){
+  const wanted=new Set((data.dimensions||[]).map(d=>clean(d.name).toLowerCase()));
+  const known=['MPN','Theme'];
+  for(const name of known){
+    if(wanted.has(name.toLowerCase()))continue;
+    const label=[...root.querySelectorAll('button,[role="button"],span,div')].filter(visible).find(x=>{
+      const t=clean(x.innerText||x.textContent||'');
+      return t===name||t===name+' ×'||t===name+' x';
+    });
+    if(!label)continue;
+    let holder=label;
+    for(let i=0;i<4&&holder;i++,holder=holder.parentElement){
+      const remove=[...holder.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>{
+        const t=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''));
+        return /remove|delete|close|×|\bx\b/i.test(t)&&(!clean(x.innerText||x.textContent||'')||clean(x.innerText||x.textContent||'')==='×'||clean(x.innerText||x.textContent||'').toLowerCase()==='x');
+      });
+      if(remove){remove.click();await sleep(180);break}
+    }
   }
 }
-async function addWantedAttribute(scope,dim){
-  const low=clean(dim.name).toLowerCase();
-  if(clean(scope.innerText||'').toLowerCase().includes(low))return true;
-  const add=[...scope.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^\+?\s*add$/i.test(clean(x.innerText||x.textContent||''))||/add attribute/i.test(clean(x.innerText||x.textContent||'')));
-  if(!add)return false;
-  add.click();await sleep(220);
-  let option=[...document.querySelectorAll('[role="option"],li,button,label')].filter(visible).find(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);
-  if(option){option.click();await sleep(220);return true}
-  const search=[...document.querySelectorAll('input')].filter(visible).find(x=>/attribute|search|add/i.test(clean([x.placeholder,x.getAttribute('aria-label')].join(' '))));
-  if(search){setNative(search,dim.name);await sleep(150);option=[...document.querySelectorAll('[role="option"],li,button,label')].filter(visible).find(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);if(option){option.click();await sleep(220);return true}}
-  return false
-}
-async function addOwnOptions(scope,dim){
-  const vals=(dim.values||[]).map(clean).filter(Boolean);if(!vals.length)return false;
-  let text=clean(scope.innerText||scope.textContent||'').toLowerCase();
-  if(vals.every(v=>text.includes(v.toLowerCase())))return true;
-  const create=[...scope.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/create your own|add option|add value/i.test(clean(x.innerText||x.textContent||'')));
-  if(create){create.click();await sleep(220)}
-  let input=[...document.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible).find(x=>/option|value|variation/i.test(clean([x.placeholder,x.getAttribute('aria-label'),x.name,x.id].join(' '))));
-  if(!input){
-    const dlg=variationDialog()||scope;
-    input=[...dlg.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible)[0]||null
+async function chooseAttribute(root,dim){
+  const wanted=clean(dim.name);
+  if(!wanted)return false;
+  const bodyText=()=>clean(root.innerText||root.textContent||'').toLowerCase();
+  if(bodyText().includes(wanted.toLowerCase()))return true;
+  if(!clickExact(root,'+ Add')&&!clickExact(root,'Add')){
+    const add=[...root.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/\+?\s*add/i.test(clean(x.innerText||x.textContent||'')));
+    if(add)add.click();else return false;
   }
-  if(input){
-    for(const v of vals){await submitToken(input,v)}
+  await sleep(180);
+  let option=await waitUntil(()=>[...document.querySelectorAll('[role="option"],li,button,label,div,span')].filter(visible).find(x=>clean(x.innerText||x.textContent||'').toLowerCase()===wanted.toLowerCase()),2500);
+  if(option){
+    const clickable=option.closest('[role="option"],button,label,li,a')||option;
+    clickable.click();await sleep(220);
   }else{
-    for(const v of vals)clickNamed(scope,v)
+    const input=[...document.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible).find(x=>/attribute|search|variation/i.test(clean([x.placeholder,x.getAttribute('aria-label'),x.name,x.id].join(' '))));
+    if(!input)return false;
+    setNative(input,wanted);await sleep(180);
+    option=[...document.querySelectorAll('[role="option"],li,button,label,div,span')].filter(visible).find(x=>clean(x.innerText||x.textContent||'').toLowerCase()===wanted.toLowerCase());
+    if(option)(option.closest('[role="option"],button,label,li,a')||option).click();
+    else{
+      input.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',code:'Enter'}));
+      input.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Enter',code:'Enter'}));
+    }
+    await sleep(220);
   }
-  const done=[...document.querySelectorAll('button,[role="button"]')].filter(visible).find(x=>/^(done|save|add|apply|confirm)$/i.test(clean(x.innerText||x.textContent||'')));
-  if(done){done.click();await sleep(250)}
-  text=clean(document.body.innerText||document.body.textContent||'').toLowerCase();
-  return vals.some(v=>text.includes(v.toLowerCase()))
+  return bodyText().includes(wanted.toLowerCase())
+}
+async function addOneCustomOption(root,value){
+  const low=clean(value).toLowerCase();if(!low)return false;
+  if(clean(root.innerText||root.textContent||'').toLowerCase().includes(low))return true;
+  const before=new Set([...document.querySelectorAll('input,textarea')].filter(visible));
+  if(!clickExact(root,'+ Create your own')&&!clickExact(root,'Create your own')){
+    const create=[...root.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/create your own|add option|add value/i.test(clean(x.innerText||x.textContent||'')));
+    if(!create)return false;create.click();
+  }
+  await sleep(180);
+  let input=await waitUntil(()=>{
+    const now=[...document.querySelectorAll('input[type="text"],input:not([type]),textarea,[contenteditable="true"]')].filter(visible);
+    return now.find(x=>!before.has(x))||now.find(x=>/option|value|variation|custom/i.test(clean([x.placeholder,x.getAttribute&&x.getAttribute('aria-label'),x.name,x.id].join(' '))));
+  },2500);
+  if(!input)return false;
+  if(input.getAttribute&&input.getAttribute('contenteditable')==='true'){
+    input.focus();input.textContent=value;input.dispatchEvent(new InputEvent('input',{bubbles:true,data:value,inputType:'insertText'}));
+  }else setNative(input,value);
+  await sleep(100);
+  input.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',code:'Enter'}));
+  input.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Enter',code:'Enter'}));
+  await sleep(220);
+  if(clean(root.innerText||root.textContent||'').toLowerCase().includes(low))return true;
+  const overlay=variationDialog()||input.closest('[role="dialog"],[aria-modal="true"],form,section,div')||document.body;
+  const commit=[...overlay.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^(add|save|done|apply|confirm|create)$/i.test(clean(x.innerText||x.textContent||'')));
+  if(commit){commit.click();await sleep(250)}
+  return clean(root.innerText||root.textContent||'').toLowerCase().includes(low)
 }
 async function handleCreateVariationsPage(data){
   if(!isCreateVariationsPage())return false;
-  const scope=variationEditorSurface(data)||document.body;
-  removeUnwantedAttributeChips(scope,data);
+  const root=wizardRoot();
+  await removeExistingAttributes(root,data);
   for(const dim of data.dimensions||[]){
-    await addWantedAttribute(scope,dim);
-    await addOwnOptions(scope,dim);
+    const attrOk=await chooseAttribute(root,dim);
+    if(!attrOk){console.warn('Variant attribute not added',dim.name);return false}
+    for(const value of dim.values||[]){
+      const ok=await addOneCustomOption(root,value);
+      if(!ok){console.warn('Variant option not added',dim.name,value);return false}
+    }
   }
-  const cont=[...document.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^continue$/i.test(clean(x.innerText||x.textContent||'')));
-  if(cont){cont.click();await sleep(900);return true}
+  const expected=(data.dimensions||[]).flatMap(d=>d.values||[]).map(v=>clean(v).toLowerCase()).filter(Boolean);
+  const page=clean(root.innerText||root.textContent||'').toLowerCase();
+  if(expected.length&&!expected.every(v=>page.includes(v))){console.warn('Not all variant options are visible; Continue skipped');return false}
+  const cont=[...root.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^continue$/i.test(clean(x.innerText||x.textContent||'')));
+  if(cont){cont.click();await sleep(1000);return true}
   return false
 }
+
 async function createDimensions(scope,data){
   let touched=false;
   for(const dim of data.dimensions||[]){if(await ensureDimension(scope,dim))touched=true}
