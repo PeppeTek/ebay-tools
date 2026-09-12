@@ -10,16 +10,31 @@ function cleanup(){
     if(/^(Titolo\s*\/\s*Item Specifics|Titolo|Title|Categoria|Category|Item Specifics|Policy|Policies)\b/i.test(t))r.remove();
   });
 
-  // Remove the duplicated trailing "(-2%)" from the displayed price value.
-  const priceRow=[...p.querySelectorAll('#steps .row')].find(r=>/^Prezzo di vendita \(-2%\):/i.test(clean(r.innerText||r.textContent||'')));
+  // Keep discount percentage on its own static row, for mono and variant layouts.
+  let discountRow=p.querySelector('#capitan-discount-row');
+  const sourceRow=[...p.querySelectorAll('.b > .row, .row')].find(r=>/^Source Item ID:/i.test(clean(r.innerText||r.textContent||'')));
+  if(!discountRow&&sourceRow){
+    discountRow=document.createElement('div');
+    discountRow.id='capitan-discount-row';
+    discountRow.className='row';
+    discountRow.innerHTML='<b>Riduzione prezzo:</b> <span class="ok">16%</span>';
+    sourceRow.insertAdjacentElement('afterend',discountRow);
+  }else if(discountRow){
+    const span=discountRow.querySelector('span');
+    if(span){span.textContent='16%';span.className='ok';}
+  }
+
+  // Sale-price row: percentage is no longer repeated in the label/value.
+  const priceRow=[...p.querySelectorAll('#steps .row')].find(r=>/^Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:/i.test(clean(r.innerText||r.textContent||'')));
   if(priceRow){
+    const b=priceRow.querySelector('b');
+    if(b)b.textContent='Prezzo di vendita:';
     const spans=[...priceRow.querySelectorAll('span')];
     const value=spans.find(s=>/\d/.test(clean(s.textContent||'')))||spans[0];
     if(value){
-      const t=clean(value.textContent||'').replace(/\s*\(-2%\)\s*$/i,'');
+      let t=clean(value.textContent||'').replace(/\s*\(-\d+(?:[.,]\d+)?%\)\s*$/i,'');
+      if(/^\d+(?:[.,]\d+)?$/i.test(t))t=t+' USD';
       value.textContent=' '+t;
-    } else {
-      [...priceRow.childNodes].filter(n=>n.nodeType===3).forEach(n=>{n.textContent=n.textContent.replace(/\s*\(-2%\)\s*$/i,'');});
     }
   }
 
