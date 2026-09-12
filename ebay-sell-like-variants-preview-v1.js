@@ -15,15 +15,37 @@ function jsonp(action,params){const ep=endpoint();return new Promise((resolve,re
 function calcBreakEven(s,r){s=Number(s);if(!isFinite(s)||s<=0)return null;r=r||{};const feeRate=Number(r.ebayFee||0)+Number(r.internationalFee||0)+Number(r.marketingFee||0);const variable=(1+Number(r.salesTaxEstimate||0))*feeRate*(1+Number(r.vatOnFees||0));const fixed=Number(r.fixedFee||0)*(1+Number(r.vatOnFees||0));const v=s*(1-variable)-fixed;return isFinite(v)?Math.round(v*100)/100:null}
 function money(v,c){return v==null||!isFinite(Number(v))?'—':Number(v).toFixed(2)+' '+(c||'USD')}
 function targetContainer(){const p=document.getElementById(PANEL_ID),steps=p?.querySelector('#steps');if(!steps)return null;return {p,steps}}
-function hideSingleProductPrices(ctx){const price=[...ctx.steps.querySelectorAll('.row')].find(r=>/^Prezzo di vendita \(-2%\):/i.test(clean(r.innerText||r.textContent)));if(price)price.style.display='none';const be=ctx.p.querySelector('#capitan-break-even-row');if(be)be.style.display='none'}
+let variantMode=false;
+function enforceVariantMode(){
+  if(!variantMode)return;
+  const ctx=targetContainer();if(!ctx)return;
+  [...ctx.steps.querySelectorAll('.row')].forEach(r=>{
+    const t=clean(r.innerText||r.textContent||'');
+    if(/^Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:/i.test(t)&&r.id!=='capitan-variants-preview')r.style.display='none';
+  });
+  const be=ctx.p.querySelector('#capitan-break-even-row');if(be)be.style.display='none';
+}
+function variantPanelWidth(data){
+  const maxLen=Math.max(0,...(data.variants||[]).map(v=>clean(v.title||'').length));
+  if(maxLen>55)return 'min(820px,calc(100vw - 24px))';
+  if(maxLen>32)return 'min(720px,calc(100vw - 24px))';
+  return 'min(620px,calc(100vw - 24px))';
+}
 function render(data,rates){
   const ctx=targetContainer();if(!ctx||!data||!data.hasVariations||!Array.isArray(data.variants)||!data.variants.length)return;
-  hideSingleProductPrices(ctx);
+  variantMode=true;
+  ctx.p.style.width=variantPanelWidth(data);
+  enforceVariantMode();
   ctx.p.querySelector('#capitan-variants-preview')?.remove();
   const wrap=document.createElement('div');wrap.id='capitan-variants-preview';wrap.className='row';wrap.style.padding='7px 0';
-  const rows=data.variants.map(v=>{const be=calcBreakEven(v.salePrice,rates);return '<tr><td style="padding:7px 6px;border-bottom:1px solid #eee;vertical-align:top;min-width:185px">'+esc(v.title||('Variante '+v.index))+'</td><td style="padding:7px 6px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:#137333;font-weight:700">'+esc(money(v.salePrice,data.currency))+'</td><td style="padding:7px 6px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:#1668e8;font-weight:700">'+esc(money(be,data.currency))+'</td></tr>'}).join('');
-  wrap.innerHTML='<div style="font-weight:700;color:#111;padding:1px 0 8px">Varianti: <span style="color:#137333">'+data.variants.length+' rilevate</span></div><div style="max-height:300px;overflow:auto;border:1px solid #e2e5e9;border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="position:sticky;top:0;background:#fafafa;z-index:1"><th style="padding:7px 6px;text-align:left">Variante</th><th style="padding:7px 6px;text-align:right;white-space:nowrap">Prezzo di vendita (-10%)</th><th style="padding:7px 6px;text-align:right;white-space:nowrap">Break Even Price</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
-  const first=[...ctx.steps.querySelectorAll('.row')].find(r=>r.style.display!=='none');if(first)first.insertAdjacentElement('beforebegin',wrap);else ctx.steps.prepend(wrap);
+  const rows=data.variants.map(v=>{const be=calcBreakEven(v.salePrice,rates);return '<tr><td style="padding:7px 6px;border-bottom:1px solid #eee;vertical-align:top;overflow-wrap:anywhere;word-break:break-word">'+esc(v.title||('Variante '+v.index))+'</td><td style="padding:7px 6px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:#137333;font-weight:700">'+esc(money(v.salePrice,data.currency))+'</td><td style="padding:7px 6px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:#1668e8;font-weight:700">'+esc(money(be,data.currency))+'</td></tr>'}).join('');
+  wrap.innerHTML='<div style="font-weight:700;color:#111;padding:1px 0 8px">Varianti: <span style="color:#137333">'+data.variants.length+' rilevate</span></div><div style="max-height:300px;overflow-y:auto;overflow-x:hidden;border:1px solid #e2e5e9;border-radius:8px"><table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px"><colgroup><col style="width:52%"><col style="width:24%"><col style="width:24%"></colgroup><thead><tr style="position:sticky;top:0;background:#fafafa;z-index:1"><th style="padding:7px 6px;text-align:left">Variante</th><th style="padding:7px 6px;text-align:right">Prezzo di vendita</th><th style="padding:7px 6px;text-align:right">Break Even Price</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  const discount=ctx.p.querySelector('#capitan-discount-row');
+  if(discount)discount.insertAdjacentElement('afterend',wrap);
+  else ctx.steps.prepend(wrap);
+  const obs=new MutationObserver(()=>enforceVariantMode());
+  obs.observe(ctx.steps,{childList:true,subtree:true,characterData:true});
+  let n=0;const timer=setInterval(()=>{n++;enforceVariantMode();if(n>120){clearInterval(timer);obs.disconnect()}},125);
 }
 function nativeSet(el,value){if(!el)return false;const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;el.focus();setter?setter.call(el,String(value)):el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));el.blur?.();return true}
 function variationEditorScope(){const dialogs=[...document.querySelectorAll('[role="dialog"]')].filter(visible);return dialogs.find(d=>/variation/i.test(clean(d.innerText||d.textContent)))||[...document.querySelectorAll('section,div')].filter(x=>!x.closest('#'+PANEL_ID)&&visible(x)).find(x=>/^variations?$/i.test(clean(x.querySelector('h2,h3,legend')?.textContent||''))&&clean(x.innerText||'').length<10000)||null}
