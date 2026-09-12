@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-editor-v6';
+const PATCH_ID='capitan-variants-editor-v7';
 const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
@@ -327,8 +327,150 @@ async function setRowImages(scope,v){
   input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));await sleep(500);return true
 }
 async function assignImages(scope,data){let n=0;for(const v of data.variants||[]){if(await setRowImages(scope,v))n++}return n}
+function isCombinationsPage(){
+  const t=clean(document.body.innerText||document.body.textContent||'');
+  return /Variation combinations\s*\(/i.test(t)&&/Add variation photos/i.test(t)&&/Save and close/i.test(t)
+}
+function exactVisible(root,re,selector='button,[role="button"],a'){
+  return [...root.querySelectorAll(selector)].filter(visible).find(x=>re.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute&&x.getAttribute('aria-label')||''))))||null
+}
+function selectOptionNative(sel,value){
+  if(!sel)return false;
+  const wanted=clean(value).toLowerCase();
+  const opt=[...sel.options].find(o=>clean(o.textContent||o.label||'').toLowerCase()===wanted)||[...sel.options].find(o=>clean(o.textContent||o.label||'').toLowerCase().includes(wanted));
+  if(!opt)return false;
+  sel.value=opt.value;sel.dispatchEvent(new Event('input',{bubbles:true}));sel.dispatchEvent(new Event('change',{bubbles:true}));return true
+}
+async function ensurePhotoAttribute(data){
+  const dim=clean((data.dimensions&&data.dimensions[0]&&data.dimensions[0].name)||'Color');
+  const labels=[...document.querySelectorAll('div,span,h2,h3,h4,label')].filter(visible).filter(x=>/Add variation photos/i.test(clean(x.innerText||x.textContent||'')));
+  let root=labels[0]||document.body;
+  for(let i=0;i<5&&root;i++,root=root.parentElement){
+    const sel=root.querySelector&&root.querySelector('select');
+    if(sel&&selectOptionNative(sel,dim)){await sleep(500);return true}
+  }
+  const sel=[...document.querySelectorAll('select')].filter(visible).find(s=>[...s.options].some(o=>clean(o.textContent||'').toLowerCase()===dim.toLowerCase()));
+  if(sel){selectOptionNative(sel,dim);await sleep(500);return true}
+  return false
+}
+function combinationRows(){
+  const rows=[...document.querySelectorAll('tr,[role="row"]')].filter(visible).filter(r=>{
+    const t=clean(r.innerText||r.textContent||'');
+    return t.length<2000&&(/\bPrice\b/i.test(t)||r.querySelector('input[type="checkbox"]'))&&!/Actions\s+Photos\s+SKU/i.test(t);
+  });
+  return rows
+}
+function rowForVariant(v){
+  const keys=keyText(v);
+  return combinationRows().find(r=>{const t=clean(r.innerText||r.textContent||'').toLowerCase();return keys.length&&keys.every(k=>t.includes(k))})||null
+}
+async function commitBulkValue(buttonLabel,value){
+  const btn=exactVisible(document.body,new RegExp('^'+buttonLabel.replace(/[.*+?^$()|[\]\\]/g,'\\$&')+'$','i'));
+  if(!btn)return false;
+  const before=new Set([...document.querySelectorAll('input,textarea')].filter(visible));
+  btn.click();await sleep(220);
+  const scope=variationDialog()||document.body;
+  let input=await waitUntil(()=>{
+    const now=[...scope.querySelectorAll('input,textarea')].filter(visible);
+    return now.find(x=>!before.has(x))||now.find(x=>/price|quantity|qty|value/i.test(clean([x.placeholder,x.getAttribute('aria-label'),x.name,x.id].join(' '))))||null
+  },2000);
+  if(!input)return false;
+  setNative(input,value);await sleep(80);
+  const action=[...scope.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^(save|apply|done|enter|set|confirm|ok)$/i.test(clean(x.innerText||x.textContent||'')));
+  if(action){action.click();await sleep(250)}else{
+    input.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',code:'Enter'}));input.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Enter',code:'Enter'}));await sleep(220)
+  }
+  return true
+}
+async function fillCombination(v){
+  const row=rowForVariant(v);if(!row)return false;
+  const inputs=[...row.querySelectorAll('input')].filter(visible);
+  const sale=saleFor(v);
+  const price=inputs.find(x=>/price/i.test(clean([x.name,x.id,x.placeholder,x.getAttribute('aria-label')].join(' '))));
+  const qty=inputs.find(x=>/quantity|qty/i.test(clean([x.name,x.id,x.placeholder,x.getAttribute('aria-label')].join(' '))));
+  if(price&&sale!=null)setNative(price,sale.toFixed(2));
+  if(qty)setNative(qty,'3');
+  if(price&&qty)return true;
+
+  const check=row.querySelector('input[type="checkbox"]');
+  if(!check)return !!price;
+  if(!check.checked){check.click();await sleep(120)}
+  let ok=true;
+  if(!price&&sale!=null)ok=(await commitBulkValue('Enter price',sale.toFixed(2)))&&ok;
+  if(!qty)ok=(await commitBulkValue('Enter quantity','3'))&&ok;
+  if(check.checked){check.click();await sleep(80)}
+  return ok
+}
+async function setAllCombinationValues(data){
+  let done=0;
+  for(const v of data.variants||[]){if(await fillCombination(v))done++}
+  return done
+}
+function photoOptionsRoot(){
+  const label=[...document.querySelectorAll('div,span,h2,h3,h4')].filter(visible).find(x=>/Add variation photos/i.test(clean(x.innerText||x.textContent||'')));
+  if(!label)return document.body;
+  let p=label;
+  for(let i=0;i<6&&p;i++,p=p.parentElement){
+    const t=clean(p.innerText||p.textContent||'');
+    if(/Upload from computer|Upload from web/i.test(t)&&t.length<12000)return p;
+  }
+  return document.body
+}
+async function clickPhotoVariant(value){
+  const root=photoOptionsRoot(),low=clean(value).toLowerCase();
+  const xs=[...root.querySelectorAll('button,[role="button"],a,div,span,li')].filter(visible).filter(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);
+  if(!xs.length)return false;
+  const x=xs.sort((a,b)=>a.childElementCount-b.childElementCount)[0];
+  (x.closest('button,[role="button"],a,li')||x).click();await sleep(180);return true
+}
+async function uploadUrlsFromWeb(urls){
+  urls=(urls||[]).filter(Boolean).slice(0,12);if(!urls.length)return false;
+  const root=photoOptionsRoot();
+  const btn=exactVisible(root,/^Upload from web$/i);if(!btn)return false;
+  btn.click();await sleep(250);
+  const scope=variationDialog()||document.body;
+  let input=await waitUntil(()=>[...scope.querySelectorAll('textarea,input[type="text"],input[type="url"],input:not([type])')].filter(visible).find(x=>/url|web|link|address|image/i.test(clean([x.placeholder,x.getAttribute('aria-label'),x.name,x.id].join(' '))))||[...scope.querySelectorAll('textarea,input[type="text"],input[type="url"],input:not([type])')].filter(visible)[0]||null,1800);
+  if(!input)return false;
+  if(input.tagName==='TEXTAREA')setNative(input,urls.join('\n'));
+  else setNative(input,urls[0]);
+  const add=[...scope.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^(add|upload|save|done|import|confirm)$/i.test(clean(x.innerText||x.textContent||'')));
+  if(add){add.click();await sleep(500)}
+  return true
+}
+async function uploadFilesFallback(urls,prefix){
+  const root=photoOptionsRoot();
+  const input=[...root.querySelectorAll('input[type="file"]')].find(x=>x.multiple||/image/i.test(x.accept||''))||root.querySelector('input[type="file"]');
+  if(!input)return false;
+  const files=await filesFromUrls(urls,prefix);if(!files.length)return false;
+  try{input.files=files}catch(_){return false}
+  input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));await sleep(500);return true
+}
+async function assignVariationPhotosDedicated(data){
+  await ensurePhotoAttribute(data);
+  let done=0;
+  for(const v of data.variants||[]){
+    if(!v.images||!v.images.length)continue;
+    const label=(v.specifics&&v.specifics[0]&&v.specifics[0].value)||clean(v.title).replace(/^.*?:\s*/,'');
+    if(!await clickPhotoVariant(label))continue;
+    let ok=await uploadUrlsFromWeb(v.images);
+    if(!ok)ok=await uploadFilesFallback(v.images,'variant-'+v.index);
+    if(ok)done++;
+  }
+  return done
+}
+async function handleCombinationsPage(data){
+  if(!isCombinationsPage())return false;
+  await ensurePhotoAttribute(data);
+  await setAllCombinationValues(data);
+  await assignVariationPhotosDedicated(data);
+  const save=exactVisible(document.body,/^Save and close$/i)||exactVisible(document.body,/^Save and preview$/i);
+  if(save){save.click();await sleep(900);return true}
+  return false
+}
+
 async function run(data){
   if(!data||!data.hasVariations)return;
+  if(isCombinationsPage()){await handleCombinationsPage(data);return}
   if(isCreateVariationsPage()){
     const moved=await handleCreateVariationsPage(data);
     if(moved)return;
