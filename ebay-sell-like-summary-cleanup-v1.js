@@ -1,7 +1,12 @@
 javascript:(()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
+const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
+let discountRate=.02;
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
+function endpoint(){return String(localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}
+function jsonpAction(action){const ep=endpoint();return new Promise((resolve,reject)=>{if(!ep)return reject(Error('Endpoint Apps Script non configurato'));const cb='__capitanDiscountCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),30000);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:Date.now().toString()});s.src=ep+(ep.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
+function discountText(){const n=Number(discountRate||0)*100;return (Math.round(n*100)/100).toLocaleString('it-IT',{minimumFractionDigits:Number.isInteger(n)?0:2,maximumFractionDigits:2})+'%'}
 function cleanup(){
   const p=document.getElementById(PANEL_ID);if(!p)return false;
   const rows=[...p.querySelectorAll('#steps .row')];
@@ -17,11 +22,11 @@ function cleanup(){
     discountRow=document.createElement('div');
     discountRow.id='capitan-discount-row';
     discountRow.className='row';
-    discountRow.innerHTML='<b>Riduzione prezzo:</b> <span class="ok">16%</span>';
+    discountRow.innerHTML='<b>Riduzione prezzo:</b> <span class="ok">'+discountText()+'</span>';
     sourceRow.insertAdjacentElement('afterend',discountRow);
   }else if(discountRow){
     const span=discountRow.querySelector('span');
-    if(span){span.textContent='16%';span.className='ok';}
+    if(span){span.textContent=discountText();span.className='ok';}
   }
 
   // Sale-price row: percentage is no longer repeated in the label/value.
@@ -55,6 +60,7 @@ function cleanup(){
 }
 let n=0;const t=setInterval(()=>{n++;cleanup();if(n>120)clearInterval(t)},125);
 window.addEventListener('capitan-break-even-updated',cleanup);
-window.addEventListener('capitan-pricing-saved',cleanup);
+window.addEventListener('capitan-pricing-saved',e=>{if(e.detail?.rates&&isFinite(Number(e.detail.rates.discountRate)))discountRate=Number(e.detail.rates.discountRate);cleanup();window.dispatchEvent(new CustomEvent('capitan-discount-updated',{detail:{discountRate}}))});
 cleanup();
+(async()=>{try{const d=await jsonpAction('sell_like_pricing_get');if(d&&d.ok&&d.rates&&isFinite(Number(d.rates.discountRate)))discountRate=Number(d.rates.discountRate)}catch(e){console.warn('Sell Like discount load',e)}cleanup();window.dispatchEvent(new CustomEvent('capitan-discount-updated',{detail:{discountRate}}))})();
 })();
