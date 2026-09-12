@@ -71,6 +71,7 @@ try{
   currentData=data;currentRates=pricing&&pricing.ok?pricing.rates:null;
   if(currentRates&&isFinite(Number(currentRates.discountRate)))currentDiscount=Number(currentRates.discountRate);else if(isFinite(Number(data.discountRate)))currentDiscount=Number(data.discountRate);
   render(currentData,currentRates,currentDiscount);
-  window.dispatchEvent(new CustomEvent('capitan-variants-ready',{detail:{data:currentData,rates:currentRates,discountRate:currentDiscount}}));
+  window.__capitanSellLikeVariants={data:currentData,rates:currentRates,discountRate:currentDiscount};
+  window.dispatchEvent(new CustomEvent('capitan-variants-ready',{detail:window.__capitanSellLikeVariants}));
 }catch(err){console.warn('Sell Like variants preview',err)}
 })();
