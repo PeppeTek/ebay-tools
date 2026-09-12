@@ -1,9 +1,9 @@
 javascript:(()=>{
 'use strict';
-const PATCH_ID='capitan-ai-usage-ui-v2';
+const PATCH_ID='capitan-ai-usage-ui-v3';
 const MODAL_ID='capitan-pricing-modal';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
-if(document.getElementById(PATCH_ID))return;
+document.getElementById('capitan-ai-usage-ui-v2')?.remove();if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmt=n=>Number(n||0).toLocaleString('it-IT');
@@ -35,11 +35,13 @@ async function render(body){
   }catch(err){body.innerHTML='<div style="color:#b42318;font-weight:700;font-size:12px">'+esc(err.message||err)+'</div>'}
 }
 function patch(){
-  const modal=document.getElementById(MODAL_ID);if(!modal||modal.dataset.aiUsageV2==='1')return;
+  const modal=document.getElementById(MODAL_ID);if(!modal||modal.dataset.aiUsageV3==='1')return;
   const rateTab=[...modal.querySelectorAll('button')].find(b=>/Aggiorna tariffe/i.test(b.textContent||''));
   const rateBody=modal.querySelector('#capitan-settings-body');if(!rateTab||!rateBody)return;
-  modal.dataset.aiUsageV2='1';
+  delete modal.dataset.aiUsageV2;modal.dataset.aiUsageV3='1';
   const tabs=rateTab.parentElement;
+  [...tabs.querySelectorAll('button')].filter(b=>/AI Usage/i.test(b.textContent||'')).forEach(b=>b.remove());
+  modal.querySelector('#capitan-ai-usage-body')?.remove();
   const aiTab=document.createElement('button');aiTab.type='button';aiTab.textContent='AI Usage';aiTab.style.cssText='border:0;border-bottom:3px solid transparent;background:transparent;color:#555;font-weight:700;font-size:13px;padding:10px 14px 9px;cursor:pointer';tabs.appendChild(aiTab);
   const aiBody=document.createElement('div');aiBody.id='capitan-ai-usage-body';aiBody.style.cssText='display:none;padding:18px 22px 34px;min-height:0;overflow:hidden;flex:1;flex-direction:column';rateBody.insertAdjacentElement('afterend',aiBody);
   rateTab.style.cursor='pointer';
