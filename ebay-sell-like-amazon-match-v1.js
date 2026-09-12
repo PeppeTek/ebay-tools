@@ -10,16 +10,17 @@ const panel=document.getElementById(PANEL_ID);if(!panel||document.getElementById
 const sourceText=clean(panel.innerText||'');
 const itemId=(sourceText.match(/Source Item ID:\s*(\d{9,12})/i)||[])[1]||'';
 if(!itemId)return;
-const priceMatch=sourceText.match(/Prezzo:\s*([0-9]+(?:[.,][0-9]+)?)/i);
-const currentSalePrice=priceMatch?Number(String(priceMatch[1]).replace(',','.')):null;
+const priceMatch=sourceText.match(/Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:\s*([0-9]+(?:[.,][0-9]+)?)/i);
+const currentSalePrice=priceMatch?Number(String(priceMatch[1]).replace(',','.')):(isFinite(Number(window.__capitanSellLikeSalePrice))?Number(window.__capitanSellLikeSalePrice):null);
 const actions=panel.querySelector('[data-ebay-actions]');
 const wrap=document.createElement('div');wrap.id=EXT_ID;wrap.style.cssText='padding:0 14px 10px;background:#fff';wrap.innerHTML='<div id="capitan-amazon-status" style="padding:7px 0 0;font-size:12px"></div><div id="capitan-amazon-results"></div>';
 if(actions)panel.insertBefore(wrap,actions);else (panel.querySelector('.b')||panel).appendChild(wrap);
 let findBtn=null,insertBtn=null;
 if(actions){
-  insertBtn=document.createElement('button');insertBtn.id='capitan-amazon-insert';insertBtn.textContent='Inserisci ASIN';insertBtn.style.cssText='height:42px;border:1px solid #d5a500;border-radius:22px;background:#ffd814;color:#111;font-size:14px;cursor:pointer';
-  findBtn=document.createElement('button');findBtn.id='capitan-amazon-find';findBtn.textContent='Trova su Amazon';findBtn.style.cssText='height:42px;border:1px solid #ff8f00;border-radius:22px;background:#ffa41c;color:#111;font-size:14px;cursor:pointer';
-  actions.insertBefore(findBtn,actions.firstChild);actions.insertBefore(insertBtn,findBtn);
+  insertBtn=document.createElement('button');insertBtn.id='capitan-amazon-insert';insertBtn.textContent='Inserisci ASIN';insertBtn.style.cssText='height:42px;border:1px solid #d5a500;border-right:0;border-radius:22px 0 0 22px;background:#ffd814;color:#111;font-size:14px;cursor:pointer;width:100%';
+  findBtn=document.createElement('button');findBtn.id='capitan-amazon-find';findBtn.textContent='Trova su Amazon';findBtn.style.cssText='height:42px;border:1px solid #ff8f00;border-left:0;border-radius:0 22px 22px 0;background:#ffa41c;color:#111;font-size:14px;cursor:pointer;width:100%';
+  const slot=actions.querySelector('[data-amazon-actions-slot]');
+  if(slot){slot.appendChild(insertBtn);slot.appendChild(findBtn)}else{actions.insertBefore(findBtn,actions.firstChild);actions.insertBefore(insertBtn,findBtn)}
 }else{
   insertBtn=document.createElement('button');insertBtn.id='capitan-amazon-insert';insertBtn.textContent='Inserisci ASIN';insertBtn.style.cssText='width:100%;height:42px;border:1px solid #d5a500;border-radius:22px;background:#ffd814;color:#111;font-size:14px;cursor:pointer;margin-top:8px';
   findBtn=document.createElement('button');findBtn.id='capitan-amazon-find';findBtn.textContent='Trova su Amazon';findBtn.style.cssText='width:100%;height:42px;border:1px solid #ff8f00;border-radius:22px;background:#ffa41c;color:#111;font-size:14px;cursor:pointer;margin-top:8px';
@@ -34,7 +35,7 @@ function jsonpAction(action,params){const ep=endpoint();return new Promise((reso
 
 function ensureBreakEvenRow(){
   const steps=panel.querySelector('#steps');if(!steps)return null;
-  let row=panel.querySelector('#capitan-break-even-row');if(row)return row;
+  let row=panel.querySelector('#capitan-break-even-row');if(row){const pr=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo(?: di vendita)?:/i.test(clean(r.innerText||r.textContent)));if(pr&&row.previousElementSibling!==pr)pr.insertAdjacentElement('afterend',row);return row;}
   const priceRow=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo:/i.test(clean(r.innerText||r.textContent)));
   row=document.createElement('div');row.id='capitan-break-even-row';row.className='row';row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px';
   row.innerHTML='<span><b>Break Even Price:</b> <span id="capitan-break-even-value">—</span></span><button type="button" id="capitan-pricing-open" title="Aggiorna tariffe" aria-label="Aggiorna tariffe" style="margin-left:auto;width:28px;height:28px;padding:0;border:0;background:transparent;color:#3665f3;font-size:18px;line-height:28px;cursor:pointer;border-radius:50%">⚙</button>';
