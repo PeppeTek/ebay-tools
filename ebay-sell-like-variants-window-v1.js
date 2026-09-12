@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-window-v4';
+const PATCH_ID='capitan-variants-window-v5';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const m=document.createElement('span');m.id=PATCH_ID;m.style.display='none';document.documentElement.appendChild(m);
@@ -67,7 +67,7 @@ async function automateChild(win){
     return await injectEditor(win);
   }catch(e){console.warn('Variant child automation failed',e);return false}
 }
-async function monitorAndReinject(win,ms=90000){
+async function monitorAndReinject(win,ms=180000){
   const end=Date.now()+ms;let lastHref='',lastWizard=false;
   while(Date.now()<end){
     try{
@@ -76,7 +76,7 @@ async function monitorAndReinject(win,ms=90000){
       const body=(win.document&&win.document.body&&win.document.body.innerText)||'';
       const wizard=/Create your variations|Attributes and options you(?:'|’)ve selected/i.test(body);
       const postWizard=/variation|price|quantity|sku|photos?/i.test(body)&&!/Create your variations/i.test(body);
-      const marker=win.document&&win.document.getElementById('capitan-variants-editor-v4');
+      const marker=win.document&&win.document.querySelector('[id^="capitan-variants-editor-v"]');
       if((wizard||postWizard)&&(!marker||href!==lastHref||wizard!==lastWizard)){
         await injectEditor(win);
       }
