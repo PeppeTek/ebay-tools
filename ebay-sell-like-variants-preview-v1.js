@@ -72,6 +72,7 @@ try{
   if(currentRates&&isFinite(Number(currentRates.discountRate)))currentDiscount=Number(currentRates.discountRate);else if(isFinite(Number(data.discountRate)))currentDiscount=Number(data.discountRate);
   render(currentData,currentRates,currentDiscount);
   window.__capitanSellLikeVariants={data:currentData,rates:currentRates,discountRate:currentDiscount};
+  try{localStorage.setItem(VAR_STATE_KEY,JSON.stringify(window.__capitanSellLikeVariants))}catch(_){}
   window.dispatchEvent(new CustomEvent('capitan-variants-ready',{detail:window.__capitanSellLikeVariants}));
 }catch(err){console.warn('Sell Like variants preview',err)}
 })();
