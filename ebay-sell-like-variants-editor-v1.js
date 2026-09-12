@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-editor-v1';
+const PATCH_ID='capitan-variants-editor-v2';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -23,19 +23,56 @@ function setNative(el,value){
 }
 function keyText(v){return(v.specifics||[]).map(s=>clean(s.value).toLowerCase()).filter(Boolean)}
 function variationSection(){
-  const heads=[...document.querySelectorAll('h1,h2,h3,legend')].filter(visible).filter(x=>/^variations?$/i.test(clean(x.textContent)));
-  for(const h of heads){let p=h.parentElement;for(let i=0;i<5&&p;i++,p=p.parentElement){if(!p.closest('#'+PANEL_ID)&&clean(p.innerText||'').length<8000)return p}}
+  const heads=[...document.querySelectorAll('h1,h2,h3,h4,legend,span,div')].filter(visible).filter(x=>/^variations?$/i.test(clean(x.textContent||'')));
+  for(const h of heads){
+    let p=h;
+    for(let i=0;i<8&&p;i++,p=p.parentElement){
+      if(p.closest&&p.closest('#'+PANEL_ID))continue;
+      const txt=clean(p.innerText||p.textContent||'');
+      if(txt.length>12000)continue;
+      const hasEdit=[...p.querySelectorAll('button,[role="button"],a')].some(x=>visible(x)&&/^edit$/i.test(clean(x.innerText||x.textContent||'')));
+      if(hasEdit||/save time and money by listing multiple variations/i.test(txt))return p;
+    }
+  }
   return null
 }
 function variationDialog(){
-  return[...document.querySelectorAll('[role="dialog"],dialog')].filter(visible).find(x=>/variation/i.test(clean(x.innerText||x.textContent)))||null
+  const overlays=[...document.querySelectorAll('[role="dialog"],dialog,[aria-modal="true"]')].filter(visible);
+  return overlays.find(x=>/variation|options|attributes/i.test(clean(x.innerText||x.textContent||'')))||null
 }
-async function openEditor(){
-  let dlg=variationDialog();if(dlg)return dlg;
+function variationEditorSurface(data){
+  const dlg=variationDialog();if(dlg)return dlg;
+  const dims=(data&&data.dimensions||[]).map(d=>clean(d.name).toLowerCase()).filter(Boolean);
+  const candidates=[...document.querySelectorAll('main,section,form,div')].filter(x=>visible(x)&&!x.closest('#'+PANEL_ID)).filter(x=>{
+    const t=clean(x.innerText||x.textContent||'').toLowerCase();
+    if(t.length<20||t.length>14000)return false;
+    if(/create variations|add variations|variation details|variation name|variation values|custom variation|add your own/i.test(t))return true;
+    return dims.length&&dims.some(d=>t.includes(d))&&[...x.querySelectorAll('input,[role="combobox"],button')].some(visible);
+  });
+  return candidates.sort((a,b)=>(a.innerText||'').length-(b.innerText||'').length)[0]||null
+}
+async function openEditor(data){
+  let scope=variationEditorSurface(data);if(scope&&scope.querySelector('input,[role="combobox"]'))return scope;
   const sec=variationSection();
+  let edit=null;
   if(sec){
-    const edit=[...sec.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^edit$/i.test(clean(x.innerText||x.textContent||''))||/edit.*variation|variation.*edit/i.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))));
-    if(edit){edit.click();for(let i=0;i<28;i++){await sleep(250);dlg=variationDialog();if(dlg)return dlg;const s=variationSection();if(s&&s.querySelector('input,[role="combobox"]'))return s}}
+    edit=[...sec.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^edit$/i.test(clean(x.innerText||x.textContent||''))||/edit.*variation|variation.*edit/i.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))));
+  }
+  if(!edit){
+    const all=[...document.querySelectorAll('button,[role="button"],a')].filter(x=>visible(x)&&!x.closest('#'+PANEL_ID));
+    edit=all.find(x=>{
+      const t=clean(x.innerText||x.textContent||'');
+      if(!/^edit$/i.test(t)&&!/edit.*variation|variation.*edit/i.test(clean(t+' '+(x.getAttribute('aria-label')||''))))return false;
+      let p=x.parentElement;for(let i=0;i<6&&p;i++,p=p.parentElement){if(/variations?/i.test(clean(p.innerText||p.textContent||'')))return true}
+      return false;
+    });
+  }
+  if(!edit)return null;
+  edit.click();
+  for(let i=0;i<40;i++){
+    await sleep(250);
+    scope=variationEditorSurface(data);
+    if(scope&&(scope.querySelector('input,[role="combobox"]')||/add your own|create variations|variation values/i.test(clean(scope.innerText||''))))return scope;
   }
   return null
 }
@@ -127,7 +164,7 @@ async function setRowImages(scope,v){
 async function assignImages(scope,data){let n=0;for(const v of data.variants||[]){if(await setRowImages(scope,v))n++}return n}
 async function run(data){
   if(!data||!data.hasVariations)return;
-  const scope=await openEditor();if(!scope){console.warn('Variations editor non trovato');return}
+  const scope=await openEditor(data);if(!scope){console.warn('Variations editor non trovato');return}
   await createDimensions(scope,data);
   let active=variationDialog()||scope;
   for(let i=0;i<20;i++){if(fillRows(active,data)>0)break;await sleep(250);active=variationDialog()||active}
