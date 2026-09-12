@@ -146,14 +146,27 @@ async function waitUntil(fn,ms=4000,step=100){
   return null
 }
 function selectedPanel(root){
-  const label=[...root.querySelectorAll('h1,h2,h3,h4,div,span')].filter(visible).find(x=>/attributes and options you(?:'|’)ve selected/i.test(clean(x.innerText||x.textContent||'')));
-  if(!label)return null;
-  let p=label;
-  for(let i=0;i<5&&p;i++,p=p.parentElement){
-    const t=clean(p.innerText||p.textContent||'');
-    if(t.length<5000&&/attributes and options you(?:'|’)ve selected/i.test(t))return p;
+  const labels=[...root.querySelectorAll('h1,h2,h3,h4,div,span')].filter(visible).filter(x=>/attributes and options you(?:'|’)ve selected/i.test(clean(x.innerText||x.textContent||'')));
+  for(const label of labels){
+    const lr=label.getBoundingClientRect();
+    const candidates=[];
+    let p=label;
+    for(let i=0;i<6&&p;i++,p=p.parentElement){
+      const t=clean(p.innerText||p.textContent||'');
+      const r=p.getBoundingClientRect();
+      if(!/attributes and options you(?:'|’)ve selected/i.test(t))continue;
+      if(/\+\s*Create your own/i.test(t))continue;
+      if(/\bOptions\b/i.test(t)&&/\bAttributes\b/i.test(t))continue;
+      if(r.width>0&&r.width<Math.max(900,window.innerWidth*.62)&&t.length<5000)candidates.push(p);
+    }
+    if(candidates.length)return candidates.sort((a,b)=>{
+      const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
+      const as=(ar.width*ar.height)||Infinity,bs=(br.width*br.height)||Infinity;
+      return as-bs;
+    })[0];
+    if(lr.width>0)return label.parentElement;
   }
-  return label.parentElement
+  return null
 }
 function selectedText(root){const p=selectedPanel(root);return clean(p&&p.innerText||p&&p.textContent||'').toLowerCase()}
 function optionsZone(root){
@@ -169,22 +182,24 @@ function optionsZone(root){
 }
 async function removeExistingAttributes(root,data){
   const wanted=new Set((data.dimensions||[]).map(d=>clean(d.name).toLowerCase()));
-  const chips=[...root.querySelectorAll('button,[role="button"],div,span')].filter(visible).filter(x=>{
-    const t=clean(x.innerText||x.textContent||'');
-    return /^(MPN|Theme)\s*[x×]?$/i.test(t);
-  });
-  for(const chip of chips){
-    const name=clean(chip.innerText||chip.textContent||'').replace(/\s*[x×]\s*$/i,'');
-    if(wanted.has(name.toLowerCase()))continue;
-    let done=false;
-    const local=[...chip.querySelectorAll('button,[role="button"],a,[aria-label]')].filter(visible).find(x=>/remove|delete|close|\bx\b|×/i.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))));
-    if(local){local.click();done=true}
-    if(!done){
-      const descendants=[...chip.querySelectorAll('span,div')].filter(visible).filter(x=>/^[x×]$/i.test(clean(x.innerText||x.textContent||'')));
-      if(descendants[0]){descendants[0].click();done=true}
+  for(const unwanted of ['MPN','Theme']){
+    if(wanted.has(unwanted.toLowerCase()))continue;
+    const matches=[...root.querySelectorAll('button,[role="button"],div,span')].filter(visible).filter(x=>{
+      const t=clean(x.innerText||x.textContent||'');
+      return new RegExp('^'+unwanted+'(?:\\s*[x×])?$','i').test(t);
+    }).sort((a,b)=>a.childElementCount-b.childElementCount);
+    let removed=false;
+    for(const chip of matches){
+      const controls=[...chip.querySelectorAll('button,[role="button"],a,[aria-label],span,div')].filter(visible).sort((a,b)=>a.childElementCount-b.childElementCount);
+      const x=controls.find(el=>{
+        const t=clean((el.innerText||el.textContent||'')+' '+(el.getAttribute&&el.getAttribute('aria-label')||'')).toLowerCase();
+        return t==='x'||t==='×'||/remove|delete|close/.test(t);
+      });
+      if(x){x.click();removed=true;break}
+      const t=clean(chip.innerText||chip.textContent||'');
+      if(chip.matches('button,[role="button"]')&&/[x×]\s*$/i.test(t)){chip.click();removed=true;break}
     }
-    if(!done&&chip.matches('button,[role="button"]')){chip.click();done=true}
-    if(done)await sleep(220);
+    if(removed)await sleep(250);
   }
 }
 async function chooseAttribute(root,dim){

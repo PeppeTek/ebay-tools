@@ -88,8 +88,15 @@ window.addEventListener('capitan-discount-updated',e=>{
 
 try{
   const id=itemId();if(!/^\d{9,12}$/.test(id))return;
-  const results=await Promise.all([jsonp('sell_like_variants_get',{itemId:id}),jsonp('sell_like_pricing_get')]);
-  const data=results[0],pricing=results[1];
+  let data=null;
+  const pre=window.__capitanSellLikePreflight;
+  if(pre&&pre.ok&&String(pre.itemId||'')===String(id))data=pre;
+  if(!data){
+    try{const mi=window.__capitanSellLikeModePromise?await window.__capitanSellLikeModePromise:null;if(mi&&mi.data&&mi.data.ok&&String(mi.data.itemId||'')===String(id))data=mi.data}catch(_){}
+  }
+  const pricingPromise=jsonp('sell_like_pricing_get');
+  if(!data)data=await jsonp('sell_like_variants_get',{itemId:id});
+  const pricing=await pricingPromise;
   if(!data||!data.ok)throw Error(data&&data.error?data.error:'Varianti non disponibili');
   if(!data.hasVariations){closePreopenedHelper();return;}
   currentData=data;currentRates=pricing&&pricing.ok?pricing.rates:null;
