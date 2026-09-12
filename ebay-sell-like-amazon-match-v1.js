@@ -17,10 +17,10 @@ const wrap=document.createElement('div');wrap.id=EXT_ID;wrap.style.cssText='padd
 if(actions)panel.insertBefore(wrap,actions);else (panel.querySelector('.b')||panel).appendChild(wrap);
 let findBtn=null,insertBtn=null;
 if(actions){
-  insertBtn=document.createElement('button');insertBtn.id='capitan-amazon-insert';insertBtn.textContent='Inserisci ASIN';insertBtn.style.cssText='height:42px;border:1px solid #ff8f00;border-radius:22px 0 0 22px;background:#ffa41c;color:#111;font-size:14px;cursor:pointer;width:100%';
-  findBtn=document.createElement('button');findBtn.id='capitan-amazon-find';findBtn.textContent='Trova su Amazon';findBtn.style.cssText='height:42px;border:1px solid #ff8f00;border-radius:0 22px 22px 0;background:#ffa41c;color:#111;font-size:14px;cursor:pointer;width:100%';
+  insertBtn=document.createElement('button');insertBtn.id='capitan-amazon-insert';insertBtn.textContent='Inserisci ASIN';insertBtn.style.cssText='height:42px;border:1px solid #111;border-radius:0 22px 22px 0;background:#ffd814;color:#111;font-size:14px;cursor:pointer;width:100%';
+  findBtn=document.createElement('button');findBtn.id='capitan-amazon-find';findBtn.textContent='Trova su Amazon';findBtn.style.cssText='height:42px;border:1px solid #111;border-radius:22px 0 0 22px;background:#ffa41c;color:#111;font-size:14px;cursor:pointer;width:100%';
   const slot=actions.querySelector('[data-amazon-actions-slot]');
-  if(slot){slot.appendChild(insertBtn);slot.appendChild(findBtn)}else{actions.insertBefore(findBtn,actions.firstChild);actions.insertBefore(insertBtn,findBtn)}
+  if(slot){slot.appendChild(findBtn);slot.appendChild(insertBtn)}else{actions.insertBefore(insertBtn,actions.firstChild);actions.insertBefore(findBtn,insertBtn)}
 }else{
   insertBtn=document.createElement('button');insertBtn.id='capitan-amazon-insert';insertBtn.textContent='Inserisci ASIN';insertBtn.style.cssText='width:100%;height:42px;border:1px solid #d5a500;border-radius:22px;background:#ffd814;color:#111;font-size:14px;cursor:pointer;margin-top:8px';
   findBtn=document.createElement('button');findBtn.id='capitan-amazon-find';findBtn.textContent='Trova su Amazon';findBtn.style.cssText='width:100%;height:42px;border:1px solid #ff8f00;border-radius:22px;background:#ffa41c;color:#111;font-size:14px;cursor:pointer;margin-top:8px';
