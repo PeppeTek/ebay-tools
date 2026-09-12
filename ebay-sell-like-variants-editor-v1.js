@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-editor-v7';
+const PATCH_ID='capitan-variants-editor-v8';
 const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
@@ -169,6 +169,17 @@ function selectedPanel(root){
   return null
 }
 function selectedText(root){const p=selectedPanel(root);return clean(p&&p.innerText||p&&p.textContent||'').toLowerCase()}
+function selectedHeaderRect(root){
+  const h=[...root.querySelectorAll('h1,h2,h3,h4,div,span')].filter(visible).find(x=>/attributes and options you(?:'|’)ve selected/i.test(clean(x.innerText||x.textContent||'')));
+  return h&&h.getBoundingClientRect? h.getBoundingClientRect():null
+}
+function selectedOptionExists(root,value){
+  const low=clean(value).toLowerCase();if(!low)return false;
+  const hr=selectedHeaderRect(root);if(!hr)return selectedText(root).includes(low);
+  const minX=hr.left-8;
+  const nodes=[...root.querySelectorAll('button,[role="button"],a,label,div,span,li')].filter(visible).filter(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);
+  return nodes.some(x=>{const r=x.getBoundingClientRect();return r.left>=minX&&r.top>=hr.bottom-8})
+}
 function optionsZone(root){
   const labels=[...root.querySelectorAll('div,span,h3,h4,label')].filter(visible).filter(x=>/^options$/i.test(clean(x.innerText||x.textContent||'')));
   for(const l of labels){
@@ -226,14 +237,18 @@ async function chooseAttribute(root,dim){
   return chipExists()
 }
 function isOptionSelected(root,value){
-  const low=clean(value).toLowerCase();if(!low)return false;
-  return selectedText(root).includes(low)
+  return selectedOptionExists(root,value)
 }
 async function selectSuggestedOption(root,value){
   const val=clean(value),low=val.toLowerCase();if(!val)return false;
   if(isOptionSelected(root,val))return true;
   const zone=optionsZone(root);
-  const candidates=[...zone.querySelectorAll('button,[role="button"],a,label,div,span')].filter(visible).filter(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);
+  const hr=selectedHeaderRect(root);
+  const candidates=[...zone.querySelectorAll('button,[role="button"],a,label,div,span')].filter(visible).filter(x=>{
+    if(clean(x.innerText||x.textContent||'').toLowerCase()!==low)return false;
+    if(!hr)return true;
+    return x.getBoundingClientRect().left<hr.left-8;
+  });
   if(!candidates.length)return false;
   const x=candidates.sort((a,b)=>a.childElementCount-b.childElementCount)[0];
   (x.closest('button,[role="button"],a,label')||x).click();
@@ -286,8 +301,8 @@ async function handleCreateVariationsPage(data){
     }
   }
   const expected=(data.dimensions||[]).flatMap(d=>d.values||[]).map(v=>clean(v).toLowerCase()).filter(Boolean);
-  const chosen=selectedText(root);
-  if(expected.length&&!expected.every(v=>chosen.includes(v))){console.warn('Not all expected options are in selected panel; Continue skipped',expected,chosen);return false}
+  const missing=expected.filter(v=>!selectedOptionExists(root,v));
+  if(missing.length){console.warn('Not all expected options are in selected panel; Continue skipped',missing);return false}
   const cont=[...root.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^Continue$/i.test(clean(x.innerText||x.textContent||'')));
   if(cont){cont.click();await sleep(1000);return true}
   return false
