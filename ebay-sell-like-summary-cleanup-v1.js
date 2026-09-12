@@ -14,6 +14,10 @@ function cleanup(){
     const t=clean(r.innerText||r.textContent||'');
     if(/^(Titolo\s*\/\s*Item Specifics|Titolo|Title|Categoria|Category|Item Specifics|Policy|Policies)\b/i.test(t))r.remove();
   });
+  [...p.querySelectorAll('.row.muted,.row')].forEach(r=>{
+    const t=clean(r.innerText||r.textContent||'');
+    if(/^Titolo, categoria, Item Specifics e policy non vengono toccati\. Il pulsante [“"]List it[”"] resta manuale\.?$/i.test(t))r.remove();
+  });
 
   // Keep discount percentage on its own static row, for mono and variant layouts.
   let discountRow=p.querySelector('#capitan-discount-row');
