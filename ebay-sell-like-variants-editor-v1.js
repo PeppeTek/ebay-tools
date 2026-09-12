@@ -1,14 +1,20 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-editor-v2';
+const PATCH_ID='capitan-variants-editor-v3';
+const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const clean=v=>String(v==null?'':v).replace(/\s+/g,' ').trim();
 const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
-function payload(){return window.__capitanSellLikeVariants&&window.__capitanSellLikeVariants.data||null}
-function saleFor(v){const state=window.__capitanSellLikeVariants||{};const d=Number(state.discountRate);const discount=isFinite(d)?d:.02;const source=Number(v&&v.sourcePrice);return isFinite(source)&&source>0?Math.round(source*(1-discount)*100)/100:null}
+function state(){
+  if(window.__capitanSellLikeVariants&&window.__capitanSellLikeVariants.data)return window.__capitanSellLikeVariants;
+  try{const raw=localStorage.getItem(VAR_STATE_KEY);if(raw){const s=JSON.parse(raw);if(s&&s.data)return s}}catch(_){}
+  return null
+}
+function payload(){const s=state();return s&&s.data||null}
+function saleFor(v){const st=state()||{};const d=Number(st.discountRate);const discount=isFinite(d)?d:.02;const source=Number(v&&v.sourcePrice);return isFinite(source)&&source>0?Math.round(source*(1-discount)*100)/100:null}
 function setNative(el,value){
   if(!el)return false;
   const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
@@ -114,6 +120,69 @@ async function ensureDimension(scope,dim){
   text=clean(scope.innerText||scope.textContent||'').toLowerCase();
   return clean(dim.name)&&text.includes(clean(dim.name).toLowerCase())
 }
+function isCreateVariationsPage(){
+  const t=clean(document.body.innerText||document.body.textContent||'');
+  return /create your variations/i.test(t)&&/attributes/i.test(t)&&/options/i.test(t)&&/continue/i.test(t)
+}
+function removeUnwantedAttributeChips(scope,data){
+  const wanted=new Set((data.dimensions||[]).map(d=>clean(d.name).toLowerCase()));
+  const chips=[...scope.querySelectorAll('button,[role="button"],span,div')].filter(visible).filter(x=>{
+    const t=clean(x.innerText||x.textContent||'');
+    return t.length>0&&t.length<80&&/\s*[×x]\s*$/.test(t)
+  });
+  for(const chip of chips){
+    const raw=clean(chip.innerText||chip.textContent||'');
+    const name=clean(raw.replace(/\s*[×x]\s*$/,''));
+    if(!name||wanted.has(name.toLowerCase()))continue;
+    const close=[...chip.querySelectorAll('button,[role="button"]')].find(visible);
+    if(close)close.click();else chip.click();
+  }
+}
+async function addWantedAttribute(scope,dim){
+  const low=clean(dim.name).toLowerCase();
+  if(clean(scope.innerText||'').toLowerCase().includes(low))return true;
+  const add=[...scope.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^\+?\s*add$/i.test(clean(x.innerText||x.textContent||''))||/add attribute/i.test(clean(x.innerText||x.textContent||'')));
+  if(!add)return false;
+  add.click();await sleep(220);
+  let option=[...document.querySelectorAll('[role="option"],li,button,label')].filter(visible).find(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);
+  if(option){option.click();await sleep(220);return true}
+  const search=[...document.querySelectorAll('input')].filter(visible).find(x=>/attribute|search|add/i.test(clean([x.placeholder,x.getAttribute('aria-label')].join(' '))));
+  if(search){setNative(search,dim.name);await sleep(150);option=[...document.querySelectorAll('[role="option"],li,button,label')].filter(visible).find(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);if(option){option.click();await sleep(220);return true}}
+  return false
+}
+async function addOwnOptions(scope,dim){
+  const vals=(dim.values||[]).map(clean).filter(Boolean);if(!vals.length)return false;
+  let text=clean(scope.innerText||scope.textContent||'').toLowerCase();
+  if(vals.every(v=>text.includes(v.toLowerCase())))return true;
+  const create=[...scope.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/create your own|add option|add value/i.test(clean(x.innerText||x.textContent||'')));
+  if(create){create.click();await sleep(220)}
+  let input=[...document.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible).find(x=>/option|value|variation/i.test(clean([x.placeholder,x.getAttribute('aria-label'),x.name,x.id].join(' '))));
+  if(!input){
+    const dlg=variationDialog()||scope;
+    input=[...dlg.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible)[0]||null
+  }
+  if(input){
+    for(const v of vals){await submitToken(input,v)}
+  }else{
+    for(const v of vals)clickNamed(scope,v)
+  }
+  const done=[...document.querySelectorAll('button,[role="button"]')].filter(visible).find(x=>/^(done|save|add|apply|confirm)$/i.test(clean(x.innerText||x.textContent||'')));
+  if(done){done.click();await sleep(250)}
+  text=clean(document.body.innerText||document.body.textContent||'').toLowerCase();
+  return vals.some(v=>text.includes(v.toLowerCase()))
+}
+async function handleCreateVariationsPage(data){
+  if(!isCreateVariationsPage())return false;
+  const scope=variationEditorSurface(data)||document.body;
+  removeUnwantedAttributeChips(scope,data);
+  for(const dim of data.dimensions||[]){
+    await addWantedAttribute(scope,dim);
+    await addOwnOptions(scope,dim);
+  }
+  const cont=[...document.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^continue$/i.test(clean(x.innerText||x.textContent||'')));
+  if(cont){cont.click();await sleep(900);return true}
+  return false
+}
 async function createDimensions(scope,data){
   let touched=false;
   for(const dim of data.dimensions||[]){if(await ensureDimension(scope,dim))touched=true}
@@ -165,7 +234,8 @@ async function setRowImages(scope,v){
 async function assignImages(scope,data){let n=0;for(const v of data.variants||[]){if(await setRowImages(scope,v))n++}return n}
 async function run(data){
   if(!data||!data.hasVariations)return;
-  const scope=await openEditor(data);if(!scope){console.warn('Variations editor non trovato');return}
+  if(isCreateVariationsPage())await handleCreateVariationsPage(data);
+  const scope=variationEditorSurface(data)||await openEditor(data);if(!scope){console.warn('Variations editor non trovato');return}
   await createDimensions(scope,data);
   let active=variationEditorSurface(data)||variationDialog()||scope;
   let prices=0;
@@ -181,7 +251,7 @@ async function run(data){
   if(save){save.click();await sleep(700)}
 }
 async function start(){
-  for(let i=0;i<40;i++){const d=payload();if(d){await run(d);return}await sleep(200)}
+  for(let i=0;i<60;i++){const d=payload();if(d){await run(d);return}await sleep(200)}
 }
 window.addEventListener('capitan-variants-ready',e=>{if(e.detail&&e.detail.data)run(e.detail.data)});
 start();
