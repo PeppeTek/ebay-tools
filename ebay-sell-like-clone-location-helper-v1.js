@@ -26,7 +26,7 @@ function patchUi(){
     const box=document.createElement('div');
     box.setAttribute('data-ebay-actions','1');
     box.style.cssText='padding:12px 14px;border-top:1px solid #ddd;display:grid;gap:8px;background:#fff;position:sticky;bottom:0;';
-    box.innerHTML='<div data-amazon-actions-slot style="display:grid;grid-template-columns:1fr 1fr;gap:3px;background:#ffa41c;border-radius:24px;overflow:hidden"></div><div data-ebay-primary-pair style="display:grid;grid-template-columns:1fr 1fr;gap:3px;background:#fff;border-radius:24px;overflow:hidden"><button data-ebay-action="list" style="height:44px;border:0;border-radius:24px 0 0 24px;background:#1668e8;color:#fff;font-weight:700;font-size:14px;">List it</button><button data-ebay-action="save" style="height:44px;border:1px solid #111;border-left:0;border-radius:0 24px 24px 0;background:#fff;color:#111;font-size:14px;">Save for later</button></div>';
+    box.innerHTML='<div data-amazon-actions-slot style="display:grid;grid-template-columns:1fr 1fr;gap:4px"></div><button data-ebay-action="list" style="height:44px;border:0;border-radius:24px;background:#1668e8;color:#fff;font-weight:700;font-size:14px;">List it</button><div data-ebay-secondary-pair style="display:grid;grid-template-columns:1fr 1fr;gap:4px"><button data-ebay-action="save" style="height:42px;border:1px solid #111;border-radius:22px 0 0 22px;background:#fff;color:#111;font-size:14px;">Save for later</button><button data-ebay-action="preview" style="height:42px;border:1px solid #111;border-radius:0 22px 22px 0;background:#fff;color:#111;font-size:14px;">Preview</button></div>';
     p.appendChild(box);
     box.addEventListener('click',e=>{const b=e.target.closest('button[data-ebay-action]');if(!b)return;triggerNativeAction(b.dataset.ebayAction);});
   }
@@ -41,7 +41,7 @@ function patchUi(){
   return true;
 }
 function nativeButtons(){const p=panel();return [...document.querySelectorAll('button,a,[role="button"]')].filter(x=>visible(x)&&(!p||!p.contains(x)));}
-function triggerNativeAction(kind){const map={list:/^list it$/i,save:/^save for later$/i};const btn=nativeButtons().find(x=>map[kind].test(clean(x.innerText||x.textContent||x.getAttribute('aria-label')||'')));if(btn){btn.click();return true}alert('Pulsante eBay non trovato: '+kind);return false;}
+function triggerNativeAction(kind){const map={list:/^list it$/i,save:/^save for later$/i,preview:/^preview$/i};const btn=nativeButtons().find(x=>map[kind].test(clean(x.innerText||x.textContent||x.getAttribute('aria-label')||'')));if(btn){btn.click();return true}alert('Pulsante eBay non trovato: '+kind);return false;}
 
 function getLocationRow(){const p=panel();if(!p)return null;return [...p.querySelectorAll('#steps .row')].find(r=>/^Item Location:/i.test(clean(r.innerText||r.textContent)))||null;}
 function parseDisplayFromRow(row){if(!row)return'';const t=clean(row.innerText||row.textContent).replace(/^Item Location:\s*/i,'');const m=t.match(/sorgente:\s*(.*?)(?:\s+—|$)/i);return clean(m?m[1]:t.replace(/campo eBay.*$/i,''));}
