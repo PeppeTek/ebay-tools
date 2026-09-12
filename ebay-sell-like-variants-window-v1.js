@@ -95,6 +95,7 @@ async function openInNewWindow(){
   }catch(_){}
   if(!win)return false;
   window.__capitanPreopenedVariantWindow=win;
+  try{win.resizeTo(1100,820);win.moveTo(30,30)}catch(_){}
   try{win.location.replace(location.href)}catch(_){try{win.location.href=location.href}catch(__){return false}}
   try{win.focus()}catch(_){}
   const ok=await automateChild(win);
