@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-window-v2';
+const PATCH_ID='capitan-variants-window-v3';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const m=document.createElement('span');m.id=PATCH_ID;m.style.display='none';document.documentElement.appendChild(m);
@@ -9,16 +9,35 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const clean=v=>String(v==null?'':v).replace(/\s+/g,' ').trim();
 const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
 function state(){try{return window.__capitanSellLikeVariants||JSON.parse(localStorage.getItem(STATE_KEY)||'null')}catch(_){return null}}
+function variationHeading(doc){
+  const nodes=[...doc.querySelectorAll('h1,h2,h3,h4,legend,span,div')].filter(visible).filter(x=>/^variations?$/i.test(clean(x.innerText||x.textContent||'')));
+  return nodes.sort((a,b)=>{
+    const ta=clean(a.innerText||a.textContent||'').length,tb=clean(b.innerText||b.textContent||'').length;
+    return ta-tb;
+  })[0]||null
+}
 function section(doc){
-  const nodes=[...doc.querySelectorAll('section,div')];
-  return nodes.filter(x=>!x.closest?.('#'+PANEL_ID)).find(x=>{
-    const t=clean(x.innerText||x.textContent||'');
-    return /\bVARIATIONS\b/i.test(t)&&/Save time and money by listing multiple variations/i.test(t)&&t.length<5000;
-  })||null
+  const h=variationHeading(doc);if(!h)return null;
+  const candidates=[];
+  let p=h;
+  for(let i=0;i<8&&p;i++,p=p.parentElement){
+    if(p.closest&&p.closest('#'+PANEL_ID))continue;
+    const t=clean(p.innerText||p.textContent||'');
+    if(/Save time and money by listing multiple variations/i.test(t)&&t.length<4500)candidates.push(p);
+  }
+  if(!candidates.length)return null;
+  return candidates.sort((a,b)=>clean(a.innerText||a.textContent||'').length-clean(b.innerText||b.textContent||'').length)[0]
 }
 function editButton(doc){
-  const sec=section(doc);if(!sec)return null;
-  return [...sec.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^edit$/i.test(clean(x.innerText||x.textContent||''))||/edit.*variation|variation.*edit/i.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))))||null
+  const sec=section(doc),h=variationHeading(doc);if(!sec||!h)return null;
+  const edits=[...sec.querySelectorAll('button,[role="button"],a')].filter(visible).filter(x=>/^edit$/i.test(clean(x.innerText||x.textContent||''))||/edit.*variation|variation.*edit/i.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))));
+  if(!edits.length)return null;
+  const hr=h.getBoundingClientRect(),hy=(hr.top+hr.bottom)/2;
+  return edits.sort((a,b)=>{
+    const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
+    const ay=(ar.top+ar.bottom)/2,by=(br.top+br.bottom)/2;
+    return Math.abs(ay-hy)-Math.abs(by-hy);
+  })[0]
 }
 async function waitDoc(win,re,ms=15000){
   const end=Date.now()+ms;
