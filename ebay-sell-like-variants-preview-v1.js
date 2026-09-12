@@ -19,10 +19,26 @@ function money(v,c){return v==null||!isFinite(Number(v))?'—':Number(v).toFixed
 function targetContainer(){const p=document.getElementById(PANEL_ID),steps=p?.querySelector('#steps');if(!steps)return null;return {p,steps}}
 function saveVariantState(){
   if(!currentData)return null;
-  const st={data:currentData,rates:currentRates,discountRate:currentDiscount};
+  const st={data:currentData,rates:currentRates,discountRate:currentDiscount,savedAt:Date.now()};
   window.__capitanSellLikeVariants=st;
   try{localStorage.setItem(VAR_STATE_KEY,JSON.stringify(st))}catch(_){}
   return st
+}
+function closePreopenedHelper(){
+  try{const w=window.__capitanPreopenedVariantWindow;if(w&&!w.closed)w.close()}catch(_){}
+}
+async function startAutomaticVariantFlow(){
+  saveVariantState();
+  for(let i=0;i<40;i++){
+    if(typeof window.__capitanAutoConfigureVariants==='function'){
+      const ok=await window.__capitanAutoConfigureVariants();
+      const s=document.querySelector('#capitan-variants-auto-status');
+      if(s)s.textContent=ok?'Configurazione varianti avviata automaticamente.':'Configurazione automatica non completata: verifica la finestra Variations.';
+      return;
+    }
+    await sleep(100);
+  }
+  const s=document.querySelector('#capitan-variants-auto-status');if(s)s.textContent='Modulo varianti non disponibile.';
 }
 let variantMode=false;
 function enforceVariantMode(){
@@ -48,13 +64,7 @@ function render(data,rates,discountRate){
   ctx.p.querySelector('#capitan-variants-preview')?.remove();
   const wrap=document.createElement('div');wrap.id='capitan-variants-preview';wrap.className='row';wrap.style.padding='7px 0';
   const rows=data.variants.map(v=>{const source=Number(v.sourcePrice),sale=isFinite(source)&&source>0?Math.round(source*(1-Number(discountRate||0))*100)/100:null,be=calcBreakEven(sale,rates);return '<tr><td style="padding:7px 6px;border-bottom:1px solid #eee;vertical-align:top;overflow-wrap:anywhere;word-break:break-word">'+esc(v.title||('Variante '+v.index))+'</td><td style="padding:7px 6px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:#137333;font-weight:700">'+esc(money(sale,data.currency))+'</td><td style="padding:7px 6px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:#1668e8;font-weight:700">'+esc(money(be,data.currency))+'</td></tr>'}).join('');
-  wrap.innerHTML='<div style="font-weight:700;color:#111;padding:1px 0 8px">Varianti: <span style="color:#137333">'+data.variants.length+' rilevate</span></div><div style="max-height:300px;overflow-y:auto;overflow-x:hidden;border:1px solid #e2e5e9;border-radius:8px"><table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px"><colgroup><col style="width:52%"><col style="width:24%"><col style="width:24%"></colgroup><thead><tr style="position:sticky;top:0;background:#fafafa;z-index:1"><th style="padding:7px 6px;text-align:left">Variante</th><th style="padding:7px 6px;text-align:right">Prezzo di vendita</th><th style="padding:7px 6px;text-align:right">Break Even Price</th></tr></thead><tbody>'+rows+'</tbody></table></div><button type="button" id="capitan-configure-variants" style="width:100%;height:38px;margin-top:8px;border:0;border-radius:20px;background:#1668e8;color:#fff;font-weight:700;font-size:12px;cursor:pointer">Configura varianti su eBay</button>';
-  const configBtn=wrap.querySelector('#capitan-configure-variants');
-  if(configBtn)configBtn.addEventListener('click',()=>{
-    saveVariantState();
-    if(typeof window.__capitanOpenVariantsWindow==='function')window.__capitanOpenVariantsWindow();
-    else alert('Modulo Variants non ancora pronto. Riprova tra un secondo.');
-  });
+  wrap.innerHTML='<div style="font-weight:700;color:#111;padding:1px 0 8px">Varianti: <span style="color:#137333">'+data.variants.length+' rilevate</span></div><div style="max-height:300px;overflow-y:auto;overflow-x:hidden;border:1px solid #e2e5e9;border-radius:8px"><table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px"><colgroup><col style="width:52%"><col style="width:24%"><col style="width:24%"></colgroup><thead><tr style="position:sticky;top:0;background:#fafafa;z-index:1"><th style="padding:7px 6px;text-align:left">Variante</th><th style="padding:7px 6px;text-align:right">Prezzo di vendita</th><th style="padding:7px 6px;text-align:right">Break Even Price</th></tr></thead><tbody>'+rows+'</tbody></table></div><div id="capitan-variants-auto-status" style="font-size:10px;color:#777;padding:6px 1px 0">Configurazione varianti eBay in corso...</div>';
   const discount=ctx.p.querySelector('#capitan-discount-row');
   if(discount)discount.insertAdjacentElement('afterend',wrap);
   else ctx.steps.prepend(wrap);
@@ -81,11 +91,12 @@ try{
   const results=await Promise.all([jsonp('sell_like_variants_get',{itemId:id}),jsonp('sell_like_pricing_get')]);
   const data=results[0],pricing=results[1];
   if(!data||!data.ok)throw Error(data&&data.error?data.error:'Varianti non disponibili');
-  if(!data.hasVariations)return;
+  if(!data.hasVariations){closePreopenedHelper();return;}
   currentData=data;currentRates=pricing&&pricing.ok?pricing.rates:null;
   if(currentRates&&isFinite(Number(currentRates.discountRate)))currentDiscount=Number(currentRates.discountRate);else if(isFinite(Number(data.discountRate)))currentDiscount=Number(data.discountRate);
   render(currentData,currentRates,currentDiscount);
   const savedState=saveVariantState();
   window.dispatchEvent(new CustomEvent('capitan-variants-ready',{detail:savedState}));
+  startAutomaticVariantFlow();
 }catch(err){console.warn('Sell Like variants preview',err)}
 })();

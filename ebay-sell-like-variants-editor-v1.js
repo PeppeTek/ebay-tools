@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-editor-v4';
+const PATCH_ID='capitan-variants-editor-v5';
 const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
@@ -155,13 +155,20 @@ async function removeExistingAttributes(root,data){
       return t===name||t===name+' ×'||t===name+' x';
     });
     if(!label)continue;
-    let holder=label;
-    for(let i=0;i<4&&holder;i++,holder=holder.parentElement){
-      const remove=[...holder.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>{
-        const t=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''));
-        return /remove|delete|close|×|\bx\b/i.test(t)&&(!clean(x.innerText||x.textContent||'')||clean(x.innerText||x.textContent||'')==='×'||clean(x.innerText||x.textContent||'').toLowerCase()==='x');
+    let holder=label,removed=false;
+    // First try a close/remove control inside the selected chip.
+    for(let i=0;i<4&&holder&&!removed;i++,holder=holder.parentElement){
+      const controls=[...holder.querySelectorAll('button,[role="button"],a')].filter(visible);
+      const remove=controls.find(x=>{
+        const t=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||'')).toLowerCase();
+        return t==='x'||t==='×'||/remove|delete|close/.test(t);
       });
-      if(remove){remove.click();await sleep(180);break}
+      if(remove){remove.click();await sleep(180);removed=true}
+    }
+    // Some eBay chips are themselves buttons with the trailing x.
+    if(!removed){
+      const t=clean(label.innerText||label.textContent||'');
+      if(/\s+[x×]$/i.test(t)){label.click();await sleep(180)}
     }
   }
 }
@@ -194,31 +201,42 @@ async function chooseAttribute(root,dim){
   return bodyText().includes(wanted.toLowerCase())
 }
 async function addOneCustomOption(root,value){
-  const low=clean(value).toLowerCase();if(!low)return false;
-  if(clean(root.innerText||root.textContent||'').toLowerCase().includes(low))return true;
-  const before=new Set([...document.querySelectorAll('input,textarea')].filter(visible));
-  if(!clickExact(root,'+ Create your own')&&!clickExact(root,'Create your own')){
-    const create=[...root.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/create your own|add option|add value/i.test(clean(x.innerText||x.textContent||'')));
-    if(!create)return false;create.click();
+  const val=clean(value),low=val.toLowerCase();if(!val)return false;
+  const rootText=()=>clean(root.innerText||root.textContent||'').toLowerCase();
+  if(rootText().includes(low))return true;
+
+  // eBay currently exposes: "+ Create your own" + text input + "Add".
+  const createLabel=[...root.querySelectorAll('a,button,[role="button"],span,div')].filter(visible).find(x=>/create your own/i.test(clean(x.innerText||x.textContent||'')));
+  let zone=createLabel;
+  for(let i=0;i<4&&zone;i++,zone=zone.parentElement){
+    const input=zone.querySelector&&[...zone.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible)[0];
+    const add=zone.querySelector&&[...zone.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^add$/i.test(clean(x.innerText||x.textContent||'')));
+    if(input&&add){
+      setNative(input,val);await sleep(80);add.click();
+      for(let j=0;j<20;j++){await sleep(100);if(rootText().includes(low))return true}
+      return false;
+    }
   }
-  await sleep(180);
-  let input=await waitUntil(()=>{
-    const now=[...document.querySelectorAll('input[type="text"],input:not([type]),textarea,[contenteditable="true"]')].filter(visible);
-    return now.find(x=>!before.has(x))||now.find(x=>/option|value|variation|custom/i.test(clean([x.placeholder,x.getAttribute&&x.getAttribute('aria-label'),x.name,x.id].join(' '))));
+
+  // Fallback: click Create your own if the input is initially hidden.
+  if(createLabel){(createLabel.closest('button,[role="button"],a')||createLabel).click();await sleep(180)}
+  const input=await waitUntil(()=>{
+    const list=[...root.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible);
+    return list.find(x=>/option|value|variation|custom/i.test(clean([x.placeholder,x.getAttribute('aria-label'),x.name,x.id].join(' '))))||list[list.length-1]||null
   },2500);
   if(!input)return false;
-  if(input.getAttribute&&input.getAttribute('contenteditable')==='true'){
-    input.focus();input.textContent=value;input.dispatchEvent(new InputEvent('input',{bubbles:true,data:value,inputType:'insertText'}));
-  }else setNative(input,value);
-  await sleep(100);
-  input.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',code:'Enter'}));
-  input.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Enter',code:'Enter'}));
-  await sleep(220);
-  if(clean(root.innerText||root.textContent||'').toLowerCase().includes(low))return true;
-  const overlay=variationDialog()||input.closest('[role="dialog"],[aria-modal="true"],form,section,div')||document.body;
-  const commit=[...overlay.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^(add|save|done|apply|confirm|create)$/i.test(clean(x.innerText||x.textContent||'')));
-  if(commit){commit.click();await sleep(250)}
-  return clean(root.innerText||root.textContent||'').toLowerCase().includes(low)
+  setNative(input,val);await sleep(80);
+  let zone2=input.parentElement;let add=null;
+  for(let i=0;i<5&&zone2&&!add;i++,zone2=zone2.parentElement){
+    add=[...zone2.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^add$/i.test(clean(x.innerText||x.textContent||'')))||null
+  }
+  if(add)add.click();
+  else{
+    input.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',code:'Enter'}));
+    input.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Enter',code:'Enter'}));
+  }
+  for(let j=0;j<20;j++){await sleep(100);if(rootText().includes(low))return true}
+  return false
 }
 async function handleCreateVariationsPage(data){
   if(!isCreateVariationsPage())return false;
@@ -291,7 +309,10 @@ async function setRowImages(scope,v){
 async function assignImages(scope,data){let n=0;for(const v of data.variants||[]){if(await setRowImages(scope,v))n++}return n}
 async function run(data){
   if(!data||!data.hasVariations)return;
-  if(isCreateVariationsPage())await handleCreateVariationsPage(data);
+  if(isCreateVariationsPage()){
+    const moved=await handleCreateVariationsPage(data);
+    if(moved)return;
+  }
   const scope=variationEditorSurface(data)||await openEditor(data);if(!scope){console.warn('Variations editor non trovato');return}
   await createDimensions(scope,data);
   let active=variationEditorSurface(data)||variationDialog()||scope;
