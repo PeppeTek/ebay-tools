@@ -26,7 +26,7 @@ function patchUi(){
     const box=document.createElement('div');
     box.setAttribute('data-ebay-actions','1');
     box.style.cssText='padding:12px 14px;border-top:1px solid #ddd;display:grid;gap:8px;background:#fff;position:sticky;bottom:0;';
-    box.innerHTML='<div data-amazon-actions-slot style="display:grid;grid-template-columns:1fr 1fr;gap:4px"></div><button data-ebay-action="list" style="height:44px;border:1px solid #111;border-radius:24px;background:#1668e8;color:#fff;font-weight:700;font-size:14px;">List it</button><div data-ebay-secondary-pair style="display:grid;grid-template-columns:1fr 1fr;gap:4px"><button data-ebay-action="save" style="height:42px;border:1px solid #111;border-radius:22px 0 0 22px;background:#fff;color:#111;font-size:14px;">Save for later</button><button data-ebay-action="preview" style="height:42px;border:1px solid #111;border-radius:0 22px 22px 0;background:#f1f3f4;color:#111;font-size:14px;">Preview</button></div>';
+    box.innerHTML='<div data-amazon-actions-slot style="display:grid;grid-template-columns:1fr 1fr;gap:4px"></div><button data-ebay-action="list" style="height:44px;border:0;border-radius:24px;background:#1668e8;color:#fff;font-weight:700;font-size:14px;">List it</button><div data-ebay-secondary-pair style="display:grid;grid-template-columns:1fr 1fr;gap:4px"><button data-ebay-action="save" style="height:42px;border:1px solid #111;border-radius:22px 0 0 22px;background:#fff;color:#111;font-size:14px;">Save for later</button><button data-ebay-action="preview" style="height:42px;border:1px solid #111;border-radius:0 22px 22px 0;background:#f1f3f4;color:#111;font-size:14px;">Preview</button></div>';
     p.appendChild(box);
     box.addEventListener('click',e=>{const b=e.target.closest('button[data-ebay-action]');if(!b)return;triggerNativeAction(b.dataset.ebayAction);});
   }
@@ -103,7 +103,8 @@ async function setChoice(el,value,isCountry=false){
 function locationAnchor(){const all=[...document.querySelectorAll('h1,h2,h3,h4,label,legend,span,div')].filter(visible);return all.find(x=>/^(item location|located in)$/i.test(clean(x.innerText||x.textContent)))||all.find(x=>/item location/i.test(clean(x.innerText||x.textContent))&&clean(x.innerText||x.textContent).length<120)||null;}
 function settingsRoot(){const heads=[...document.querySelectorAll('h1,h2,h3,div,span')].filter(visible).filter(x=>/^your settings$/i.test(clean(x.innerText||x.textContent)));for(const h of heads){let p=h;for(let i=0;i<8&&p;i++,p=p.parentElement){if(/item location/i.test(clean(p.innerText||p.textContent))&&controlsIn(p).length>=2)return p}}return document.querySelector('[role="dialog"]')||document;}
 async function waitForLocationForm(){for(let i=0;i<40;i++){const root=settingsRoot();if(fieldByCaption(/^city\s*,\s*state$/i,root)||fieldByCaption(/^zip code$/i,root)||fieldByCaption(/^country or region$/i,root))return root;await sleep(120)}return settingsRoot();}
-async function openLocationEditor(){const anchor=locationAnchor();if(anchor){let p=anchor;for(let i=0;i<8&&p;i++,p=p.parentElement){const btn=[...p.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/edit|change|update/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.innerText||x.textContent||''))));if(btn){btn.click();break}}}return await waitForLocationForm();}
+async function openLocationEditor(){const anchor=locationAnchor();if(anchor){let p=anchor;for(let i=0;i<8&&p;i++,p=p.parentElement){const btn=[...p.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/edit|change|update/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.innerText||x.textContent||''))));if(btn){btn.click();break}}}const root=await waitForLocationForm();try{const dlg=(root&&root.closest&&root.closest('[role="dialog"],dialog'))||document.querySelector('[role="dialog"],dialog');if(dlg){dlg.dataset.capitanHiddenLocation='1';dlg.style.opacity='0';dlg.style.pointerEvents='none';dlg.style.transition='none';const parent=dlg.parentElement;if(parent){parent.dataset.capitanHiddenLocationParent='1';parent.style.background='transparent'}}}catch(_){}return root;}
+function restoreHiddenLocationEditor(){try{document.querySelectorAll('[data-capitan-hidden-location]').forEach(x=>{x.style.opacity='';x.style.pointerEvents='';x.style.transition='';delete x.dataset.capitanHiddenLocation});document.querySelectorAll('[data-capitan-hidden-location-parent]').forEach(x=>{x.style.background='';delete x.dataset.capitanHiddenLocationParent})}catch(_){}}
 function findDoneButton(root=document){return [...document.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/^done$/i.test(clean(x.innerText||x.textContent||x.getAttribute('aria-label')||'')))||[...root.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/^(done|save|apply|confirm|update)$/i.test(clean(x.innerText||x.textContent||x.getAttribute('aria-label')||'')))||null;}
 function summaryText(){
   const p=panel();
@@ -117,8 +118,9 @@ function summaryMatches(parts,postal){
   return (!city||t.includes(city))&&(!state||t.includes(state))&&(!zip||t.includes(zip));
 }
 async function saveAndVerify(root,parts,postal){
-  const done=findDoneButton(root);if(!done)return false;done.click();
-  for(let i=0;i<30;i++){await sleep(180);if(summaryMatches(parts,postal))return true;}
+  const done=findDoneButton(root);if(!done){restoreHiddenLocationEditor();return false}done.click();
+  for(let i=0;i<30;i++){await sleep(180);if(summaryMatches(parts,postal)){restoreHiddenLocationEditor();return true}}
+  restoreHiddenLocationEditor();
   return false;
 }
 async function applyLocation(parts){
@@ -138,7 +140,7 @@ async function applyLocation(parts){
 
   const cityOk=!city||!cityState||clean(city.value).toLowerCase()===clean(cityState).toLowerCase();
   const zipOk=!zip||!resolvedPostal||clean(zip.value)===clean(resolvedPostal);
-  if(!(cityOk&&zipOk))return {ok:false,reason:'i campi eBay non hanno mantenuto i nuovi valori'};
+  if(!(cityOk&&zipOk)){restoreHiddenLocationEditor();return {ok:false,reason:'i campi eBay non hanno mantenuto i nuovi valori'}};
 
   const ok=await saveAndVerify(root,parts,resolvedPostal);
   return {ok:ok,postal:resolvedPostal,reason:ok?'':'eBay ha ripristinato la location precedente dopo Done'};
@@ -154,6 +156,6 @@ try{
   const result=await applyLocation(parts);
   if(result.ok)writeLocation(row,'ok',parts.city+', '+parts.stateOrProvince+', '+result.postal+', '+parts.country);
   else writeLocation(row,'warn','sorgente: '+display+' — '+result.reason);
-}catch(e){console.warn('Sell Like This location',e);writeLocation(row,'warn','sorgente: '+display+' — copia automatica non riuscita');}
+}catch(e){restoreHiddenLocationEditor();console.warn('Sell Like This location',e);writeLocation(row,'warn','sorgente: '+display+' — copia automatica non riuscita');}
 patchUi();
 })();
