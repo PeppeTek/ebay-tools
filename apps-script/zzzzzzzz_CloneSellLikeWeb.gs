@@ -10,7 +10,7 @@
  * - images are returned in original eBay order for browser-side upload.
  */
 const SELL_LIKE_CLONE = Object.freeze({
-  backendVersion: 'v2.5-category-shipping-policy',
+  backendVersion: 'v2.4-clean-specs-location',
   action: 'clone_prepare',
   defaultModel: 'gpt-5.6-luna',
   quantity: 3,
@@ -102,8 +102,6 @@ function sellLikeClonePrepare_(itemId) {
 
   const country = String(parsed.country || '').toUpperCase() || 'US';
   const locationParts = sellLikeCloneLocationParts_(fetched, parsed);
-  const categoryName = sellLikeCloneCategoryName_(fetched, parsed);
-  const shippingInfo = sellLikeCloneShippingInfo_(fetched, parsed);
 
   return {
     ok: true,
@@ -112,7 +110,7 @@ function sellLikeClonePrepare_(itemId) {
     country: country,
     title: String(parsed.title || ''),
     categoryId: String(parsed.categoryId || parsed.categoryID || ''),
-    categoryName: String(categoryName || ''),
+    categoryName: String(parsed.categoryName || ''),
     aspects: aspects,
     sourcePrice: Number(price.toFixed(2)),
     targetPrice: Number((price * (1 - SELL_LIKE_CLONE.discountRate)).toFixed(2)),
@@ -123,9 +121,6 @@ function sellLikeClonePrepare_(itemId) {
     aiModel: ai.model,
     itemLocation: locationParts.display,
     itemLocationParts: locationParts,
-    shippingMaxBusinessDays: shippingInfo.maxBusinessDays,
-    shippingPolicyTarget: shippingInfo.targetPolicy,
-    shippingEvidence: shippingInfo.evidence,
     technicalSpecsCount: technicalRows.length,
     untouched: ['Title','Category','Item Specifics','Policies'],
     source: fetched && fetched.source || ''
@@ -343,156 +338,6 @@ function sellLikeCloneLocationParts_(fetched, parsed) {
   }
 
   return out;
-}
-
-
-function sellLikeCloneCategoryName_(fetched, parsed) {
-  function clean(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
-  function usable(v) {
-    v = clean(v);
-    if (!v) return '';
-    if (/learn more|opens in a new window|sales tax|^edit$|feedback/i.test(v)) return '';
-    return v;
-  }
-  function lastPath(v) {
-    v = usable(v);
-    if (!v) return '';
-    const parts = v.split(/\s*(?:>|\||\/)\s*/).map(clean).filter(Boolean);
-    return usable(parts.length ? parts[parts.length - 1] : v);
-  }
-
-  const direct = [
-    parsed && parsed.categoryName,
-    parsed && parsed.primaryCategoryName,
-    parsed && parsed.categoryTitle,
-    parsed && parsed.category,
-    fetched && fetched.item && fetched.item.categoryName,
-    fetched && fetched.item && fetched.item.primaryCategoryName,
-    fetched && fetched.item && fetched.item.category && fetched.item.category.categoryName
-  ];
-  for (let i = 0; i < direct.length; i++) {
-    const v = usable(direct[i]);
-    if (v) return v;
-  }
-
-  const paths = [
-    parsed && parsed.categoryPath,
-    parsed && parsed.categoryBreadcrumb,
-    parsed && parsed.categoryTree,
-    fetched && fetched.item && fetched.item.categoryPath,
-    fetched && fetched.item && fetched.item.categoryBreadcrumb
-  ];
-  for (let i = 0; i < paths.length; i++) {
-    const v = lastPath(paths[i]);
-    if (v) return v;
-  }
-
-  const sources = [
-    fetched && fetched.xmlText,
-    fetched && fetched.htmlText,
-    fetched && fetched.rawText
-  ].map(function(x){ return String(x || ''); }).filter(Boolean);
-
-  for (let i = 0; i < sources.length; i++) {
-    const s = sources[i];
-    let m = s.match(/<CategoryName(?:\s[^>]*)?>([\s\S]*?)<\/CategoryName>/i);
-    if (m) {
-      const v = usable(m[1].replace(/<[^>]+>/g, ' '));
-      if (v) return v;
-    }
-    m = s.match(/["']categoryName["']\s*[:=]\s*["']([^"']+)["']/i);
-    if (m) {
-      const v = usable(m[1]);
-      if (v) return v;
-    }
-  }
-  return '';
-}
-
-function sellLikeCloneShippingInfo_(fetched, parsed) {
-  const candidates = [];
-  function add(label, value) {
-    const key = String(label || '');
-    if (!/(ship|deliver|dispatch|handling|transit)/i.test(key)) return;
-    if (value == null) return;
-    if (typeof value === 'number') {
-      if (isFinite(value) && value > 0 && value <= 60) candidates.push({key:key, text:String(value), numeric:Number(value)});
-      return;
-    }
-    if (typeof value === 'string') {
-      const t = value.replace(/\s+/g, ' ').trim();
-      if (t) candidates.push({key:key, text:t, numeric:null});
-    }
-  }
-  function walk(obj, prefix, depth) {
-    if (!obj || depth > 5) return;
-    if (Array.isArray(obj)) {
-      obj.slice(0, 50).forEach(function(v, i){ walk(v, prefix + '[' + i + ']', depth + 1); });
-      return;
-    }
-    if (typeof obj !== 'object') return;
-    Object.keys(obj).slice(0, 200).forEach(function(k) {
-      const v = obj[k];
-      const key = prefix ? prefix + '.' + k : k;
-      if (v && typeof v === 'object') walk(v, key, depth + 1);
-      else add(key, v);
-    });
-  }
-
-  walk(parsed || {}, 'parsed', 0);
-  if (fetched && fetched.item) walk(fetched.item, 'item', 0);
-
-  const rawShippingFields = [
-    parsed && parsed.shippingPolicy,
-    parsed && parsed.shipping,
-    parsed && parsed.delivery,
-    parsed && parsed.deliveryEstimate,
-    parsed && parsed.estimatedDelivery,
-    parsed && parsed.shippingDetails
-  ];
-  rawShippingFields.forEach(function(v){ if (v != null) candidates.push({key:'direct', text:String(v), numeric:null}); });
-
-  if (fetched && fetched.xmlText) {
-    const xml = String(fetched.xmlText || '');
-    const tags = ['ShippingTimeMin','ShippingTimeMax','DispatchTimeMax','HandlingTime'];
-    tags.forEach(function(tag){
-      const m = xml.match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)<\\/' + tag + '>', 'i'));
-      if (m && m[1]) candidates.push({key:tag, text:String(m[1]).trim(), numeric:Number(m[1])});
-    });
-  }
-
-  let maxDays = 0;
-  let evidence = '';
-
-  function accept(n, text) {
-    n = Number(n);
-    if (!isFinite(n) || n <= 0 || n > 60) return;
-    if (n > maxDays) { maxDays = n; evidence = text || ''; }
-  }
-
-  candidates.forEach(function(c) {
-    const text = String(c.text || '').replace(/[–—]/g, '-');
-    const key = String(c.key || '');
-    if (c.numeric != null && /(max|handling|dispatch|ship|deliver|transit)/i.test(key)) accept(c.numeric, key + '=' + text);
-
-    let m;
-    const rangeRe = /(\d{1,2})\s*(?:-|to)\s*(\d{1,2})\s*(?:business|working)?\s*days?/ig;
-    while ((m = rangeRe.exec(text))) accept(m[2], text);
-
-    const dayRe = /(\d{1,2})\s*(?:business|working)\s*days?/ig;
-    while ((m = dayRe.exec(text))) accept(m[1], text);
-
-    const maxKey = /(max|maximum|dispatch|handling|shippingtime|deliverytime)/i.test(key);
-    if (maxKey && /^\s*\d{1,2}\s*$/.test(text)) accept(Number(text), key + '=' + text);
-  });
-
-  const policy = maxDays > 0
-    ? (maxDays <= 5
-      ? 'Standard Shipping 1 - 5 business days +2'
-      : 'Economy Shipping 1 - 10 business days +3')
-    : '';
-
-  return {maxBusinessDays:maxDays || null, targetPolicy:policy, evidence:evidence};
 }
 
 function sellLikeClonePlainText_(html) {
