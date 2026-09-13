@@ -284,6 +284,31 @@ function currentItemSpecifics(){
         if(checked){const v=clean(checked.value||checked.innerText||checked.textContent||checked.getAttribute('aria-label')||'');put(name,v);break}
       }
     }
+
+    // eBay often renders Item Specific names as plain div/span text rather than <label>.
+    const leafNames=[...root.querySelectorAll('div,span,p')]
+      .filter(el=>el.children.length===0)
+      .map(el=>({el,name:clean(el.textContent||'').replace(/[?*]+$/,'').trim()}))
+      .filter(x=>x.name&&x.name.length<=80)
+      .filter(x=>!/^(required|optional|yes|no|suggested:|\d+\/\d+|enter your own)$/i.test(x.name))
+      .filter(x=>!reserved.test(x.name));
+    for(const item of leafNames){
+      const name=item.name;
+      let row=item.el.parentElement;
+      for(let depth=0;depth<4&&row;depth++,row=row.parentElement){
+        const input=row.querySelector('input[type="text"],input[type="search"],input:not([type]),textarea');
+        if(input&&clean(input.value)){put(name,input.value);break}
+        const select=row.querySelector('select');
+        if(select&&clean(controlValue(select))){put(name,controlValue(select));break}
+        const combo=row.querySelector('[role="combobox"]');
+        if(combo&&clean(controlValue(combo))){put(name,controlValue(combo));break}
+        const checked=row.querySelector('input[type="radio"]:checked,input[type="checkbox"]:checked,[role="radio"][aria-checked="true"],button[aria-pressed="true"],[data-state="checked"]');
+        if(checked){
+          const v=clean(checked.value||checked.innerText||checked.textContent||checked.getAttribute('aria-label')||'');
+          put(name,v);break
+        }
+      }
+    }
   }
   return out
 }
