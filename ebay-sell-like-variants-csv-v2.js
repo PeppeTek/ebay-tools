@@ -462,13 +462,28 @@ function dynamicAspectHeaders(dims,baseHeaders){
   }
   return out
 }
+function countryName(v){
+  const raw=clean(v),code=raw.toUpperCase();
+  if(/^[A-Z]{2}$/.test(code)){
+    try{
+      const dn=new Intl.DisplayNames(['en'],{type:'region'});
+      const name=clean(dn.of(code));
+      if(name&&name!==code)return name
+    }catch(_){}
+  }
+  return ({PK:'Pakistan',US:'United States',GB:'United Kingdom',AU:'Australia',CA:'Canada'})[code]||raw
+}
 function locationValue(clone){
   const p=clone.itemLocationParts||{};
-  const city=clean(p.city),state=clean(p.stateOrProvince);
+  const city=clean(p.city),state=clean(p.stateOrProvince),country=countryName(p.country);
   if(city&&state)return city+', '+state;
+  if(city&&country)return city+', '+country;
   const raw=clean(clone.itemLocation||'');
   const parts=raw.split(',').map(clean).filter(Boolean);
-  if(parts.length>=2)return parts[0]+', '+parts[1];
+  if(parts.length>=2){
+    const last=parts[parts.length-1];
+    return parts[0]+', '+countryName(last)
+  }
   return raw.replace(/,?\s*\d[\d*\- ]{2,}\s*(?:,\s*[A-Z]{2})?$/i,'').trim()
 }
 function sourceValueMap(clone){
