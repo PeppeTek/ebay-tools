@@ -229,23 +229,48 @@ function currentItemSpecifics(){
     if(!out[name])out[name]=value
   };
 
+  // Primary source: competitor item specifics already parsed by the Sell Like backend.
   for(const [k,v] of Object.entries(clone.aspects||{}))put(k,v);
 
-  for(const l of document.querySelectorAll('label')){
-    const name=clean(l.innerText||l.textContent||'').replace(/[?*]+$/,'').trim();
-    if(!name||reserved.test(name))continue;
-    let e=l.htmlFor?document.getElementById(l.htmlFor):null;
-    if(!e)e=l.querySelector('input,textarea,select,[role="combobox"]');
-    if(!e&&l.parentElement)e=l.parentElement.querySelector('input,textarea,select,[role="combobox"]');
-    if(!e)continue;
-    if((e.type==='radio'||e.type==='checkbox')&&!e.checked)continue;
-    put(name,controlValue(e))
+  // Secondary source: only the eBay Item Specifics area (Required / Optional),
+  // never global settings such as Item Location, Shipping or Returns.
+  const markerNodes=[...document.querySelectorAll('h2,h3,h4,h5,legend,div,span')]
+    .filter(x=>/^(required|optional)$/i.test(clean(x.innerText||x.textContent||'')));
+  const roots=[];
+  for(const marker of markerNodes){
+    let p=marker.parentElement;
+    for(let depth=0;depth<7&&p;depth++,p=p.parentElement){
+      const count=p.querySelectorAll('input,textarea,select,[role="combobox"],[role="radiogroup"]').length;
+      if(count>=3&&count<=120){roots.push(p);break}
+    }
   }
+  const root=roots.sort((a,b)=>a.querySelectorAll('*').length-b.querySelectorAll('*').length)[0]||null;
 
-  for(const e of document.querySelectorAll('input,textarea,select,[role="combobox"]')){
-    const name=clean(e.getAttribute('aria-label')||'');
-    if(!name||reserved.test(name))continue;
-    put(name,controlValue(e))
+  if(root){
+    for(const l of root.querySelectorAll('label')){
+      const name=clean(l.innerText||l.textContent||'').replace(/[?*]+$/,'').trim();
+      if(!name||reserved.test(name))continue;
+      let e=l.htmlFor?document.getElementById(l.htmlFor):null;
+      if(!e)e=l.querySelector('input,textarea,select,[role="combobox"]');
+      if(!e&&l.parentElement)e=l.parentElement.querySelector('input,textarea,select,[role="combobox"]');
+      if(e){
+        if((e.type==='radio'||e.type==='checkbox')&&!e.checked)continue;
+        put(name,controlValue(e));
+        continue
+      }
+      const row=l.parentElement;
+      if(row){
+        const selected=[...row.querySelectorAll('button,[role="radio"],[role="option"]')]
+          .find(b=>b.getAttribute('aria-checked')==='true'||b.getAttribute('aria-pressed')==='true'||b.classList.contains('selected'));
+        if(selected)put(name,selected.innerText||selected.textContent||selected.value)
+      }
+    }
+
+    for(const e of root.querySelectorAll('input,textarea,select,[role="combobox"]')){
+      const name=clean(e.getAttribute('aria-label')||'');
+      if(!name||reserved.test(name))continue;
+      put(name,controlValue(e))
+    }
   }
   return out
 }
