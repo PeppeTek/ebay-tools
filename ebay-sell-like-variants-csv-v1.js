@@ -59,24 +59,49 @@ function currentCategoryId(){
   return m?m[1]:''
 }
 function policyName(kind){
+  const labelMap={
+    shipping:/^shipping\s+policy$/i,
+    payment:/^payment\s+policy$/i,
+    return:/^return\s+policy$/i
+  };
+  const labelRe=labelMap[kind]||new RegExp('^'+kind+'\\s+policy$','i');
+
+  // 1) Prefer the actual field connected to the visible eBay label.
+  const direct=findControlByLabel(labelRe);
+  if(direct){
+    const v=normalizePolicyName(controlValue(direct));
+    if(v&&!/^(edit|change|select|add|help|\.\.\.)$/i.test(v))return v
+  }
+
+  // 2) Read the selected value from the smallest visible block containing the policy label.
+  const labels=[...document.querySelectorAll('label,h2,h3,h4,legend,div,span')]
+    .filter(visible)
+    .filter(x=>labelRe.test(clean(x.innerText||x.textContent||'')));
+
+  for(const l of labels){
+    let p=l.parentElement;
+    for(let depth=0;depth<5&&p;depth++,p=p.parentElement){
+      const candidates=[...p.querySelectorAll('input,textarea,select,[role="combobox"],button,[role="button"],div,span')]
+        .filter(visible)
+        .map(e=>normalizePolicyName(controlValue(e)))
+        .filter(Boolean)
+        .filter(v=>!labelRe.test(v))
+        .filter(v=>!/^(edit|change|select|add|help|\.\.\.|shipping|payment|returns?|policy)$/i.test(v))
+        .filter(v=>v.length<=160);
+      const exact=candidates.find(v=>!/\blistings?\b/i.test(v));
+      if(exact)return exact;
+      if(candidates[0])return normalizePolicyName(candidates[0])
+    }
+  }
+
+  // 3) Last fallback for older eBay layouts where metadata contains policy/profile.
   const re=new RegExp(kind+'.*(policy|profile)|(policy|profile).*'+kind,'i');
   const controls=[...document.querySelectorAll('select,input,[role="combobox"],button')].filter(visible);
   for(const e of controls){
     const meta=clean([e.name,e.id,e.placeholder,e.getAttribute('aria-label')].join(' '));
     if(re.test(meta)){
-      const v=controlValue(e);
-      if(v&&!/^(edit|change|select|add)$/i.test(v))return normalizePolicyName(v)
-    }
-  }
-  const labels=[...document.querySelectorAll('label,h2,h3,h4,legend,div,span')].filter(visible).filter(x=>re.test(clean(x.innerText||x.textContent||'')));
-  for(const l of labels){
-    let p=l;
-    for(let i=0;i<5&&p;i++,p=p.parentElement){
-      const candidates=[...p.querySelectorAll('select,[role="combobox"],button,input')].filter(visible);
-      for(const e of candidates){
-        const v=controlValue(e);
-        if(v&&!/^(edit|change|select|add|shipping|returns?|payment)$/i.test(v)&&v.length<=120)return normalizePolicyName(v)
-      }
+      const v=normalizePolicyName(controlValue(e));
+      if(v&&!/^(edit|change|select|add|help|\.\.\.)$/i.test(v))return v
     }
   }
   return''
@@ -224,7 +249,7 @@ async function run(){
         }
         const list=panel&&panel.querySelector('[data-ebay-action="list"]');
         if(list)list.style.display='none';
-        setStatus('CSV varianti pronto: '+res.rows+' varianti.');
+        setStatus('CSV varianti pronto: '+res.rows+' varianti. Policy: '+res.policies.shipping+' | '+res.policies.payment+' | '+res.policies.returns);
         try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
       }catch(e){
         console.warn('Variant CSV',e);
