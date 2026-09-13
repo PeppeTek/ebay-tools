@@ -1,13 +1,22 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-editor-v8';
+const PATCH_ID='capitan-variants-editor-v9';
 const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const clean=v=>String(v==null?'':v).replace(/\s+/g,' ').trim();
 const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
+function userClick(el){
+  if(!el)return false;
+  try{el.scrollIntoView({block:'center',inline:'center'})}catch(_){}
+  for(const type of ['pointerdown','mousedown','pointerup','mouseup']){
+    try{el.dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,view:window,button:0}))}catch(_){}
+  }
+  try{el.click()}catch(_){}
+  return true
+}
 function state(){
   if(window.__capitanSellLikeVariants&&window.__capitanSellLikeVariants.data)return window.__capitanSellLikeVariants;
   try{const raw=localStorage.getItem(VAR_STATE_KEY);if(raw){const s=JSON.parse(raw);if(s&&s.data)return s}}catch(_){}
@@ -178,7 +187,8 @@ function selectedOptionExists(root,value){
   const hr=selectedHeaderRect(root);if(!hr)return selectedText(root).includes(low);
   const minX=hr.left-8;
   const nodes=[...root.querySelectorAll('button,[role="button"],a,label,div,span,li')].filter(visible).filter(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);
-  return nodes.some(x=>{const r=x.getBoundingClientRect();return r.left>=minX&&r.top>=hr.bottom-8})
+  const rr=root.getBoundingClientRect();const split=Math.max(minX,rr.left+rr.width*.52);
+  return nodes.some(x=>{const r=x.getBoundingClientRect();return r.left>=split&&r.top>=hr.top-8})
 }
 function optionsZone(root){
   const labels=[...root.querySelectorAll('div,span,h3,h4,label')].filter(visible).filter(x=>/^options$/i.test(clean(x.innerText||x.textContent||'')));
@@ -206,9 +216,9 @@ async function removeExistingAttributes(root,data){
         const t=clean((el.innerText||el.textContent||'')+' '+(el.getAttribute&&el.getAttribute('aria-label')||'')).toLowerCase();
         return t==='x'||t==='×'||/remove|delete|close/.test(t);
       });
-      if(x){x.click();removed=true;break}
+      if(x){userClick(x);removed=true;break}
       const t=clean(chip.innerText||chip.textContent||'');
-      if(chip.matches('button,[role="button"]')&&/[x×]\s*$/i.test(t)){chip.click();removed=true;break}
+      if(chip.matches('button,[role="button"]')&&/[x×]\s*$/i.test(t)){userClick(chip);removed=true;break}
     }
     if(removed)await sleep(250);
   }
@@ -251,7 +261,7 @@ async function selectSuggestedOption(root,value){
   });
   if(!candidates.length)return false;
   const x=candidates.sort((a,b)=>a.childElementCount-b.childElementCount)[0];
-  (x.closest('button,[role="button"],a,label')||x).click();
+  userClick(x.closest('button,[role="button"],a,label')||x);
   for(let i=0;i<20;i++){await sleep(100);if(isOptionSelected(root,val))return true}
   return false
 }
@@ -269,13 +279,13 @@ async function addCustomOption(root,value){
     if(input&&add)break;
   }
   if(!input){
-    (create.closest('button,[role="button"],a')||create).click();await sleep(180);
+    userClick(create.closest('button,[role="button"],a')||create);await sleep(220);
     input=[...zone.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible)[0]||null;
     add=[...zone.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^Add$/i.test(clean(x.innerText||x.textContent||'')))||null;
   }
   if(!input)return false;
   setNative(input,val);await sleep(80);
-  if(add)add.click();
+  if(add)userClick(add);
   else{
     input.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',code:'Enter'}));
     input.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Enter',code:'Enter'}));
@@ -304,7 +314,7 @@ async function handleCreateVariationsPage(data){
   const missing=expected.filter(v=>!selectedOptionExists(root,v));
   if(missing.length){console.warn('Not all expected options are in selected panel; Continue skipped',missing);return false}
   const cont=[...root.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^Continue$/i.test(clean(x.innerText||x.textContent||'')));
-  if(cont){cont.click();await sleep(1000);return true}
+  if(cont){userClick(cont);await sleep(1200);return true}
   return false
 }
 
