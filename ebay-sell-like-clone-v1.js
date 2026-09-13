@@ -105,6 +105,18 @@ async function sourceShippingMaxBusinessDays(sourceItemId){
     const text=clean(doc.body&&doc.body.innerText||'').replace(/[–—]/g,'-');
     const textRange=/(\d{1,2})\s*(?:-|to)\s*(\d{1,2})\s*(?:business|working)\s*days?/ig;
     while((m=textRange.exec(text)))values.push(Number(m[2]));
+
+    // eBay commonly exposes delivery as "Estimated between Wed, Sep 16 and Sat, Sep 19".
+    const deliveryRange=/estimated\s+between\s+(?:[A-Za-z]{3},?\s+)?([A-Za-z]{3,9}\s+\d{1,2})\s+and\s+(?:[A-Za-z]{3},?\s+)?([A-Za-z]{3,9}\s+\d{1,2})/ig;
+    while((m=deliveryRange.exec(text))){
+      const year=(new Date()).getFullYear();
+      let end=new Date(m[2]+' '+year);
+      const today=new Date();today.setHours(0,0,0,0);
+      if(!isNaN(end)&&end<today){end=new Date(m[2]+' '+(year+1))}
+      const n=businessDaysUntil(end);
+      if(n)values.push(n)
+    }
+
     const valid=values.filter(n=>Number.isFinite(n)&&n>0&&n<=60);
     return valid.length?Math.max(...valid):null
   }catch(_){return null}
