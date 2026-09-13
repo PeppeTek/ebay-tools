@@ -28,7 +28,7 @@ function findControlByLabel(re){
   return null
 }
 function normalizePolicyName(v){return clean(v)
-  .replace(/\s*[\(\[]\s*\d+\s+listings?\s*[\)\]]\s*$/i,'')
+  .replace(/\s*[\(\[]\s*\d+\s+listings?\s*[\)\]]\s*/ig,' ')
   .replace(/\s+/g,' ')
   .trim()}
 function controlValue(el){
