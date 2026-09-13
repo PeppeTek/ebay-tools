@@ -4,7 +4,7 @@ const PANEL_ID='capitan-sell-like-clone';
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const visible=el=>!!(el&&el.getClientRects&&el.getClientRects().length);
-const PATCH_ID='capitan-sku-fix-v4';if(document.getElementById(PATCH_ID))return;const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);const panel=document.getElementById(PANEL_ID);if(!panel)return;
+const PATCH_ID='capitan-sku-fix-v5';if(document.getElementById(PATCH_ID))return;const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);const panel=document.getElementById(PANEL_ID);if(!panel)return;
 function selectedAsins(){return [...panel.querySelectorAll('input.capitan-amazon-choice:checked')].map(x=>clean(x.value)).filter(Boolean)}
 function fieldCandidates(){
   const selectors=['input[name*="sku" i]','textarea[name*="sku" i]','input[id*="sku" i]','textarea[id*="sku" i]','input[aria-label*="custom label" i]','textarea[aria-label*="custom label" i]','input[placeholder*="custom label" i]','textarea[placeholder*="custom label" i]','input[data-testid*="sku" i]','textarea[data-testid*="sku" i]','[role="textbox"][aria-label*="custom label" i]','[contenteditable="true"][aria-label*="custom label" i]','[role="textbox"][data-testid*="sku" i]'];
@@ -46,7 +46,7 @@ function pencilFromSkuColumn(){
         const cells=[...r.children];const cell=cells[idx];if(!cell)continue;
         const edit=[...cell.querySelectorAll('button,[role="button"],[aria-label],[title]')].filter(visible).find(x=>{
           const t=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||''));
-          return /edit|modify|change|custom label|sku/i.test(t)||!!x.querySelector('svg');
+          return /edit|modify|change|custom label|sku/i.test(t);
         });
         if(edit)return edit;
       }
@@ -56,7 +56,7 @@ function pencilFromSkuColumn(){
   for(let i=0;i<8&&p;i++,p=p.parentElement){
     const edit=[...p.querySelectorAll('button,[role="button"],[aria-label],[title]')].filter(visible).find(x=>{
       const t=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||''));
-      return /edit|modify|change|custom label|sku/i.test(t)||!!x.querySelector('svg');
+      return /edit|modify|change|custom label|sku/i.test(t);
     });
     if(edit)return edit;
   }
@@ -83,11 +83,6 @@ async function revealSku(){
   let field=findSkuField();if(field&&visible(field))return field;
   const pencil=pencilFromSkuColumn();
   if(pencil){try{safeEditorClick(pencil);field=await waitSkuField();if(field)return field}catch(_){}}
-  const re=/custom\s*label|seller\s*sku|merchant\s*sku|\bsku\b/i;
-  const clickable=[...document.querySelectorAll('button,[role="button"],summary,a')].filter(visible).filter(x=>re.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))));
-  for(const b of clickable){try{b.click();field=await waitSkuField(1200);if(field)return field}catch(_){}}
-  const more=[...document.querySelectorAll('button,[role="button"],summary,a')].filter(visible).find(x=>/show more|more options|optional|additional/i.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))));
-  if(more){try{more.click();field=await waitSkuField(1800);if(field)return field}catch(_){}}
   return findSkuField();
 }
 async function commitSkuEditor(field){
@@ -116,20 +111,37 @@ function setNative(el,value){
   el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Tab',code:'Tab'}));
   el.dispatchEvent(new Event('blur',{bubbles:true}));el.blur?.();
 }
+function skuContextContains(value){
+  const wanted=clean(value);if(!wanted)return false;
+  const field=findSkuField();
+  if(field&&visible(field)){
+    const v=field.isContentEditable?clean(field.textContent):clean(field.value);
+    if(v===wanted)return true;
+  }
+  const head=skuHeaderCell();
+  if(!head)return false;
+  let p=head;
+  for(let i=0;i<8&&p;i++,p=p.parentElement){
+    const t=clean(p.innerText||p.textContent||'');
+    if(t.includes(wanted))return true;
+    if(t.length>2500)break;
+  }
+  return false;
+}
 async function writeSku(value){
-  let field=findSkuField();if(!field||!visible(field))field=await revealSku();if(!field)return {ok:false,reason:'Campo Custom label (SKU) non trovato'};
+  let field=findSkuField();if(!field||!visible(field))field=await revealSku();
+  if(!field)return {ok:false,reason:'Campo SKU / Custom label (SKU) non trovato nell’editor eBay'};
   for(let i=0;i<4;i++){
     setNative(field,value);await sleep(220);
     const now=field.isContentEditable?clean(field.textContent):clean(field.value);
-    if(now===clean(value)){
-      await commitSkuEditor(field);
-      await sleep(350);
-      const still=findSkuField();
-      if(still&&visible(still)){const persisted=still.isContentEditable?clean(still.textContent):clean(still.value);if(persisted&&persisted!==clean(value))continue}
-      return {ok:true,field};
+    if(now!==clean(value))continue;
+    await commitSkuEditor(field);
+    for(let j=0;j<12;j++){
+      await sleep(180);
+      if(skuContextContains(value))return {ok:true,field};
     }
   }
-  return {ok:false,reason:'eBay non ha mantenuto il valore SKU'};
+  return {ok:false,reason:'Valore scritto ma non confermato da eBay nel campo SKU'};
 }
 function setStatus(html){const s=panel.querySelector('#capitan-amazon-status');if(s)s.innerHTML=html}
 document.addEventListener('click',async e=>{
