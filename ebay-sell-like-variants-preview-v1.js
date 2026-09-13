@@ -39,7 +39,7 @@ async function startAutomaticVariantFlow(){
     for(let i=0;i<40;i++){
       if(typeof window.__capitanOpenVariantsWindow==='function'){
         const ok=await window.__capitanOpenVariantsWindow();
-        if(s)s.textContent=ok?'Finestra Variations aperta. Ora clicca di nuovo il bookmarklet nella finestra appena aperta.':'Impossibile aprire l\'editor Variations.';
+        if(s)s.textContent=ok?'Finestra Variations aperta. Ora clicca di nuovo il bookmarklet nella finestra appena aperta.':('Impossibile aprire l\'editor Variations. '+(window.__capitanVariantsLastError||''));
         btn.disabled=false;
         return
       }
