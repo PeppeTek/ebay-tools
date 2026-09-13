@@ -342,7 +342,11 @@ async function handleCreateVariationsPage(data){
   const expected=(data.dimensions||[]).flatMap(d=>d.values||[]).map(v=>clean(v).toLowerCase()).filter(Boolean);
   const missing=expected.filter(v=>!selectedOptionExists(root,v));
   if(missing.length){console.warn('Not all expected options are in selected panel; Continue skipped',missing);return false}
-  const cont=[...root.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^Continue$/i.test(clean(x.innerText||x.textContent||'')));
+  const cont=await waitUntil(()=>{
+    const known=document.getElementById('msku-create-continue-button');
+    if(known&&visible(known)&&!known.disabled&&known.getAttribute('aria-disabled')!=='true')return known;
+    return [...root.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^Continue$/i.test(clean(x.innerText||x.textContent||''))&&!x.disabled&&x.getAttribute('aria-disabled')!=='true')||null
+  },4000,100);
   if(cont){userClick(cont);await sleep(1200);return true}
   return false
 }
