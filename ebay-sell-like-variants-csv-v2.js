@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v17';
+const PATCH_ID='capitan-variants-csv-v18';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -135,7 +135,7 @@ function currentCategoryId(){
 function currentCategoryName(){
   const banned=/learn more|opens in a new window|sales tax|help|^edit$|feedback|^item category$/i;
   const d=cloneData()||{},st=variantState()||{},vd=st.data||{};
-  const imported=clean(d.categoryName||vd.categoryName||'');
+  const imported=clean(window.__capitanCurrentCategoryName||d.categoryName||vd.categoryName||'');
   if(imported&&!banned.test(imported))return imported.startsWith('/')?imported:'/'+imported;
 
   let bodyText='';
