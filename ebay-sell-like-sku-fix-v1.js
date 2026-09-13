@@ -1,12 +1,12 @@
 javascript:(()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-sku-fix-v8';
+const PATCH_ID='capitan-sku-fix-v9';
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const visible=el=>!!(el&&el.getClientRects&&el.getClientRects().length);
 
-for(const id of ['capitan-sku-fix-v3','capitan-sku-fix-v4','capitan-sku-fix-v5','capitan-sku-fix-v6','capitan-sku-fix-v7'])document.getElementById(id)?.remove();
+for(const id of ['capitan-sku-fix-v3','capitan-sku-fix-v4','capitan-sku-fix-v5','capitan-sku-fix-v6','capitan-sku-fix-v7','capitan-sku-fix-v8'])document.getElementById(id)?.remove();
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const panel=document.getElementById(PANEL_ID);if(!panel)return;
@@ -14,8 +14,12 @@ const panel=document.getElementById(PANEL_ID);if(!panel)return;
 function selectedAsins(){
   return [...panel.querySelectorAll('input.capitan-amazon-choice:checked')].map(x=>clean(x.value)).filter(Boolean)
 }
-function setStatus(html){
-  const s=panel.querySelector('#capitan-amazon-status');if(s)s.innerHTML=html
+function selectedAliProductIds(){
+  return [...panel.querySelectorAll('input.capitan-aliexpress-choice:checked')].map(x=>clean(x.value)).filter(Boolean)
+}
+function setStatus(html,provider='amazon'){
+  const sel=provider==='aliexpress'?'#capitan-aliexpress-status':'#capitan-amazon-status';
+  const s=panel.querySelector(sel);if(s)s.innerHTML=html
 }
 function userClick(el){
   if(!el)return false;
@@ -193,22 +197,29 @@ async function writeAndVerify(value){
 })();
 
 document.addEventListener('click',async e=>{
-  const btn=e.target.closest('#capitan-amazon-insert');if(!btn)return;
+  const btn=e.target.closest('#capitan-amazon-insert,#capitan-aliexpress-insert');if(!btn)return;
   e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-  const asins=selectedAsins();
-  if(!asins.length){
-    setStatus('<span style="color:#b42318;font-weight:700">Seleziona almeno un ASIN.</span>');
+
+  const isAli=btn.id==='capitan-aliexpress-insert';
+  const provider=isAli?'aliexpress':'amazon';
+  const values=isAli?selectedAliProductIds():selectedAsins();
+  const label=isAli?'Product ID':'ASIN';
+
+  if(!values.length){
+    setStatus('<span style="color:#b42318;font-weight:700">Seleziona almeno un '+label+'.</span>',provider);
     return
   }
-  const value=asins.join(' - ');
+
+  const value=values.join(' - ');
   btn.disabled=true;
-  setStatus('<span style="color:#555">Inserimento ASIN nel Custom label (SKU)…</span>');
+  setStatus('<span style="color:#555">Inserimento '+label+' nel Custom label (SKU)…</span>',provider);
+
   try{
     const r=await writeAndVerify(value);
     if(!r.ok)throw Error(r.reason);
-    setStatus('<span style="color:#137333;font-weight:700">ASIN inseriti nel Custom label (SKU):</span> '+value)
+    setStatus('<span style="color:#137333;font-weight:700">'+label+' inseriti nel Custom label (SKU):</span> '+value,provider)
   }catch(err){
-    setStatus('<span style="color:#b42318;font-weight:700">'+String(err.message||err)+'</span>')
+    setStatus('<span style="color:#b42318;font-weight:700">'+String(err.message||err)+'</span>',provider)
   }finally{
     btn.disabled=false
   }
