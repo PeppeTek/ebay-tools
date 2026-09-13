@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v12';
+const PATCH_ID='capitan-variants-csv-v13';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -139,24 +139,34 @@ function currentCategoryName(){
 
   for(const h of heads){
     let p=h.parentElement;
-    for(let depth=0;depth<4&&p;depth++,p=p.parentElement){
+    for(let depth=0;depth<5&&p;depth++,p=p.parentElement){
       const links=[...p.querySelectorAll('a[href]')]
         .map(a=>clean(a.innerText||a.textContent||''))
         .filter(v=>v&&!banned.test(v)&&v.length<=100);
       if(links.length){
-        const preferred=links.find(v=>!/jewelry\s*&\s*watches|watches,\s*parts\s*&\s*accessories|watch accessories/i.test(v))||links[0];
-        return preferred.startsWith('/')?preferred:'/'+preferred
+        const name=links[0];
+        return name.startsWith('/')?name:'/'+name
       }
     }
   }
 
   const d=cloneData()||{},st=variantState()||{},vd=st.data||{};
-  let name=clean(d.categoryName||vd.categoryName||'');
-  if(!name||banned.test(name))return'';
-  return name.startsWith('/')?name:'/'+name
+  const fallback=clean(d.categoryName||vd.categoryName||'');
+  if(!fallback||banned.test(fallback))return'';
+  return fallback.startsWith('/')?fallback:'/'+fallback
 }
 function policyName(kind){
   const label={shipping:'Shipping policy',return:'Return policy',payment:'Payment policy'}[kind];
+
+  if(kind==='return'){
+    const pageText=String(document.body&&document.body.innerText||'');
+    const m=pageText.match(/(?:^|\n)\s*Return policy\s*:\s*([^\n]+)/i);
+    if(m){
+      const v=normalizePolicyName(m[1]);
+      if(v)return v
+    }
+  }
+
   const normalizeCandidate=raw=>{
     raw=clean(raw);
     if(!raw)return'';
