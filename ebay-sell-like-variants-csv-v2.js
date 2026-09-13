@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v16';
+const PATCH_ID='capitan-variants-csv-v17';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -134,34 +134,28 @@ function currentCategoryId(){
 }
 function currentCategoryName(){
   const banned=/learn more|opens in a new window|sales tax|help|^edit$|feedback|^item category$/i;
+  const d=cloneData()||{},st=variantState()||{},vd=st.data||{};
+  const imported=clean(d.categoryName||vd.categoryName||'');
+  if(imported&&!banned.test(imported))return imported.startsWith('/')?imported:'/'+imported;
 
   let bodyText='';
   try{
     const copy=document.body.cloneNode(true);
-    const panel=copy.querySelector('#capitan-sell-like-clone');
-    if(panel)panel.remove();
+    const panel=copy.querySelector('#capitan-sell-like-clone');if(panel)panel.remove();
     copy.querySelectorAll('script,style,noscript').forEach(x=>x.remove());
     bodyText=String(copy.innerText||copy.textContent||'')
-  }catch(_){
-    bodyText=String(document.body&&document.body.innerText||'')
-  }
+  }catch(_){bodyText=String(document.body&&document.body.innerText||'')}
 
   const lines=bodyText.split(/\r?\n/).map(clean).filter(Boolean);
   for(let i=0;i<lines.length;i++){
     if(lines[i].toLowerCase()!=='item category')continue;
     for(let j=i+1;j<Math.min(lines.length,i+6);j++){
       const candidate=clean(lines[j]);
-      if(!candidate||banned.test(candidate))continue;
-      if(/\s*>\s*/.test(candidate))continue;
-      if(candidate.length>100)continue;
+      if(!candidate||banned.test(candidate)||/\s*>\s*/.test(candidate)||candidate.length>100)continue;
       return candidate.startsWith('/')?candidate:'/'+candidate
     }
   }
-
-  const d=cloneData()||{},st=variantState()||{},vd=st.data||{};
-  const fallback=clean(d.categoryName||vd.categoryName||'');
-  if(!fallback||banned.test(fallback))return'';
-  return fallback.startsWith('/')?fallback:'/'+fallback
+  return''
 }
 function policyName(kind){
   const label={shipping:'Shipping policy',return:'Return policy',payment:'Payment policy'}[kind];
@@ -545,7 +539,7 @@ function buildCsv(){
 
   const title=currentTitle(),categoryId=currentCategoryId(),categoryName=currentCategoryName();
   const description=String(currentDescription()||'').slice(0,32700);
-  const shipping=normalizePolicyName(policyName('shipping'));
+  const shipping=normalizePolicyName(clone.shippingPolicyTarget||policyName('shipping'));
   const returns=normalizePolicyName(policyName('return'));
   const payment=normalizePolicyName(policyName('payment'));
   const conditionId=currentConditionId();
@@ -558,6 +552,7 @@ function buildCsv(){
   const missing=[];
   if(!title)missing.push('Title');
   if(!categoryId)missing.push('Category ID');
+  if(!categoryName)missing.push('Category name');
   if(!description)missing.push('Description');
   if(!conditionId)missing.push('Condition ID');
   if(!location)missing.push('Location');
