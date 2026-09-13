@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v19';
+const PATCH_ID='capitan-variants-csv-v20';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const CATEGORY_TAXONOMY_ENDPOINT='https://script.google.com/macros/s/AKfycbxPSCamhPhs1fvkikx0KyJFk6wfJDCxC2XqaBbRqDIqOrLN9D_QibphbRB8QenovCY5/exec';
@@ -715,7 +715,11 @@ async function run(){
         window.__capitanVariantCsv=res;
         const panel=document.getElementById('capitan-sell-like-clone');
         const b=panel&&panel.querySelector('[data-ebay-action="csv"],[data-ebay-action="save"]');
-        window.__capitanDownloadVariantCsv=()=>download(res);
+        window.__capitanDownloadVariantCsv=()=>{
+          const fresh=buildCsv();
+          window.__capitanVariantCsv=fresh;
+          download(fresh)
+        };
         if(b){
           b.dataset.ebayAction='csv';
           b.textContent='Scarica CSV';
