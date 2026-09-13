@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v1';
+const PATCH_ID='capitan-variants-csv-v2';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 if(document.getElementById(PATCH_ID))return;
@@ -203,10 +203,21 @@ async function run(){
       try{
         const res=buildCsv();
         window.__capitanVariantCsv=res;
-        const b=document.querySelector('#capitan-add-variants-btn');
-        if(b){b.textContent='Scarica di nuovo CSV varianti';b.disabled=false;b.onclick=()=>download(res)}
-        download(res);
-        setStatus('CSV varianti generato automaticamente: '+res.rows+' varianti.');
+        const panel=document.getElementById('capitan-sell-like-clone');
+        const b=panel&&panel.querySelector('[data-ebay-action="csv"],[data-ebay-action="save"]');
+        if(b){
+          b.dataset.ebayAction='csv';
+          b.textContent='Scarica CSV';
+          b.style.background='#16a34a';
+          b.style.color='#fff';
+          b.style.border='1px solid #12813a';
+          b.style.fontWeight='700';
+          b.style.cursor='pointer';
+          b.onclick=e=>{e.preventDefault();e.stopPropagation();download(res)}
+        }
+        const list=panel&&panel.querySelector('[data-ebay-action="list"]');
+        if(list)list.style.display='none';
+        setStatus('CSV varianti pronto: '+res.rows+' varianti.');
       }catch(e){
         console.warn('Variant CSV',e);
         setStatus('CSV varianti non generato: '+(e&&e.message?e.message:e),true)
