@@ -2,7 +2,7 @@ javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
-const PATCH_ID='capitan-variants-preview-v7';
+const PATCH_ID='capitan-variants-preview-v8';
 const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
@@ -27,15 +27,27 @@ function saveVariantState(){
 function closePreopenedHelper(){
   try{const w=window.__capitanPreopenedVariantWindow;if(w&&!w.closed)w.close()}catch(_){}
 }
+function applyVariantActionUi(){
+  const p=document.getElementById(PANEL_ID);if(!p)return;
+  const list=p.querySelector('[data-ebay-action="list"]');
+  const save=p.querySelector('[data-ebay-action="save"],[data-ebay-action="csv"]');
+  const pair=p.querySelector('[data-ebay-secondary-pair]');
+  if(list)list.style.display='none';
+  if(save){
+    save.dataset.ebayAction='csv';
+    save.textContent=window.__capitanVariantCsv?'Scarica CSV':'Preparazione CSV...';
+    save.style.background=window.__capitanVariantCsv?'#16a34a':'#e8eaed';
+    save.style.color=window.__capitanVariantCsv?'#fff':'#666';
+    save.style.border='1px solid '+(window.__capitanVariantCsv?'#12813a':'#b8bdc3');
+    save.style.fontWeight='700';
+    save.style.cursor=window.__capitanVariantCsv?'pointer':'default'
+  }
+  if(pair)pair.style.gridTemplateColumns='1fr 1fr'
+}
 async function startAutomaticVariantFlow(){
   saveVariantState();
-  const btn=document.querySelector('#capitan-add-variants-btn');
+  applyVariantActionUi();
   const s=document.querySelector('#capitan-variants-auto-status');
-  if(btn){
-    btn.textContent='Preparazione CSV varianti...';
-    btn.disabled=true;
-    btn.onclick=null
-  }
   if(s)s.textContent='Generazione automatica CSV varianti...'
 }
 let variantMode=false;
@@ -47,6 +59,7 @@ function enforceVariantMode(){
     if(/^Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:/i.test(t)&&r.id!=='capitan-variants-preview')r.style.display='none';
   });
   const be=ctx.p.querySelector('#capitan-break-even-row');if(be)be.style.display='none';
+  applyVariantActionUi();
 }
 function variantPanelWidth(data){
   const maxLen=Math.max(0,...(data.variants||[]).map(v=>clean(v.title||'').length));
@@ -62,7 +75,7 @@ function render(data,rates,discountRate){
   ctx.p.querySelector('#capitan-variants-preview')?.remove();
   const wrap=document.createElement('div');wrap.id='capitan-variants-preview';wrap.className='row';wrap.style.padding='7px 0';
   const rows=data.variants.map(v=>{const source=Number(v.sourcePrice),sale=isFinite(source)&&source>0?Math.round(source*(1-Number(discountRate||0))*100)/100:null,be=calcBreakEven(sale,rates);return '<tr><td style="padding:7px 6px;border-bottom:1px solid #eee;vertical-align:top;overflow-wrap:anywhere;word-break:break-word">'+esc(v.title||('Variante '+v.index))+'</td><td style="padding:7px 6px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:#137333;font-weight:700">'+esc(money(sale,data.currency))+'</td><td style="padding:7px 6px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:#1668e8;font-weight:700">'+esc(money(be,data.currency))+'</td></tr>'}).join('');
-  wrap.innerHTML='<div style="font-weight:700;color:#111;padding:1px 0 8px">Varianti: <span style="color:#137333">'+data.variants.length+' rilevate</span></div><div style="max-height:300px;overflow-y:auto;overflow-x:hidden;border:1px solid #e2e5e9;border-radius:8px"><table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px"><colgroup><col style="width:52%"><col style="width:24%"><col style="width:24%"></colgroup><thead><tr style="position:sticky;top:0;background:#fafafa;z-index:1"><th style="padding:7px 6px;text-align:left">Variante</th><th style="padding:7px 6px;text-align:right">Prezzo di vendita</th><th style="padding:7px 6px;text-align:right">Break Even Price</th></tr></thead><tbody>'+rows+'</tbody></table></div><button id="capitan-add-variants-btn" type="button" style="width:100%;margin-top:8px;padding:9px 10px;border:1px solid #1668e8;border-radius:7px;background:#1668e8;color:#fff;font-weight:700;cursor:pointer">Preparazione CSV varianti...</button><div id="capitan-variants-auto-status" style="font-size:10px;color:#777;padding:6px 1px 0">Preparazione CTA varianti...</div>';
+  wrap.innerHTML='<div style="font-weight:700;color:#111;padding:1px 0 8px">Varianti: <span style="color:#137333">'+data.variants.length+' rilevate</span></div><div style="max-height:300px;overflow-y:auto;overflow-x:hidden;border:1px solid #e2e5e9;border-radius:8px"><table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px"><colgroup><col style="width:52%"><col style="width:24%"><col style="width:24%"></colgroup><thead><tr style="position:sticky;top:0;background:#fafafa;z-index:1"><th style="padding:7px 6px;text-align:left">Variante</th><th style="padding:7px 6px;text-align:right">Prezzo di vendita</th><th style="padding:7px 6px;text-align:right">Break Even Price</th></tr></thead><tbody>'+rows+'</tbody></table></div><div id="capitan-variants-auto-status" style="font-size:10px;color:#777;padding:6px 1px 0">Generazione automatica CSV varianti...</div>';
   const discount=ctx.p.querySelector('#capitan-discount-row');
   if(discount)discount.insertAdjacentElement('afterend',wrap);
   else ctx.steps.prepend(wrap);
