@@ -4,7 +4,7 @@ const PANEL_ID='capitan-sell-like-clone';
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const visible=el=>!!(el&&el.getClientRects&&el.getClientRects().length);
-const PATCH_ID='capitan-sku-fix-v3';if(document.getElementById(PATCH_ID))return;const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);const panel=document.getElementById(PANEL_ID);if(!panel)return;
+const PATCH_ID='capitan-sku-fix-v4';if(document.getElementById(PATCH_ID))return;const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);const panel=document.getElementById(PANEL_ID);if(!panel)return;
 function selectedAsins(){return [...panel.querySelectorAll('input.capitan-amazon-choice:checked')].map(x=>clean(x.value)).filter(Boolean)}
 function fieldCandidates(){
   const selectors=['input[name*="sku" i]','textarea[name*="sku" i]','input[id*="sku" i]','textarea[id*="sku" i]','input[aria-label*="custom label" i]','textarea[aria-label*="custom label" i]','input[placeholder*="custom label" i]','textarea[placeholder*="custom label" i]','input[data-testid*="sku" i]','textarea[data-testid*="sku" i]','[role="textbox"][aria-label*="custom label" i]','[contenteditable="true"][aria-label*="custom label" i]','[role="textbox"][data-testid*="sku" i]'];
@@ -24,7 +24,7 @@ function byCaption(){
   }
   return null;
 }
-function findSkuField(){const direct=fieldCandidates();return direct.find(visible)||byCaption()||direct[0]||null}
+function findSkuField(){const direct=fieldCandidates();const exact=direct.find(x=>visible(x)&&/^sku$/i.test(clean([x.name,x.id,x.getAttribute&&x.getAttribute('aria-label'),x.placeholder].join(' '))));return exact||direct.find(visible)||byCaption()||direct[0]||null}
 function skuHeaderCell(){
   const re=/custom\s*label(?:\s*\(\s*sku\s*\))?|seller\s*sku|merchant\s*sku|^sku$/i;
   const cells=[...document.querySelectorAll('th,[role="columnheader"],td,[role="cell"],div,span')].filter(visible).filter(x=>{
@@ -44,7 +44,7 @@ function pencilFromSkuColumn(){
       const rows=[...table.querySelectorAll('tr,[role="row"]')].filter(visible).filter(r=>r!==row);
       for(const r of rows){
         const cells=[...r.children];const cell=cells[idx];if(!cell)continue;
-        const edit=[...cell.querySelectorAll('button,[role="button"],a,[aria-label],[title]')].filter(visible).find(x=>{
+        const edit=[...cell.querySelectorAll('button,[role="button"],[aria-label],[title]')].filter(visible).find(x=>{
           const t=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||''));
           return /edit|modify|change|custom label|sku/i.test(t)||!!x.querySelector('svg');
         });
@@ -54,7 +54,7 @@ function pencilFromSkuColumn(){
   }
   let p=head.parentElement;
   for(let i=0;i<8&&p;i++,p=p.parentElement){
-    const edit=[...p.querySelectorAll('button,[role="button"],a,[aria-label],[title]')].filter(visible).find(x=>{
+    const edit=[...p.querySelectorAll('button,[role="button"],[aria-label],[title]')].filter(visible).find(x=>{
       const t=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||''));
       return /edit|modify|change|custom label|sku/i.test(t)||!!x.querySelector('svg');
     });
@@ -62,13 +62,27 @@ function pencilFromSkuColumn(){
   }
   return null;
 }
+function safeEditorClick(el){
+  if(!el)return false;
+  try{el.scrollIntoView({block:'center'})}catch(_){}
+  const a=el.closest&&el.closest('a[href]');
+  let stop=null;
+  if(a){stop=e=>e.preventDefault();a.addEventListener('click',stop,true)}
+  try{
+    el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+    el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,button:0}));
+    el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0}));
+  }catch(_){try{el.click()}catch(__){}}
+  if(a&&stop)setTimeout(()=>a.removeEventListener('click',stop,true),0);
+  return true
+}
 async function waitSkuField(ms=3500){
   const end=Date.now()+ms;while(Date.now()<end){const f=findSkuField();if(f&&visible(f))return f;await sleep(120)}return findSkuField();
 }
 async function revealSku(){
   let field=findSkuField();if(field&&visible(field))return field;
   const pencil=pencilFromSkuColumn();
-  if(pencil){try{pencil.click();field=await waitSkuField();if(field)return field}catch(_){}}
+  if(pencil){try{safeEditorClick(pencil);field=await waitSkuField();if(field)return field}catch(_){}}
   const re=/custom\s*label|seller\s*sku|merchant\s*sku|\bsku\b/i;
   const clickable=[...document.querySelectorAll('button,[role="button"],summary,a')].filter(visible).filter(x=>re.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))));
   for(const b of clickable){try{b.click();field=await waitSkuField(1200);if(field)return field}catch(_){}}

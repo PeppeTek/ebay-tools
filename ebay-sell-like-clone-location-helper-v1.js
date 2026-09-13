@@ -106,16 +106,6 @@ async function waitForLocationForm(){for(let i=0;i<40;i++){const root=settingsRo
 let __capitanLocationDialog=null;
 function normalizePageAfterLocation(){
   try{
-    document.querySelectorAll('[data-capitan-hidden-location]').forEach(x=>{
-      x.style.opacity='';x.style.pointerEvents='';x.style.transition='';x.style.visibility='';
-      delete x.dataset.capitanHiddenLocation;
-    });
-    document.querySelectorAll('[data-capitan-hidden-location-parent]').forEach(x=>{
-      x.style.background='';x.style.pointerEvents='';delete x.dataset.capitanHiddenLocationParent;
-    });
-    document.querySelectorAll('[data-capitan-hidden-location-backdrop]').forEach(x=>{
-      x.style.removeProperty('pointer-events');delete x.dataset.capitanHiddenLocationBackdrop;
-    });
     for(const el of [document.documentElement,document.body].filter(Boolean)){
       el.style.removeProperty('pointer-events');
       el.style.removeProperty('touch-action');
@@ -129,7 +119,7 @@ function normalizePageAfterLocation(){
 async function closeLocationDialog(){
   const dlg=__capitanLocationDialog;
   if(!dlg){normalizePageAfterLocation();return}
-  for(let i=0;i<12;i++){
+  for(let i=0;i<15;i++){
     if(!dlg.isConnected||!visible(dlg)){__capitanLocationDialog=null;normalizePageAfterLocation();return}
     await sleep(100);
   }
@@ -139,11 +129,6 @@ async function closeLocationDialog(){
       return /^(close|cancel|x|×)$/i.test(t)||/close dialog|dismiss/i.test(t);
     });
     if(close){close.click();await sleep(250)}
-    else{
-      dlg.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Escape',code:'Escape'}));
-      document.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Escape',code:'Escape'}));
-      await sleep(250);
-    }
   }catch(_){}
   __capitanLocationDialog=null;
   normalizePageAfterLocation();
@@ -158,29 +143,7 @@ async function openLocationEditor(){
     }
   }
   const root=await waitForLocationForm();
-  try{
-    const dlg=(root&&root.closest&&root.closest('[role="dialog"],dialog'))||document.querySelector('[role="dialog"],dialog');
-    __capitanLocationDialog=dlg||null;
-    if(dlg){
-      dlg.dataset.capitanHiddenLocation='1';
-      dlg.style.opacity='0';
-      dlg.style.pointerEvents='none';
-      dlg.style.transition='none';
-      const parent=dlg.parentElement;
-      if(parent){
-        parent.dataset.capitanHiddenLocationParent='1';
-        parent.style.background='transparent';
-      }
-      let a=dlg.parentElement;
-      for(let i=0;i<5&&a;i++,a=a.parentElement){
-        const cs=getComputedStyle(a),r=a.getBoundingClientRect();
-        if((cs.position==='fixed'||cs.position==='absolute')&&r.width>=innerWidth*.8&&r.height>=innerHeight*.8){
-          a.dataset.capitanHiddenLocationBackdrop='1';
-          a.style.setProperty('pointer-events','none','important');
-        }
-      }
-    }
-  }catch(_){}
+  try{__capitanLocationDialog=(root&&root.closest&&root.closest('[role="dialog"],dialog'))||document.querySelector('[role="dialog"],dialog')||null}catch(_){}
   return root;
 }
 function restoreHiddenLocationEditor(){closeLocationDialog();}
