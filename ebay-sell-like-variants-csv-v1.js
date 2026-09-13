@@ -27,8 +27,10 @@ function findControlByLabel(re){
   }
   return null
 }
-function normalizePolicyName(v){return clean(v)
-  .replace(/\s*[\(\[]\s*\d+\s+listings?\s*[\)\]]\s*/ig,' ')
+function normalizePolicyName(v){return String(v==null?'':v)
+  .replace(/[\u200B-\u200D\uFEFF]/g,'')
+  .replace(/\u00A0/g,' ')
+  .replace(/\s*[\(\[][^\)\]]*listings?[^\)\]]*[\)\]]\s*/ig,' ')
   .replace(/\s+/g,' ')
   .trim()}
 function controlValue(el){
@@ -143,7 +145,7 @@ function buildCsv(){
   const title=currentTitle(),categoryId=currentCategoryId();
   if(!title)throw Error('Titolo non trovato');
   if(!categoryId)throw Error('Category ID non trovato');
-  const shipping=policyName('shipping'),returns=policyName('return'),payment=policyName('payment');
+  const shipping=normalizePolicyName(policyName('shipping')),returns=normalizePolicyName(policyName('return')),payment=normalizePolicyName(policyName('payment'));
   const missing=[];if(!shipping)missing.push('Shipping policy');if(!returns)missing.push('Return policy');if(!payment)missing.push('Payment policy');
   if(missing.length)throw Error('Policy non lette automaticamente: '+missing.join(', '));
   const country=clean(clone.country||'US').toUpperCase()||'US';
