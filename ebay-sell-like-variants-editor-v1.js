@@ -211,7 +211,7 @@ async function removeExistingAttributes(root,data){
     }).sort((a,b)=>a.childElementCount-b.childElementCount);
     let removed=false;
     for(const chip of matches){
-      const controls=[...chip.querySelectorAll('button,[role="button"],a,[aria-label],span,div')].filter(visible).sort((a,b)=>a.childElementCount-b.childElementCount);
+      const holder=chip.parentElement||chip;const controls=[...holder.querySelectorAll('button,[role="button"],a,[aria-label],span,div')].filter(visible).sort((a,b)=>a.childElementCount-b.childElementCount);
       const x=controls.find(el=>{
         const t=clean((el.innerText||el.textContent||'')+' '+(el.getAttribute&&el.getAttribute('aria-label')||'')).toLowerCase();
         return t==='x'||t==='×'||/remove|delete|close/.test(t);
