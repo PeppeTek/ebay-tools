@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v18';
+const PATCH_ID='capitan-variants-csv-v19';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const CATEGORY_TAXONOMY_ENDPOINT='https://script.google.com/macros/s/AKfycbxPSCamhPhs1fvkikx0KyJFk6wfJDCxC2XqaBbRqDIqOrLN9D_QibphbRB8QenovCY5/exec';
@@ -473,18 +473,36 @@ function countryName(v){
   }
   return ({PK:'Pakistan',US:'United States',GB:'United Kingdom',AU:'Australia',CA:'Canada'})[code]||raw
 }
+function countryCode(v){
+  const raw=clean(v),code=raw.toUpperCase();
+  if(/^[A-Z]{2}$/.test(code))return code;
+  const byName={
+    'UNITED STATES':'US','UNITED STATES OF AMERICA':'US','USA':'US',
+    'PAKISTAN':'PK','UNITED KINGDOM':'GB','GREAT BRITAIN':'GB',
+    'AUSTRALIA':'AU','CANADA':'CA'
+  };
+  return byName[code]||''
+}
+function itemCountryCode(clone){
+  const p=clone.itemLocationParts||{};
+  return countryCode(p.country)||countryCode(clone.country)||'US'
+}
 function locationValue(clone){
   const p=clone.itemLocationParts||{};
-  const city=clean(p.city),state=clean(p.stateOrProvince),country=countryName(p.country);
+  const city=clean(p.city),state=clean(p.stateOrProvince);
   if(city&&state)return city+', '+state;
-  if(city&&country)return city+', '+country;
+  if(city)return city;
+
   const raw=clean(clone.itemLocation||'');
   const parts=raw.split(',').map(clean).filter(Boolean);
-  if(parts.length>=2){
-    const last=parts[parts.length-1];
-    return parts[0]+', '+countryName(last)
-  }
-  return raw.replace(/,?\s*\d[\d*\- ]{2,}\s*(?:,\s*[A-Z]{2})?$/i,'').trim()
+  if(!parts.length)return'';
+
+  const cc=itemCountryCode(clone);
+  const last=parts[parts.length-1];
+  if(countryCode(last)===cc||countryCode(countryName(last))===cc)parts.pop();
+  if(parts.length&&/^\d[\d*\- ]{2,}$/.test(parts[parts.length-1]))parts.pop();
+
+  return parts.slice(0,2).join(', ')||raw
 }
 function sourceValueMap(clone){
   const out={};
@@ -566,7 +584,11 @@ function buildCsv(){
   const data=st.data,dims=Array.isArray(data.dimensions)?data.dimensions:[],variants=Array.isArray(data.variants)?data.variants:[];
   if(!dims.length||!variants.length)throw Error('Varianti incomplete nel payload');
 
-  const baseHeaders=listingsExportHeaders();
+  const itemCountry=itemCountryCode(clone);
+  const baseHeaders=listingsExportHeaders().map(h=>{
+    if(!/^\*Action\(/i.test(h))return h;
+    return h.replace(/\|Country=[^|)]+/i,'|Country='+itemCountry)
+  });
   const dynamicHeaders=dynamicAspectHeaders(dims,baseHeaders);
   const extraHeaders=['PicURL'].filter(h=>!baseHeaders.includes(h));
   const headers=[...baseHeaders,...dynamicHeaders,...extraHeaders];
