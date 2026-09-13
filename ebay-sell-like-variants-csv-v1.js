@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v3';
+const PATCH_ID='capitan-variants-csv-v4';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 if(document.getElementById(PATCH_ID))return;
@@ -96,33 +96,34 @@ function policyName(kind){
   const labelText={shipping:'Shipping policy',payment:'Payment policy',return:'Return policy'}[kind]||kind+' policy';
   const escaped=labelText.replace(/[-\/\\^$*+?.()|[\]{}]/g,'\\$&');
   const labelRe=new RegExp('^'+escaped+'$','i');
-  const good=v=>{
-    v=normalizePolicyName(v);
-    if(!v||labelRe.test(v)||/^(edit|change|select|add|help|done|\.\.\.|shipping|payment|returns?|policy)$/i.test(v)||v.length>180)return'';
-    return v
-  };
+  const sectionRe=kind==='return'?/\breturns?\b/i:kind==='payment'?/\bpayment\b/i:/\bshipping\b/i;
+  const good=v=>{v=normalizePolicyName(v);if(!v||labelRe.test(v)||/^(edit|change|select|add|help|done|\.\.\.|shipping|payment|returns?|policy)$/i.test(v)||v.length>180)return'';return v};
+
+  // Most reliable eBay pattern: selected business-policy controls contain '(N listings)' or '[N listings]'.
+  const listingControls=[...document.querySelectorAll('input,textarea,select,button,[role="combobox"],[role="button"]')];
+  for(const e of listingControls){
+    const raw=controlValue(e);
+    if(!/\b\d+\s+listings?\b/i.test(raw))continue;
+    let p=e,scope='';
+    for(let depth=0;depth<7&&p;depth++,p=p.parentElement){scope=clean((p.innerText||p.textContent||'')+' '+(p.getAttribute&&p.getAttribute('aria-label')||''));if(sectionRe.test(scope))break}
+    if(sectionRe.test(scope)){const v=good(raw);if(v)return v}
+  }
+
+  // Exact visible/hidden labeled field.
   for(const l of document.querySelectorAll('label')){
     if(!labelRe.test(clean(l.innerText||l.textContent||'')))continue;
     const linked=l.htmlFor?document.getElementById(l.htmlFor):null;
     for(const e of [linked,l.querySelector('input,textarea,select,[role="combobox"],button'),l.parentElement&&l.parentElement.querySelector('input,textarea,select,[role="combobox"],button')]){const v=good(controlValue(e));if(v)return v}
   }
+
+  // Metadata fallback.
   const metaRe=new RegExp(kind+'.*(policy|profile)|(policy|profile).*'+kind,'i');
-  for(const e of document.querySelectorAll('select,input,textarea,[role="combobox"],button,[role="button"]')){
-    const meta=clean([e.name,e.id,e.placeholder,e.getAttribute('aria-label'),e.getAttribute('data-testid'),e.getAttribute('data-field')].join(' '));
-    if(!metaRe.test(meta))continue;
-    const v=good(controlValue(e));if(v)return v
-  }
+  for(const e of listingControls){const meta=clean([e.name,e.id,e.placeholder,e.getAttribute&&e.getAttribute('aria-label'),e.getAttribute&&e.getAttribute('data-testid'),e.getAttribute&&e.getAttribute('data-field')].join(' '));if(metaRe.test(meta)){const v=good(controlValue(e));if(v)return v}}
+
+  // Search the smallest DOM block around the exact label, including hidden mounted settings.
   const labels=[...document.querySelectorAll('label,h2,h3,h4,legend,div,span,p')].filter(x=>labelRe.test(clean(x.innerText||x.textContent||'')));
-  for(const l of labels){
-    let p=l.parentElement;
-    for(let depth=0;depth<6&&p;depth++,p=p.parentElement){
-      for(const e of p.querySelectorAll('input,textarea,select,[role="combobox"],button,[role="button"],span,div,p')){const v=good(controlValue(e));if(v&&!/\b(?:shipping|payment|return)\s+policy\b/i.test(v))return v}
-    }
-  }
-  let rootText='';
-  try{const copy=document.body.cloneNode(true);copy.querySelector('#capitan-sell-like-clone')?.remove();copy.querySelectorAll('script,style,noscript').forEach(x=>x.remove());rootText=String(copy.innerText||copy.textContent||'')}catch(_){rootText=String(document.body&&document.body.innerText||'')}
-  const lines=rootText.split(/\r?\n/).map(clean).filter(Boolean);
-  for(let i=0;i<lines.length;i++){if(!labelRe.test(lines[i]))continue;for(let j=i+1;j<Math.min(lines.length,i+8);j++){const v=good(lines[j]);if(v)return v}}
+  for(const l of labels){let p=l.parentElement;for(let depth=0;depth<7&&p;depth++,p=p.parentElement){for(const e of p.querySelectorAll('input,textarea,select,[role="combobox"],button,[role="button"],span,div,p')){const v=good(controlValue(e));if(v&&!/\b(?:shipping|payment|return)\s+policy\b/i.test(v))return v}}}
+
   return''
 }
 function currentSkuBase(){
@@ -282,7 +283,9 @@ async function run(){
         const list=panel&&panel.querySelector('[data-ebay-action="list"]');
         if(list)list.style.display='none';
         const missingPolicy=Object.entries(res.policies).filter(([,v])=>!v).map(([k])=>k);
-        setStatus('CSV varianti pronto: '+res.rows+' varianti'+(missingPolicy.length?' — verifica policy: '+missingPolicy.join(', '):'.'));
+        const mainStatus=document.querySelector('#capitan-sell-like-clone #st');
+        if(mainStatus)mainStatus.innerHTML=missingPolicy.length?'<span class="bad">Preparazione non completata.</span> Policy mancanti nel CSV: '+missingPolicy.join(', '):'<span class="ok">Preparazione completata.</span> CSV varianti pronto.';
+        setStatus(missingPolicy.length?'CSV generato ma incompleto: '+missingPolicy.join(', '):'CSV varianti pronto: '+res.rows+' varianti.');
         try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
       }catch(e){
         console.warn('Variant CSV',e);
