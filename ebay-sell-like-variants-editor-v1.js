@@ -278,8 +278,10 @@ async function addCustomOption(root,value){
   let input=null;
   for(let i=0;i<30&&!input;i++){
     await sleep(100);
+    const known=document.getElementById('msku-custom-option-input');
+    if(known&&visible(known))input=known;
     const candidates=[...document.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible).filter(x=>!beforeInputs.has(x));
-    input=candidates.find(x=>/option|custom|create|value|variation/i.test(clean([x.placeholder,x.getAttribute('aria-label'),x.name,x.id].join(' '))))||candidates[0]||null;
+    if(!input)input=candidates.find(x=>/option|custom|create|value|variation/i.test(clean([x.placeholder,x.getAttribute('aria-label'),x.name,x.id].join(' '))))||candidates[0]||null;
     if(!input){
       const overlays=[...document.querySelectorAll('[role="dialog"],[role="menu"],[role="listbox"],[aria-modal="true"],div')].filter(visible).filter(x=>/create your own|custom|option/i.test(clean(x.innerText||x.textContent||''))&&clean(x.innerText||x.textContent||'').length<2500);
       for(const ov of overlays){
