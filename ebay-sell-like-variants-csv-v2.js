@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v13';
+const PATCH_ID='capitan-variants-csv-v14';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -90,20 +90,20 @@ function currentConditionId(){
   return '1000'
 }
 function currentConditionText(){
+  const labels=[...document.querySelectorAll('label,div,span,h2,h3')]
+    .filter(e=>visible(e)&&/^item condition$/i.test(clean(e.innerText||e.textContent||'')));
+  for(const l of labels){
+    let p=l.parentElement;
+    for(let depth=0;depth<4&&p;depth++,p=p.parentElement){
+      const lines=String(p.innerText||p.textContent||'').split(/\r?\n/).map(clean).filter(Boolean)
+        .filter(v=>!/^item condition$/i.test(v));
+      const v=lines.find(x=>/new with tags|new without tags|new|used|open box|refurbished|pre-owned/i.test(x));
+      if(v)return v
+    }
+  }
   const d=cloneData()||{};
   for(const v of [d.conditionLabel,d.conditionText,d.condition]){
     const x=clean(v);if(x)return x
-  }
-  const labels=[...document.querySelectorAll('label,div,span,h2,h3')]
-    .filter(e=>/^item condition$/i.test(clean(e.innerText||e.textContent||'')));
-  for(const l of labels){
-    let p=l.parentElement;
-    for(let depth=0;depth<3&&p;depth++,p=p.parentElement){
-      const text=clean(p.innerText||p.textContent||'');
-      const lines=text.split(/\n+/).map(clean).filter(Boolean).filter(v=>!/^item condition$/i.test(v));
-      const v=lines.find(x=>/new|used|open box|refurbished|pre-owned/i.test(x));
-      if(v)return v
-    }
   }
   return 'New'
 }
@@ -135,18 +135,20 @@ function currentCategoryId(){
 function currentCategoryName(){
   const banned=/learn more|opens in a new window|sales tax|help|^edit$|feedback/i;
   const heads=[...document.querySelectorAll('h1,h2,h3,h4,div,span')]
-    .filter(e=>/^item category$/i.test(clean(e.innerText||e.textContent||'')));
+    .filter(e=>visible(e)&&/^item category$/i.test(clean(e.innerText||e.textContent||'')));
 
   for(const h of heads){
-    let p=h.parentElement;
-    for(let depth=0;depth<5&&p;depth++,p=p.parentElement){
-      const links=[...p.querySelectorAll('a[href]')]
-        .map(a=>clean(a.innerText||a.textContent||''))
-        .filter(v=>v&&!banned.test(v)&&v.length<=100);
-      if(links.length){
-        const name=links[0];
-        return name.startsWith('/')?name:'/'+name
-      }
+    const hr=h.getBoundingClientRect();
+    const candidates=[...document.querySelectorAll('a[href]')]
+      .filter(visible)
+      .map(a=>({a,text:clean(a.innerText||a.textContent||''),r:a.getBoundingClientRect()}))
+      .filter(x=>x.text&&!banned.test(x.text)&&x.text.length<=100)
+      .filter(x=>x.r.top>=hr.bottom-5&&x.r.top<=hr.bottom+140)
+      .filter(x=>Math.abs(x.r.left-hr.left)<=120)
+      .sort((a,b)=>(a.r.top-b.r.top)||(a.r.left-b.r.left));
+    if(candidates.length){
+      const name=candidates[0].text;
+      return name.startsWith('/')?name:'/'+name
     }
   }
 
@@ -296,31 +298,16 @@ function technicalSpecsFromDescription(){
     const heading=[...doc.querySelectorAll('h1,h2,h3,h4')]
       .find(h=>/^technical specifications$/i.test(clean(h.textContent||'')));
     if(!heading)return out;
-
-    let container=heading.nextElementSibling||heading.parentElement||doc.body;
-    if(container===heading.parentElement){
-      const all=[...container.querySelectorAll('b,strong')];
-      for(const strong of all){
-        const name=clean(strong.textContent||'').replace(/:$/,'');
-        if(!name||name.length>90)continue;
-        const line=strong.parentElement;
-        const full=clean(line&&line.textContent||'');
-        const label=clean(strong.textContent||'');
-        const pos=full.indexOf(label);
-        const value=clean(pos>=0?full.slice(pos+label.length):'').replace(/^:\s*/,'');
-        if(value&&!out[name])out[name]=value
-      }
-    }else{
-      for(const strong of container.querySelectorAll('b,strong')){
-        const name=clean(strong.textContent||'').replace(/:$/,'');
-        if(!name||name.length>90)continue;
-        const line=strong.parentElement;
-        const full=clean(line&&line.textContent||'');
-        const label=clean(strong.textContent||'');
-        const pos=full.indexOf(label);
-        const value=clean(pos>=0?full.slice(pos+label.length):'').replace(/^:\s*/,'');
-        if(value&&!out[name])out[name]=value
-      }
+    const section=heading.nextElementSibling||heading.parentElement||doc.body;
+    for(const strong of section.querySelectorAll('b,strong')){
+      const name=clean(strong.textContent||'').replace(/:$/,'');
+      if(!name||name.length>90)continue;
+      const row=strong.parentElement;
+      const full=clean(row&&row.textContent||'');
+      const label=clean(strong.textContent||'');
+      const pos=full.indexOf(label);
+      const value=clean(pos>=0?full.slice(pos+label.length):'').replace(/^:\s*/,'');
+      if(value&&!out[name])out[name]=value
     }
   }catch(_){}
   return out
@@ -328,29 +315,49 @@ function technicalSpecsFromDescription(){
 function currentItemSpecifics(){
   const clone=cloneData()||{},out={};
   const reserved=/^(title|description|category|item category|price|pricing|quantity|condition|shipping|shipping policy|payment|payment policy|returns?|return policy|location|item location|custom label|custom label \(sku\)|schedule time|format|duration|photos?|variations?|essential|optional|required)$/i;
+  const canonicalName=name=>{
+    const n=clean(name).replace(/[?*:]+$/,'').trim();
+    const aliases={
+      'brand':'Brand',
+      'compatible brand':'Compatible Brand',
+      'type':'Type',
+      'material':'Material',
+      'compatible model':'Compatible Model',
+      'personalize':'Personalize',
+      'personalized':'Personalized',
+      'country of origin':'Country of Origin',
+      'band type':'Band Type',
+      'band width':'Band Width',
+      'colour':'Color'
+    };
+    return aliases[n.toLowerCase()]||n
+  };
   const badValue=(name,value)=>{
     const n=clean(name).toLowerCase(),v=clean(value);
     if(!v)return true;
     if(v.toLowerCase()===n)return true;
     if(/search(?: or enter your own)?\.?\s*(?:search results|results) appear below/i.test(v))return true;
     if(/^(enter your own|select|choose|add|suggested:.*)$/i.test(v))return true;
+    const labelHits=(v.match(/(?:^|\s)(?:Brand|Compatible Brand|Personalize|Personalized|Type|Band Type|Band Width|Compatible Model|Material|Country of Origin)\s*:/gi)||[]).length;
+    if(labelHits>=2)return true;
     return false
   };
   const put=(name,value,overwrite=false)=>{
-    name=clean(name).replace(/[?*:]+$/,'').trim();
-    value=clean(value);
+    name=canonicalName(name);value=clean(value);
     if(!name||!value||reserved.test(name)||name.length>90||value.length>1000)return;
     if(badValue(name,value))return;
     if(overwrite||!out[name])out[name]=value
   };
 
-  // Fallback source only: competitor aspects already parsed by the backend.
+  // Golden source order: same Technical Specifications already used in the aligned CSV.
+  for(const [k,v] of Object.entries(technicalSpecsFromDescription()))put(k,v,false);
+
+  // Backend aspects fill only fields not already present.
   for(const [k,v] of Object.entries(clone.aspects||{}))put(k,v,false);
 
-  // The Sell Like page is authoritative because eBay has already populated these fields.
+  // eBay page values override when already populated in Essential/Optional.
   const markers=[...document.querySelectorAll('h1,h2,h3,h4,h5,legend,div,span')]
-    .filter(x=>/^(essential|optional|required)$/i.test(clean(x.innerText||x.textContent||'')));
-
+    .filter(x=>visible(x)&&/^(essential|optional|required)$/i.test(clean(x.innerText||x.textContent||'')));
   let root=null;
   for(const marker of markers){
     let p=marker.parentElement;
@@ -363,90 +370,42 @@ function currentItemSpecifics(){
   }
 
   if(root){
-    const visibleEls=[...root.querySelectorAll('label,div,span,p')]
+    const labels=[...root.querySelectorAll('label,div,span,p')]
       .filter(visible)
       .filter(el=>el.children.length===0)
-      .map(el=>({el,text:clean(el.innerText||el.textContent||'')}))
-      .filter(x=>x.text&&x.text.length<=90)
-      .filter(x=>!/^(essential|optional|required|yes|no|suggested:.*|\d+\/\d+|enter your own)$/i.test(x.text))
-      .filter(x=>!reserved.test(x.text));
+      .map(el=>({el,name:canonicalName(el.innerText||el.textContent||'')}))
+      .filter(x=>x.name&&x.name.length<=80)
+      .filter(x=>!/^(essential|optional|required|yes|no|suggested:.*|\d+\/\d+|enter your own)$/i.test(x.name))
+      .filter(x=>!reserved.test(x.name));
 
-    const controls=[...root.querySelectorAll('input,textarea,select,[role="combobox"],button,[role="radio"]')].filter(visible);
-
-    const selectedValueForRow=row=>{
+    const valueFromRow=row=>{
       const checked=row.querySelector('input[type="radio"]:checked,input[type="checkbox"]:checked,[role="radio"][aria-checked="true"],button[aria-pressed="true"],[data-state="checked"]');
       if(checked){
         const v=clean(checked.value||checked.innerText||checked.textContent||checked.getAttribute('aria-label')||'');
         if(v)return v
       }
-
       const select=row.querySelector('select');
-      if(select){
-        const v=clean(controlValue(select));
-        if(v)return v
-      }
-
+      if(select){const v=clean(controlValue(select));if(v)return v}
       const combo=row.querySelector('[role="combobox"]');
-      if(combo){
-        const v=clean(controlValue(combo));
-        if(v)return v
-      }
-
+      if(combo){const v=clean(controlValue(combo));if(v)return v}
       const input=row.querySelector('input[type="text"],input[type="search"],input:not([type]),textarea');
       if(input&&clean(input.value))return clean(input.value);
-
-      // eBay sometimes renders the selected value inside a button.
       const buttons=[...row.querySelectorAll('button,[role="button"]')].filter(visible);
       for(const b of buttons){
         const v=clean(b.innerText||b.textContent||b.value||b.getAttribute('aria-label')||'');
-        if(v&&!/^(yes|no)$/i.test(v)&&!badValue('',v))return v
+        if(v&&!badValue('',v))return v
       }
       return''
     };
 
-    // First pass: exact row mapping by common ancestor.
-    for(const item of visibleEls){
-      const name=item.text;
+    for(const item of labels){
       let row=item.el.parentElement;
       for(let depth=0;depth<5&&row;depth++,row=row.parentElement){
-        const v=selectedValueForRow(row);
-        if(v&&!badValue(name,v)){put(name,v,true);break}
-      }
-    }
-
-    // Second pass: geometric label -> control matching for eBay rows without semantic markup.
-    for(const ctrl of controls){
-      const directValue=clean(controlValue(ctrl));
-      if(!directValue||badValue('',directValue))continue;
-      if((ctrl.type==='radio'||ctrl.type==='checkbox')&&!ctrl.checked)continue;
-
-      const cr=ctrl.getBoundingClientRect();
-      const candidates=visibleEls
-        .map(x=>({x,r:x.el.getBoundingClientRect()}))
-        .filter(o=>o.r.right<=cr.left+20)
-        .filter(o=>{
-          const cy=(cr.top+cr.bottom)/2,ly=(o.r.top+o.r.bottom)/2;
-          return Math.abs(cy-ly)<=Math.max(26,cr.height)
-        })
-        .sort((a,b)=>Math.abs(((a.r.top+a.r.bottom)/2)-((cr.top+cr.bottom)/2))-Math.abs(((b.r.top+b.r.bottom)/2)-((cr.top+cr.bottom)/2)));
-
-      if(candidates.length)put(candidates[0].x.text,directValue,true)
-    }
-
-    // Explicit Yes/No rows: choose only the selected value.
-    for(const item of visibleEls){
-      const name=item.text;
-      let row=item.el.parentElement;
-      for(let depth=0;depth<5&&row;depth++,row=row.parentElement){
-        const selected=row.querySelector('[role="radio"][aria-checked="true"],button[aria-pressed="true"],input[type="radio"]:checked,input[type="checkbox"]:checked');
-        if(selected){
-          const v=clean(selected.value||selected.innerText||selected.textContent||selected.getAttribute('aria-label')||'');
-          if(/^(yes|no)$/i.test(v)){put(name,v,true);break}
-        }
+        const v=valueFromRow(row);
+        if(v&&!badValue(item.name,v)){put(item.name,v,true);break}
       }
     }
   }
-
   return out
 }
 function dynamicAspectHeaders(dims,baseHeaders){
