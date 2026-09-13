@@ -208,57 +208,81 @@ function defaultPhotos(data,clone){
   }
   return out.slice(0,12)
 }
+function technicalSpecsFromDescription(){
+  const out={};
+  const clone=cloneData()||{};
+  const html=String(clone.descriptionHtml||'').trim();
+  if(!html)return out;
+  try{
+    const doc=new DOMParser().parseFromString(html,'text/html');
+    const heading=[...doc.querySelectorAll('h1,h2,h3,h4')].find(h=>/^technical specifications$/i.test(clean(h.textContent||'')));
+    if(!heading)return out;
+    const section=heading.parentElement||doc.body;
+    for(const node of section.querySelectorAll('div,p,li')){
+      const strong=node.querySelector('b,strong');
+      if(!strong)continue;
+      const name=clean(strong.textContent||'').replace(/:$/,'');
+      if(!name||name.length>90)continue;
+      const full=clean(node.textContent||'');
+      const label=clean(strong.textContent||'');
+      const pos=full.indexOf(label);
+      const value=clean(pos>=0?full.slice(pos+label.length):'').replace(/^:\s*/,'');
+      if(value&&!out[name])out[name]=value
+    }
+  }catch(_){ }
+  return out
+}
+
 function currentItemSpecifics(){
   const clone=cloneData()||{},out={};
   const reserved=/^(title|description|category|item category|price|pricing|quantity|condition|shipping|shipping policy|payment|payment policy|returns?|return policy|location|item location|custom label|custom label \(sku\)|schedule time|format|duration|photos?|variations?)$/i;
+  const badValue=(name,value)=>{
+    const n=clean(name).toLowerCase(),v=clean(value);
+    if(!v)return true;
+    if(v.toLowerCase()===n)return true;
+    if(/search(?: or enter your own)?\.?\s*(?:search results|results) appear below/i.test(v))return true;
+    if(/^(enter your own|select|choose|add)$/i.test(v))return true;
+    return false
+  };
   const put=(name,value)=>{
     name=clean(name).replace(/[?*:]+$/,'').trim();value=clean(value);
     if(!name||!value||reserved.test(name)||name.length>90||value.length>1000)return;
-    if(/^(select|choose|enter your own|add)$/i.test(value))return;
+    if(badValue(name,value))return;
     if(!out[name])out[name]=value
   };
-
-  // Primary source: competitor item specifics already parsed by the Sell Like backend.
   for(const [k,v] of Object.entries(clone.aspects||{}))put(k,v);
+  for(const [k,v] of Object.entries(technicalSpecsFromDescription()))put(k,v);
 
-  // Secondary source: only the eBay Item Specifics area (Required / Optional),
-  // never global settings such as Item Location, Shipping or Returns.
-  const markerNodes=[...document.querySelectorAll('h2,h3,h4,h5,legend,div,span')]
-    .filter(x=>/^(required|optional)$/i.test(clean(x.innerText||x.textContent||'')));
+  const markers=[...document.querySelectorAll('h2,h3,h4,h5,legend,div,span')].filter(x=>/^(required|optional)$/i.test(clean(x.innerText||x.textContent||'')));
   const roots=[];
-  for(const marker of markerNodes){
+  for(const marker of markers){
     let p=marker.parentElement;
     for(let depth=0;depth<7&&p;depth++,p=p.parentElement){
-      const count=p.querySelectorAll('input,textarea,select,[role="combobox"],[role="radiogroup"]').length;
-      if(count>=3&&count<=120){roots.push(p);break}
+      const count=p.querySelectorAll('input,textarea,select,[role="combobox"],[role="radio"],button').length;
+      if(count>=3&&count<=140){roots.push(p);break}
     }
   }
   const root=roots.sort((a,b)=>a.querySelectorAll('*').length-b.querySelectorAll('*').length)[0]||null;
-
   if(root){
     for(const l of root.querySelectorAll('label')){
       const name=clean(l.innerText||l.textContent||'').replace(/[?*]+$/,'').trim();
       if(!name||reserved.test(name))continue;
-      let e=l.htmlFor?document.getElementById(l.htmlFor):null;
-      if(!e)e=l.querySelector('input,textarea,select,[role="combobox"]');
-      if(!e&&l.parentElement)e=l.parentElement.querySelector('input,textarea,select,[role="combobox"]');
-      if(e){
-        if((e.type==='radio'||e.type==='checkbox')&&!e.checked)continue;
-        put(name,controlValue(e));
-        continue
+      let row=l.parentElement;
+      for(let depth=0;depth<3&&row;depth++,row=row.parentElement){
+        const exact=l.htmlFor?document.getElementById(l.htmlFor):null;
+        if(exact){
+          if((exact.type==='radio'||exact.type==='checkbox')&&!exact.checked)continue;
+          put(name,controlValue(exact));break
+        }
+        const textInput=row.querySelector('input[type="text"],input[type="search"],input:not([type]),textarea');
+        if(textInput&&clean(textInput.value)){put(name,textInput.value);break}
+        const select=row.querySelector('select');
+        if(select&&clean(controlValue(select))){put(name,controlValue(select));break}
+        const combo=row.querySelector('[role="combobox"]');
+        if(combo&&clean(controlValue(combo))){put(name,controlValue(combo));break}
+        const checked=row.querySelector('input[type="radio"]:checked,input[type="checkbox"]:checked,[role="radio"][aria-checked="true"],button[aria-pressed="true"],[data-state="checked"]');
+        if(checked){const v=clean(checked.value||checked.innerText||checked.textContent||checked.getAttribute('aria-label')||'');put(name,v);break}
       }
-      const row=l.parentElement;
-      if(row){
-        const selected=[...row.querySelectorAll('button,[role="radio"],[role="option"]')]
-          .find(b=>b.getAttribute('aria-checked')==='true'||b.getAttribute('aria-pressed')==='true'||b.classList.contains('selected'));
-        if(selected)put(name,selected.innerText||selected.textContent||selected.value)
-      }
-    }
-
-    for(const e of root.querySelectorAll('input,textarea,select,[role="combobox"]')){
-      const name=clean(e.getAttribute('aria-label')||'');
-      if(!name||reserved.test(name))continue;
-      put(name,controlValue(e))
     }
   }
   return out
@@ -294,10 +318,11 @@ function sourceValueMap(clone){
   return out
 }
 function findAspectHeader(headers,name){
-  const exact='C:'+clean(name);
+  const raw=clean(name);
+  const exact='C:'+raw;
   let i=headers.findIndex(h=>clean(h).toLowerCase()===exact.toLowerCase());
   if(i>=0)return headers[i];
-  const nk=clean(name).toLowerCase().replace(/colour/g,'color').replace(/[^a-z0-9]/g,'');
+  const nk=raw.toLowerCase().replace(/colour/g,'color').replace(/[^a-z0-9]/g,'');
   i=headers.findIndex(h=>{
     if(!/^C:/i.test(h))return false;
     const hk=clean(h.slice(2)).toLowerCase().replace(/colour/g,'color').replace(/[^a-z0-9]/g,'');
