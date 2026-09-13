@@ -1,12 +1,23 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-editor-v10';
+const PATCH_ID='capitan-variants-editor-v11';
 const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const clean=v=>String(v==null?'':v).replace(/\s+/g,' ').trim();
+function status(msg,bad=false){
+  let el=document.getElementById('capitan-variant-run-status');
+  if(!el){
+    el=document.createElement('div');
+    el.id='capitan-variant-run-status';
+    el.style.cssText='position:fixed;right:12px;top:12px;z-index:2147483647;padding:9px 12px;border:1px solid #bbb;border-radius:8px;background:#fff;font:12px Arial,sans-serif;box-shadow:0 4px 20px #0003;max-width:360px';
+    document.documentElement.appendChild(el)
+  }
+  el.textContent=msg;
+  el.style.color=bad?'#b3261e':'#137333'
+}
 const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
 function userClick(el){
   if(!el)return false;
@@ -247,6 +258,14 @@ async function chooseAttribute(root,dim){
   return chipExists()
 }
 function isOptionSelected(root,value){
+  const low=clean(value).toLowerCase();if(!low)return false;
+  const right=root.querySelector('.right-section');
+  if(right){
+    const hit=[...right.querySelectorAll('button,[role="button"],a,li,div,span')].filter(visible).some(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);
+    if(hit)return true
+  }
+  const pressed=[...root.querySelectorAll('li[role="button"][aria-pressed="true"]')].filter(visible).some(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);
+  if(pressed)return true;
   return selectedOptionExists(root,value)
 }
 async function selectSuggestedOption(root,value){
@@ -254,6 +273,11 @@ async function selectSuggestedOption(root,value){
   if(isOptionSelected(root,val))return true;
   const zone=optionsZone(root);
   const hr=selectedHeaderRect(root);
+  const direct=[...zone.querySelectorAll('#msku-variations-body li[role="button"],li[role="button"]')].filter(visible).find(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);
+  if(direct){
+    userClick(direct);
+    for(let i=0;i<20;i++){await sleep(100);if(isOptionSelected(root,val))return true}
+  }
   const candidates=[...zone.querySelectorAll('button,[role="button"],a,label,div,span')].filter(visible).filter(x=>{
     if(clean(x.innerText||x.textContent||'').toLowerCase()!==low)return false;
     if(!hr)return true;
@@ -295,7 +319,7 @@ async function addCustomOption(root,value){
   setNative(input,val);await sleep(120);
 
   let container=input;
-  let add=null;
+  let add=document.getElementById('msku-custom-option-add')||null;
   for(let i=0;i<6&&container;i++,container=container.parentElement){
     add=[...container.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^(Add|Create|Save|Done)$/i.test(clean(x.innerText||x.textContent||'')))||null;
     if(add)break;
@@ -333,21 +357,21 @@ async function handleCreateVariationsPage(data){
   await removeExistingAttributes(root,data);
   for(const dim of data.dimensions||[]){
     const attrOk=await chooseAttribute(root,dim);
-    if(!attrOk){console.warn('Variant attribute not added',dim.name);return false}
+    if(!attrOk){console.warn('Variant attribute not added',dim.name);status('Errore attributo: '+dim.name,true);return false}
     for(const value of dim.values||[]){
       const ok=await ensureOption(root,value);
-      if(!ok){console.warn('Variant option not selected/added',dim.name,value);return false}
+      if(!ok){console.warn('Variant option not selected/added',dim.name,value);status('Errore opzione: '+value,true);return false}
     }
   }
   const expected=(data.dimensions||[]).flatMap(d=>d.values||[]).map(v=>clean(v).toLowerCase()).filter(Boolean);
   const missing=expected.filter(v=>!selectedOptionExists(root,v));
-  if(missing.length){console.warn('Not all expected options are in selected panel; Continue skipped',missing);return false}
+  if(missing.length){console.warn('Not all expected options are in selected panel; Continue skipped',missing);status('Opzioni mancanti: '+missing.join(', '),true);return false}
   const cont=await waitUntil(()=>{
     const known=document.getElementById('msku-create-continue-button');
     if(known&&visible(known)&&!known.disabled&&known.getAttribute('aria-disabled')!=='true')return known;
     return [...root.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^Continue$/i.test(clean(x.innerText||x.textContent||''))&&!x.disabled&&x.getAttribute('aria-disabled')!=='true')||null
   },4000,100);
-  if(cont){userClick(cont);await sleep(1200);return true}
+  if(cont){status('Opzioni completate. Continue...');userClick(cont);await sleep(1200);return true}
   return false
 }
 
@@ -543,6 +567,7 @@ async function handleCombinationsPage(data){
 
 async function run(data){
   if(!data||!data.hasVariations)return;
+  status('Automazione varianti avviata...');
   if(isCombinationsPage()){await handleCombinationsPage(data);return}
   if(isCreateVariationsPage()){
     const moved=await handleCreateVariationsPage(data);
