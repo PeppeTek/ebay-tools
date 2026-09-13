@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v15';
+const PATCH_ID='capitan-variants-csv-v16';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -133,22 +133,28 @@ function currentCategoryId(){
   return m?m[1]:''
 }
 function currentCategoryName(){
-  const banned=/learn more|opens in a new window|sales tax|help|^edit$|feedback/i;
-  const heads=[...document.querySelectorAll('h1,h2,h3,h4,div,span')]
-    .filter(el=>visible(el)&&/^item category$/i.test(clean(el.innerText||el.textContent||'')));
+  const banned=/learn more|opens in a new window|sales tax|help|^edit$|feedback|^item category$/i;
 
-  for(const h of heads){
-    const hr=h.getBoundingClientRect();
-    const candidates=[...document.querySelectorAll('a[href]')]
-      .filter(visible)
-      .map(a=>({text:clean(a.innerText||a.textContent||''),r:a.getBoundingClientRect()}))
-      .filter(x=>x.text&&!banned.test(x.text)&&x.text.length<=100)
-      .filter(x=>x.r.top>=hr.bottom-8&&x.r.top<=hr.bottom+220)
-      .sort((a,b)=>Math.abs(a.r.top-hr.bottom)-Math.abs(b.r.top-hr.bottom));
+  let bodyText='';
+  try{
+    const copy=document.body.cloneNode(true);
+    const panel=copy.querySelector('#capitan-sell-like-clone');
+    if(panel)panel.remove();
+    copy.querySelectorAll('script,style,noscript').forEach(x=>x.remove());
+    bodyText=String(copy.innerText||copy.textContent||'')
+  }catch(_){
+    bodyText=String(document.body&&document.body.innerText||'')
+  }
 
-    if(candidates.length){
-      const name=candidates[0].text;
-      return name.startsWith('/')?name:'/'+name
+  const lines=bodyText.split(/\r?\n/).map(clean).filter(Boolean);
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].toLowerCase()!=='item category')continue;
+    for(let j=i+1;j<Math.min(lines.length,i+6);j++){
+      const candidate=clean(lines[j]);
+      if(!candidate||banned.test(candidate))continue;
+      if(/\s*>\s*/.test(candidate))continue;
+      if(candidate.length>100)continue;
+      return candidate.startsWith('/')?candidate:'/'+candidate
     }
   }
 
@@ -409,16 +415,34 @@ function currentItemSpecifics(){
   return out
 }
 function dynamicAspectHeaders(dims,baseHeaders){
-  const source=currentItemSpecifics();
+  const clone=cloneData()||{};
+  const source={};
+  const put=(name,value)=>{
+    name=clean(name).replace(/[?*:]+$/,'').trim();
+    value=clean(value);
+    if(!name||!value||name.length>90||value.length>1000)return;
+    if(/^(review item specifics|suggested item|show more|apply all|dismiss tooltip|department|handmade|unit type|vintage|year manufactured)$/i.test(name))return;
+    if(/search(?: or enter your own)?|results appear below/i.test(name))return;
+    if(/^(apply all|dismiss tooltip|no|yes)$/i.test(value))return;
+    if(!source[name])source[name]=value
+  };
+
+  for(const [k,v] of Object.entries(technicalSpecsFromDescription()))put(k,v);
+  for(const [k,v] of Object.entries(clone.aspects||{}))put(k,v);
+
   const blocked=new Set((dims||[]).map(d=>clean(d.name).toLowerCase().replace(/colour/g,'color')));
   const existing=new Set((baseHeaders||[]).map(h=>clean(h).toLowerCase()));
   const out=[];
+
   for(const [k,v] of Object.entries(source)){
     const name=clean(k),val=clean(v),nk=name.toLowerCase().replace(/colour/g,'color');
     if(!name||!val||blocked.has(nk))continue;
     if(/^(upc|ean|isbn|epid)$/i.test(name))continue;
     const header='C:'+name;
-    if(!existing.has(header.toLowerCase())){out.push(header);existing.add(header.toLowerCase())}
+    if(!existing.has(header.toLowerCase())){
+      out.push(header);
+      existing.add(header.toLowerCase())
+    }
   }
   return out
 }
