@@ -546,7 +546,7 @@ async function run(data){
   if(isCombinationsPage()){await handleCombinationsPage(data);return}
   if(isCreateVariationsPage()){
     const moved=await handleCreateVariationsPage(data);
-    if(moved)return;
+    if(moved){await sleep(1500);if(isCombinationsPage())await handleCombinationsPage(data);return;}
   }
   const scope=variationEditorSurface(data)||await openEditor(data);if(!scope){console.warn('Variations editor non trovato');return}
   await createDimensions(scope,data);
