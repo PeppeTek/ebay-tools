@@ -317,12 +317,15 @@ function buildCsv(){
   const data=st.data,dims=Array.isArray(data.dimensions)?data.dimensions:[],variants=Array.isArray(data.variants)?data.variants:[];
   if(!dims.length||!variants.length)throw Error('Varianti incomplete nel payload');
 
-  const headers=listingsExportHeaders();
+  const baseHeaders=listingsExportHeaders();
+  const dynamicHeaders=dynamicAspectHeaders(dims,baseHeaders);
+  const extraHeaders=['Condition','PicURL'].filter(h=>!baseHeaders.includes(h));
+  const headers=[...baseHeaders,...dynamicHeaders,...extraHeaders];
   const idx=Object.fromEntries(headers.map((h,i)=>[h,i]));
   const actionHeader=headers.find(h=>/^\*Action\(/i.test(h));
   const row=()=>Array(headers.length).fill('');
 
-  const title=currentTitle(),categoryId=currentCategoryId(),categoryName=clean(clone.categoryName||data.categoryName||'');
+  const title=currentTitle(),categoryId=currentCategoryId(),rawCategoryName=clean(clone.categoryName||data.categoryName||''),categoryName=rawCategoryName?(rawCategoryName.startsWith('/')?rawCategoryName:'/'+rawCategoryName):'';
   const description=String(currentDescription()||'').slice(0,32700);
   const shipping=normalizePolicyName(policyName('shipping'));
   const returns=normalizePolicyName(policyName('return'));
@@ -361,6 +364,8 @@ function buildCsv(){
   parent[idx['Format']]='FixedPrice';
   parent[idx['Duration']]='GTC';
   parent[idx['Location']]=location;
+  if(idx['Condition']!=null)parent[idx['Condition']]=clean(clone.condition||'New');
+  if(idx['PicURL']!=null)parent[idx['PicURL']]=commonImages;
   fillAspects(parent,idx,headers,clone,dims);
   fillDirectTemplateFields(parent,idx,headers,clone);
 
@@ -376,14 +381,17 @@ function buildCsv(){
     r[idx['Relationship details']]=relationshipChild(v);
     r[idx['Quantity']]=qty;
     r[idx['Start price']]=salePrice(v,discount);
+    r[idx['Location']]=location;
     const upc=identifier(v,['upc','UPC']);
     if(upc)r[idx['P:UPC']]=upc;
+    const mpn=identifier(v,['mpn','MPN']);
+    if(mpn&&idx['C:MPN']!=null)r[idx['C:MPN']]=mpn;
 
     if(photoDim){
       const pv=firstSpecificValue(v,photoDim),key=pv.toLowerCase();
       if(pv&&!photoDone.has(key)){
         const urls=(v.images||[]).map(safeUrl).filter(Boolean).slice(0,12);
-        if(urls.length){r[idx['Item photo URL']]=pv+'='+urls.join('|');photoDone.add(key)}
+        if(urls.length&&idx['PicURL']!=null){r[idx['PicURL']]=pv+'='+urls.join('|');photoDone.add(key)}
       }
     }
     rows.push(r)
@@ -437,7 +445,7 @@ async function run(){
         if(list)list.style.display='none';
         const mainStatus=document.querySelector('#capitan-sell-like-clone #st');
         if(mainStatus)mainStatus.innerHTML='<span class="ok">Preparazione completata.</span> CSV eBay pronto.';
-        setStatus('CSV eBay pronto: '+res.rows+' varianti, '+res.columns+' colonne compatibili Listings.');
+        setStatus('CSV eBay pronto: '+res.rows+' varianti, '+res.columns+' colonne mappate.');
         try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
       }catch(e){
         console.warn('Variant CSV',e);
