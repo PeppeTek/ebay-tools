@@ -99,18 +99,35 @@ async function monitorAndReinject(win,ms=180000){
 }
 async function openInNewWindow(){
   const st=state();if(!st||!st.data||!st.data.hasVariations)return false;
+  const frame=await (async()=>{
+    for(let i=0;i<60;i++){
+      const x=[...document.querySelectorAll('iframe')].find(el=>/https:\/\/bulkedit\.ebay\.com\/msku/i.test(String(el.src||el.getAttribute('src')||'')));
+      if(x)return x;
+      await sleep(200)
+    }
+    return null
+  })();
+  if(!frame)return false;
+  const target=String(frame.src||frame.getAttribute('src')||'');
+  if(!/^https:\/\/bulkedit\.ebay\.com\/msku(?:\?|$)/i.test(target))return false;
+
   let win=window.__capitanPreopenedVariantWindow||null;
-  try{
-    if(!win||win.closed)win=window.open('about:blank','capitanVariantsHelper','popup=yes,width=1100,height=820,left=30,top=30');
-  }catch(_){}
+  try{if(win&&!win.closed)win.close()}catch(_){}
+  try{win=window.open('about:blank','capitanVariantsHelper','popup=yes,width=1100,height=820,left=30,top=30')}catch(_){}
   if(!win)return false;
+
   window.__capitanPreopenedVariantWindow=win;
+  try{
+    win.name='capitan-sell-like-variants:'+JSON.stringify(st);
+  }catch(e){
+    try{win.close()}catch(_){}
+    console.warn('Variant state transfer failed',e);
+    return false
+  }
   try{win.resizeTo(1100,820);win.moveTo(30,30)}catch(_){}
-  try{win.location.replace(location.href)}catch(_){try{win.location.href=location.href}catch(__){return false}}
+  try{win.location.replace(target)}catch(_){try{win.location.href=target}catch(__){return false}}
   try{win.focus()}catch(_){}
-  const ok=await automateChild(win);
-  if(ok)monitorAndReinject(win);
-  return ok;
+  return true
 }
 window.__capitanOpenVariantsWindow=openInNewWindow;
 window.__capitanAutoConfigureVariants=openInNewWindow;
