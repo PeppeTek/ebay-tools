@@ -2,6 +2,8 @@ javascript:(()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
+const AMAZON_MATCH_ENDPOINT='https://script.google.com/macros/s/AKfycbxPSCamhPhs1fvkikx0KyJFk6wfJDCxC2XqaBbRqDIqOrLN9D_QibphbRB8QenovCY5/exec';
+const AMAZON_MAX_NEGATIVE_MARGIN=2;
 const EXT_ID='capitan-amazon-match-ext';
 const MODAL_ID='capitan-pricing-modal';
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
@@ -31,7 +33,7 @@ let lastMatches=[];
 let pricingRates={ebayFee:.136,internationalFee:.016,marketingFee:.02,vatOnFees:.22,salesTaxEstimate:.06,fixedFee:.40};
 
 function endpoint(){return (localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}
-function jsonpAction(action,params){const ep=endpoint();return new Promise((resolve,reject)=>{if(!ep)return reject(Error('Endpoint Apps Script non configurato'));const cb='__capitanCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),90000);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:Date.now().toString(),...(params||{})});s.src=ep+(ep.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
+function jsonpAction(action,params){const ep=action==='amazon_match'?AMAZON_MATCH_ENDPOINT:endpoint();return new Promise((resolve,reject)=>{if(!ep)return reject(Error('Endpoint Apps Script non configurato'));const cb='__capitanCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),90000);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:Date.now().toString(),...(params||{})});s.src=ep+(ep.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
 
 function ensureBreakEvenRow(){
   const steps=panel.querySelector('#steps');if(!steps)return null;
@@ -63,9 +65,20 @@ function recalcBreakEven(){
   el.style.fontWeight=danger?'700':'';
 }
 
+function amazonEconomicsAllowed(x){
+  const be=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);
+  const price=Number(x&&x.price);
+  if(be==null||!isFinite(be))return isFinite(price)&&price>0;
+  if(!isFinite(price)||price<=0)return false;
+  const net=Math.round((be-price)*100)/100;
+  if(net>=0)return true;
+  const verySimilar=!!(x&&x.verySimilar)||!!(x&&x.strongIdentifierMatch)||Number(x&&x.titleCoverage||0)>=.72||Number(x&&x.aiConfidence||0)>=85;
+  return net>=-AMAZON_MAX_NEGATIVE_MARGIN&&verySimilar;
+}
 function render(list){
-  lastMatches=Array.isArray(list)?list.slice(0,5):[];results.innerHTML='';
-  if(!lastMatches.length){results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match Amazon sufficientemente affidabile.</div>';return}
+  const filtered=(Array.isArray(list)?list:[]).filter(amazonEconomicsAllowed);
+  lastMatches=filtered.slice(0,5);results.innerHTML='';
+  if(!lastMatches.length){results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match Amazon compatibile e profittevole trovato.</div>';return}
   const box=document.createElement('div');box.style.cssText='margin-top:8px;border:1px solid #ddd;border-radius:8px;overflow:hidden';
   lastMatches.forEach((x,i)=>{const r=document.createElement('label');r.style.cssText='display:grid;grid-template-columns:24px 1fr auto;gap:8px;align-items:center;padding:8px 9px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px';const price=x.price==null||x.price===''?'—':`${Number(x.price).toFixed(2)} ${esc(x.currency||'USD')}`;r.innerHTML=`<input type="checkbox" class="capitan-amazon-choice" value="${esc(x.asin||'')}" ${i===0?'checked':''} style="width:16px;height:16px;border-radius:0;accent-color:#111"><a href="${esc(x.url||('https://www.amazon.com/dp/'+(x.asin||'')))}" target="_blank" rel="noopener" style="color:#111;text-decoration:none"><b>${esc(x.asin||'')}</b></a><span>${price}</span>`;box.appendChild(r)});
   results.appendChild(box);
@@ -102,6 +115,6 @@ function openPricingModal(){
 async function loadPricing(){try{const data=await jsonpAction('sell_like_pricing_get');if(data&&data.ok&&data.rates)pricingRates=data.rates}catch(e){console.warn('Pricing config',e)}recalcBreakEven()}
 
 insertBtn.addEventListener('click',()=>{const asins=selectedAsins();if(!asins.length){status.innerHTML='<span style="color:#b42318;font-weight:700">Seleziona almeno un ASIN.</span>';return}const field=findSkuField();if(!field){status.innerHTML='<span style="color:#b42318;font-weight:700">Campo Custom label (SKU) non trovato.</span>';return}const value=asins.join(' - ');if(setNativeValue(field,value))status.innerHTML='<span style="color:#137333;font-weight:700">ASIN inseriti:</span> '+esc(value)});
-findBtn.addEventListener('click',async()=>{const ep=endpoint();if(!ep){status.innerHTML='<span style="color:#b42318;font-weight:700">Endpoint Apps Script non configurato.</span>';return}findBtn.disabled=true;status.textContent='Analisi titolo e ricerca Amazon in corso…';results.innerHTML='';try{const data=await jsonpAction('amazon_match',{itemId});if(!data||!data.ok)throw Error(data?.error||'Risposta Amazon non valida');render(data.matches||[]);status.innerHTML='<span style="color:#137333;font-weight:700">Match completato.</span> Sono mostrati solo candidati compatibili.'}catch(e){console.error(e);status.innerHTML='<span style="color:#b42318;font-weight:700">Errore:</span> '+esc(e.message||e)}finally{findBtn.disabled=false}});
+findBtn.addEventListener('click',async()=>{const ep=AMAZON_MATCH_ENDPOINT;if(!ep){status.innerHTML='<span style="color:#b42318;font-weight:700">Endpoint Apps Script non configurato.</span>';return}findBtn.disabled=true;status.textContent='Analisi titolo, prezzo e ricerca Amazon in corso…';results.innerHTML='';try{const breakEven=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);const data=await jsonpAction('amazon_match',{itemId,breakEven:breakEven==null?'':String(breakEven),maxLoss:String(AMAZON_MAX_NEGATIVE_MARGIN)});if(!data||!data.ok)throw Error(data?.error||'Risposta Amazon non valida');render(data.matches||[]);const shown=lastMatches.length;status.innerHTML=shown?'<span style="color:#137333;font-weight:700">Match completato.</span> Mostrati solo candidati compatibili e profittevoli.':'<span style="color:#a15c00;font-weight:700">Ricerca completata.</span> Nessun candidato compatibile con margine accettabile.'}catch(e){console.error(e);status.innerHTML='<span style="color:#b42318;font-weight:700">Errore:</span> '+esc(e.message||e)}finally{findBtn.disabled=false}});
 ensureBreakEvenRow();loadPricing();
 })();
