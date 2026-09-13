@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-window-v8';
+const PATCH_ID='capitan-variants-window-v9';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const m=document.createElement('span');m.id=PATCH_ID;m.style.display='none';document.documentElement.appendChild(m);
@@ -97,48 +97,99 @@ async function monitorAndReinject(win,ms=180000){
   }
   return true
 }
+function nativeVariationEdit(doc){
+  const direct=editButton(doc);if(direct)return direct;
+  const edits=[...doc.querySelectorAll('button,[role="button"],a')].filter(visible).filter(x=>{
+    const txt=clean(x.innerText||x.textContent||'');
+    const aria=clean(x.getAttribute&&x.getAttribute('aria-label')||'');
+    return /^edit$/i.test(txt)||/^edit$/i.test(aria)||/edit.*variations?|variations?.*edit/i.test(clean(txt+' '+aria))
+  });
+  const scored=[];
+  for(const b of edits){
+    let p=b,depth=0;
+    while(p&&depth<10){
+      if(p.closest&&p.closest('#'+PANEL_ID))break;
+      const t=clean(p.innerText||p.textContent||'');
+      if(/\bvariations?\b/i.test(t)&&t.length<12000){
+        const r=p.getBoundingClientRect();
+        scored.push({b,score:(r.width*r.height||99999999)+(depth*100000)});
+        break
+      }
+      p=p.parentElement;depth++
+    }
+  }
+  if(scored.length)return scored.sort((a,b)=>a.score-b.score)[0].b;
+  const h=variationHeading(doc);
+  if(h){
+    const hr=h.getBoundingClientRect(),hy=(hr.top+hr.bottom)/2;
+    const nearby=edits.filter(b=>{const r=b.getBoundingClientRect();const by=(r.top+r.bottom)/2;return Math.abs(by-hy)<220});
+    if(nearby.length)return nearby.sort((a,b)=>{
+      const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
+      return Math.abs(((ar.top+ar.bottom)/2)-hy)-Math.abs(((br.top+br.bottom)/2)-hy)
+    })[0]
+  }
+  return null
+}
 async function openInNewWindow(){
-  const st=state();if(!st||!st.data||!st.data.hasVariations)return false;
+  const st=state();window.__capitanVariantsLastError='';
+  if(!st||!st.data||!st.data.hasVariations){window.__capitanVariantsLastError='Dati varianti non disponibili.';return false}
 
   let win=window.__capitanPreopenedVariantWindow||null;
   try{
     if(!win||win.closed)win=window.open('about:blank','capitanVariantsHelper','popup=yes,width=1100,height=820,left=30,top=30');
   }catch(_){}
-  if(!win)return false;
+  if(!win){window.__capitanVariantsLastError='Popup bloccato dal browser.';return false}
   window.__capitanPreopenedVariantWindow=win;
   try{win.resizeTo(1100,820);win.moveTo(30,30)}catch(_){}
 
-  let frame=[...document.querySelectorAll('iframe')].find(el=>/https:\/\/bulkedit\.ebay\.com\/msku/i.test(String(el.src||el.getAttribute('src')||'')))||null;
+  const findBulkFrame=()=>[...document.querySelectorAll('iframe')].find(el=>/bulkedit\.ebay\.com\/msku/i.test(String(el.src||el.getAttribute('src')||'')))||null;
+  let frame=findBulkFrame();
 
   if(!frame){
-    const edit=editButton(document);
-    if(edit){
-      window.__capitanOpeningVariants=true;
-      try{edit.click()}catch(_){}
-      await sleep(50);
-      window.__capitanOpeningVariants=false;
+    const edit=nativeVariationEdit(document);
+    if(!edit){
+      try{win.close()}catch(_){}
+      window.__capitanVariantsLastError='Pulsante Edit della sezione Variations non trovato.';
+      return false
     }
-    for(let i=0;i<60&&!frame;i++){
-      frame=[...document.querySelectorAll('iframe')].find(el=>/https:\/\/bulkedit\.ebay\.com\/msku/i.test(String(el.src||el.getAttribute('src')||'')))||null;
+    window.__capitanOpeningVariants=true;
+    try{userClick(edit)}catch(_){try{edit.click()}catch(__){}}
+    await sleep(120);
+    window.__capitanOpeningVariants=false;
+
+    for(let i=0;i<100&&!frame;i++){
+      frame=findBulkFrame();
       if(frame)break;
       await sleep(200)
     }
   }
 
-  if(!frame){try{win.close()}catch(_){}return false}
+  if(!frame){
+    try{win.close()}catch(_){}
+    window.__capitanVariantsLastError='eBay non ha creato il frame bulkedit/msku dopo l’apertura di Variations.';
+    return false
+  }
 
   const target=String(frame.src||frame.getAttribute('src')||'');
-  if(!/^https:\/\/bulkedit\.ebay\.com\/msku(?:\?|$)/i.test(target)){try{win.close()}catch(_){}return false}
+  if(!/^https:\/\/bulkedit\.ebay\.com\/msku(?:\?|$)/i.test(target)){
+    try{win.close()}catch(_){}
+    window.__capitanVariantsLastError='URL dell’editor Variations non riconosciuto.';
+    return false
+  }
 
   try{
     win.name='capitan-sell-like-variants:'+JSON.stringify(st);
   }catch(e){
     try{win.close()}catch(_){}
+    window.__capitanVariantsLastError='Trasferimento dati varianti non riuscito.';
     console.warn('Variant state transfer failed',e);
     return false
   }
 
-  try{win.location.replace(target)}catch(_){try{win.location.href=target}catch(__){return false}}
+  try{win.location.replace(target)}catch(_){try{win.location.href=target}catch(__){
+    window.__capitanVariantsLastError='Navigazione verso bulkedit/msku non riuscita.';
+    return false
+  }}
   try{win.focus()}catch(_){}
   return true
 }
