@@ -135,33 +135,43 @@ function currentCategoryId(){
 function currentCategoryName(){
   const banned=/learn more|opens in a new window|sales tax|help|^edit$|feedback|^item category$/i;
 
-  let bodyText='';
-  try{
-    const copy=document.body.cloneNode(true);
-    const panel=copy.querySelector('#capitan-sell-like-clone');
-    if(panel)panel.remove();
-    copy.querySelectorAll('script,style,noscript').forEach(x=>x.remove());
-    bodyText=String(copy.innerText||copy.textContent||'')
-  }catch(_){
-    bodyText=String(document.body&&document.body.innerText||'')
-  }
+  // Primary source: exact visible eBay ITEM CATEGORY section.
+  const heads=[...document.querySelectorAll('h1,h2,h3,h4,h5,div,span')]
+    .filter(visible)
+    .filter(el=>/^item category$/i.test(clean(el.innerText||el.textContent||'')));
 
-  const lines=bodyText.split(/\r?\n/).map(clean).filter(Boolean);
-  for(let i=0;i<lines.length;i++){
-    if(lines[i].toLowerCase()!=='item category')continue;
-    for(let j=i+1;j<Math.min(lines.length,i+6);j++){
-      const candidate=clean(lines[j]);
-      if(!candidate||banned.test(candidate))continue;
-      if(/\s*>\s*/.test(candidate))continue;
-      if(candidate.length>100)continue;
-      return candidate.startsWith('/')?candidate:'/'+candidate
+  for(const head of heads){
+    let p=head.parentElement;
+    for(let depth=0;depth<6&&p;depth++,p=p.parentElement){
+      const links=[...p.querySelectorAll('a[href]')]
+        .filter(visible)
+        .map(a=>clean(a.innerText||a.textContent||''))
+        .filter(v=>v&&!banned.test(v)&&v.length<=100&& !/\s*>\s*/.test(v));
+      if(links.length)return links[0];
     }
   }
 
+  // Fallback: text line immediately after ITEM CATEGORY.
+  const lines=String(document.body&&document.body.innerText||'')
+    .split(/\r?\n/)
+    .map(clean)
+    .filter(Boolean);
+
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].toLowerCase()!=='item category')continue;
+    for(let j=i+1;j<Math.min(lines.length,i+5);j++){
+      const v=lines[j];
+      if(!v||banned.test(v)||/\s*>\s*/.test(v)||v.length>100)continue;
+      return v
+    }
+  }
+
+  // Last fallback: imported category name, only if valid.
   const d=cloneData()||{},st=variantState()||{},vd=st.data||{};
-  const fallback=clean(d.categoryName||vd.categoryName||'');
-  if(!fallback||banned.test(fallback))return'';
-  return fallback.startsWith('/')?fallback:'/'+fallback
+  const imported=clean(d.categoryName||vd.categoryName||'');
+  if(imported&&!banned.test(imported))return imported;
+
+  return''
 }
 function policyName(kind){
   const label={shipping:'Shipping policy',return:'Return policy',payment:'Payment policy'}[kind];
