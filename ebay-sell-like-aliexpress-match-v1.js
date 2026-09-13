@@ -35,12 +35,12 @@ if(actions){
   findBtn=document.createElement('button');
   findBtn.id='capitan-aliexpress-find';
   findBtn.textContent='Trova su AliExpress';
-  findBtn.style.cssText='height:42px;border:1px solid #b52a00;border-radius:22px 0 0 22px;background:#ff6a00;color:#fff;font-size:14px;font-weight:700;cursor:pointer;width:100%';
+  findBtn.style.cssText='height:42px;border:1px solid #b52a00;border-radius:22px 0 0 22px;background:#ff4747;color:#fff;font-size:14px;cursor:pointer;width:100%';
 
   insertBtn=document.createElement('button');
   insertBtn.id='capitan-aliexpress-insert';
   insertBtn.textContent='Inserisci Product ID';
-  insertBtn.style.cssText='height:42px;border:1px solid #b52a00;border-radius:0 22px 22px 0;background:#ff4747;color:#fff;font-size:14px;font-weight:700;cursor:pointer;width:100%';
+  insertBtn.style.cssText='height:42px;border:1px solid #b52a00;border-radius:0 22px 22px 0;background:#fff;color:#ff4747;font-size:14px;cursor:pointer;width:100%';
 
   slot.appendChild(findBtn);
   slot.appendChild(insertBtn);
@@ -48,12 +48,12 @@ if(actions){
   findBtn=document.createElement('button');
   findBtn.id='capitan-aliexpress-find';
   findBtn.textContent='Trova su AliExpress';
-  findBtn.style.cssText='width:100%;height:42px;border:1px solid #b52a00;border-radius:22px;background:#ff6a00;color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px';
+  findBtn.style.cssText='width:100%;height:42px;border:1px solid #b52a00;border-radius:22px;background:#ff4747;color:#fff;font-size:14px;cursor:pointer;margin-top:8px';
 
   insertBtn=document.createElement('button');
   insertBtn.id='capitan-aliexpress-insert';
   insertBtn.textContent='Inserisci Product ID';
-  insertBtn.style.cssText='width:100%;height:42px;border:1px solid #b52a00;border-radius:22px;background:#ff4747;color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px';
+  insertBtn.style.cssText='width:100%;height:42px;border:1px solid #b52a00;border-radius:22px;background:#fff;color:#ff4747;font-size:14px;cursor:pointer;margin-top:8px';
 
   wrap.insertBefore(insertBtn,wrap.firstChild);
   wrap.insertBefore(findBtn,insertBtn);
@@ -97,7 +97,7 @@ function selectedRows(){
 function selectedProductIds(){return selectedRows().map(x=>x.productId).filter(Boolean)}
 
 function render(list){
-  lastMatches=(Array.isArray(list)?list:[]).slice(0,5);
+  lastMatches=(Array.isArray(list)?list:[]).slice(0,10);
   results.innerHTML='';
   if(!lastMatches.length){
     results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match AliExpress trovato.</div>';
