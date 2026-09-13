@@ -2,7 +2,7 @@ javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
-const PATCH_ID='capitan-variants-preview-v6';
+const PATCH_ID='capitan-variants-preview-v7';
 const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
@@ -78,6 +78,7 @@ window.addEventListener('capitan-pricing-saved',e=>{
     if(currentData){render(currentData,currentRates,currentDiscount);saveVariantState();}
   }
 });
+function readStoredVariantStateForProbe_(){try{return JSON.parse(localStorage.getItem(VAR_STATE_KEY)||'null')}catch(_){return null}}
 window.addEventListener('capitan-discount-updated',e=>{
   if(isFinite(Number(e.detail?.discountRate))){
     currentDiscount=Number(e.detail.discountRate);
@@ -86,7 +87,14 @@ window.addEventListener('capitan-discount-updated',e=>{
 });
 
 try{
-  const id=itemId();if(!/^\d{9,12}$/.test(id))return;
+  const id=itemId();if(!/^\d{9,12}$/.test(id)){window.__capitanVariantProbe={mode:'unknown',reason:'item-id'};return}
+  try{
+    const old=readStoredVariantStateForProbe_();
+    if(old&&old.data&&String(old.data.itemId||'')!==String(id)){
+      localStorage.removeItem(VAR_STATE_KEY);
+      if(window.__capitanSellLikeVariants&&String(window.__capitanSellLikeVariants.data&&window.__capitanSellLikeVariants.data.itemId||'')!==String(id))delete window.__capitanSellLikeVariants
+    }
+  }catch(_){}
   let data=null;
   const pre=window.__capitanSellLikePreflight;
   if(pre&&pre.ok&&String(pre.itemId||'')===String(id))data=pre;
@@ -97,12 +105,19 @@ try{
   if(!data)data=await jsonp('sell_like_variants_get',{itemId:id});
   const pricing=await pricingPromise;
   if(!data||!data.ok)throw Error(data&&data.error?data.error:'Varianti non disponibili');
-  if(!data.hasVariations){closePreopenedHelper();return;}
+  if(!data.hasVariations){
+    window.__capitanVariantProbe={mode:'mono',data:data};
+    try{window.dispatchEvent(new CustomEvent('capitan-variants-probed',{detail:window.__capitanVariantProbe}))}catch(_){}
+    closePreopenedHelper();
+    return;
+  }
+  window.__capitanVariantProbe={mode:'variants',data:data};
+  try{window.dispatchEvent(new CustomEvent('capitan-variants-probed',{detail:window.__capitanVariantProbe}))}catch(_){}
   currentData=data;currentRates=pricing&&pricing.ok?pricing.rates:null;
   if(currentRates&&isFinite(Number(currentRates.discountRate)))currentDiscount=Number(currentRates.discountRate);else if(isFinite(Number(data.discountRate)))currentDiscount=Number(data.discountRate);
   render(currentData,currentRates,currentDiscount);
   const savedState=saveVariantState();
   window.dispatchEvent(new CustomEvent('capitan-variants-ready',{detail:savedState}));
   startAutomaticVariantFlow();
-}catch(err){console.warn('Sell Like variants preview',err)}
+}catch(err){window.__capitanVariantProbe={mode:'unknown',error:String(err&&err.message||err)};try{window.dispatchEvent(new CustomEvent('capitan-variants-probed',{detail:window.__capitanVariantProbe}))}catch(_){}console.warn('Sell Like variants preview',err)}
 })();
