@@ -271,26 +271,53 @@ async function addCustomOption(root,value){
   const zone=optionsZone(root);
   const create=[...zone.querySelectorAll('a,button,[role="button"],span,div')].filter(visible).find(x=>/create your own/i.test(clean(x.innerText||x.textContent||'')));
   if(!create)return false;
-  let container=create;
-  let input=null,add=null;
-  for(let i=0;i<5&&container;i++,container=container.parentElement){
-    input=[...container.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible)[0]||null;
-    add=[...container.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^Add$/i.test(clean(x.innerText||x.textContent||'')))||null;
-    if(input&&add)break;
-  }
-  if(!input){
-    userClick(create.closest('button,[role="button"],a')||create);await sleep(220);
-    input=[...zone.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible)[0]||null;
-    add=[...zone.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^Add$/i.test(clean(x.innerText||x.textContent||'')))||null;
+
+  const beforeInputs=new Set([...document.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible));
+  userClick(create.closest('button,[role="button"],a')||create);
+
+  let input=null;
+  for(let i=0;i<30&&!input;i++){
+    await sleep(100);
+    const candidates=[...document.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible).filter(x=>!beforeInputs.has(x));
+    input=candidates.find(x=>/option|custom|create|value|variation/i.test(clean([x.placeholder,x.getAttribute('aria-label'),x.name,x.id].join(' '))))||candidates[0]||null;
+    if(!input){
+      const overlays=[...document.querySelectorAll('[role="dialog"],[role="menu"],[role="listbox"],[aria-modal="true"],div')].filter(visible).filter(x=>/create your own|custom|option/i.test(clean(x.innerText||x.textContent||''))&&clean(x.innerText||x.textContent||'').length<2500);
+      for(const ov of overlays){
+        input=[...ov.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible)[0]||null;
+        if(input)break;
+      }
+    }
   }
   if(!input)return false;
-  setNative(input,val);await sleep(80);
+
+  setNative(input,val);await sleep(120);
+
+  let container=input;
+  let add=null;
+  for(let i=0;i<6&&container;i++,container=container.parentElement){
+    add=[...container.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/^(Add|Create|Save|Done)$/i.test(clean(x.innerText||x.textContent||'')))||null;
+    if(add)break;
+  }
+  if(!add){
+    const r=input.getBoundingClientRect();
+    add=[...document.querySelectorAll('button,[role="button"],a')].filter(visible).filter(x=>/^(Add|Create|Save|Done)$/i.test(clean(x.innerText||x.textContent||''))).sort((a,b)=>{
+      const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
+      const ad=Math.abs((ar.top+ar.height/2)-(r.top+r.height/2))+Math.abs(ar.left-r.right);
+      const bd=Math.abs((br.top+br.height/2)-(r.top+r.height/2))+Math.abs(br.left-r.right);
+      return ad-bd
+    })[0]||null;
+  }
+
   if(add)userClick(add);
   else{
     input.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',code:'Enter'}));
     input.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Enter',code:'Enter'}));
   }
-  for(let i=0;i<25;i++){await sleep(100);if(isOptionSelected(root,val))return true}
+
+  for(let i=0;i<35;i++){
+    await sleep(120);
+    if(isOptionSelected(root,val))return true
+  }
   return false
 }
 async function ensureOption(root,value){
