@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v8';
+const PATCH_ID='capitan-variants-csv-v9';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -470,12 +470,13 @@ function buildCsv(){
   if(!title)missing.push('Title');
   if(!categoryId)missing.push('Category ID');
   if(!description)missing.push('Description');
-  if(!shipping)missing.push('Shipping profile name');
-  if(!returns)missing.push('Return profile name');
-  if(!payment)missing.push('Payment profile name');
   if(!conditionId)missing.push('Condition ID');
   if(!location)missing.push('Location');
   if(missing.length)throw Error('Dati obbligatori CSV mancanti: '+missing.join(', '));
+  const missingPolicies=[];
+  if(!shipping)missingPolicies.push('Shipping profile name');
+  if(!returns)missingPolicies.push('Return profile name');
+  if(!payment)missingPolicies.push('Payment profile name');
 
   const parent=row();
   parent[idx[actionHeader]]='Add';
@@ -543,6 +544,7 @@ function buildCsv(){
     rows:variants.length,
     columns:headers.length,
     policies:{shipping,payment,returns},
+    missingPolicies,
     required:{title,categoryId,description,conditionId,location}
   }
 }
@@ -574,7 +576,7 @@ async function run(){
         if(list)list.style.display='none';
         const mainStatus=document.querySelector('#capitan-sell-like-clone #st');
         if(mainStatus)mainStatus.innerHTML='<span class="ok">Preparazione completata.</span> CSV eBay pronto.';
-        setStatus('CSV eBay pronto: '+res.rows+' varianti, '+res.columns+' colonne mappate.');
+        setStatus('CSV eBay pronto: '+res.rows+' varianti, '+res.columns+' colonne mappate.'+(res.missingPolicies&&res.missingPolicies.length?' Verifica: '+res.missingPolicies.join(', '):''));
         try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
       }catch(e){
         console.warn('Variant CSV',e);
