@@ -138,9 +138,8 @@ function bindFallback(){
     if(!/^edit$/i.test(clean(b.innerText||b.textContent||''))&&!/edit.*variation|variation.*edit/i.test(clean((b.innerText||b.textContent||'')+' '+(b.getAttribute('aria-label')||''))))return;
     const st=state();if(!st||!st.data||!st.data.hasVariations)return;
     e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-    let win=window.__capitanPreopenedVariantWindow||null;try{if(!win||win.closed)win=window.open(location.href,'capitanVariantsHelper','popup=yes,width=1100,height=820,left=30,top=30');else win.location.replace(location.href)}catch(_){}
-    if(!win){alert('Il browser ha bloccato la nuova finestra. Consenti i popup per ebay.com e riprova.');return}
-    await automateChild(win);
+    const ok=await openInNewWindow();
+    if(!ok)alert('Impossibile aprire l\'editor Variations. Usa il pulsante “Aggiungi varianti al prodotto” nel pannello Sell Like Clone.');
   },true);
 }
 bindFallback();
