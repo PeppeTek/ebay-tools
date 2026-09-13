@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-window-v7';
+const PATCH_ID='capitan-variants-window-v8';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const m=document.createElement('span');m.id=PATCH_ID;m.style.display='none';document.documentElement.appendChild(m);
@@ -99,24 +99,37 @@ async function monitorAndReinject(win,ms=180000){
 }
 async function openInNewWindow(){
   const st=state();if(!st||!st.data||!st.data.hasVariations)return false;
-  const frame=await (async()=>{
-    for(let i=0;i<60;i++){
-      const x=[...document.querySelectorAll('iframe')].find(el=>/https:\/\/bulkedit\.ebay\.com\/msku/i.test(String(el.src||el.getAttribute('src')||'')));
-      if(x)return x;
-      await sleep(200)
-    }
-    return null
-  })();
-  if(!frame)return false;
-  const target=String(frame.src||frame.getAttribute('src')||'');
-  if(!/^https:\/\/bulkedit\.ebay\.com\/msku(?:\?|$)/i.test(target))return false;
 
   let win=window.__capitanPreopenedVariantWindow||null;
-  try{if(win&&!win.closed)win.close()}catch(_){}
-  try{win=window.open('about:blank','capitanVariantsHelper','popup=yes,width=1100,height=820,left=30,top=30')}catch(_){}
+  try{
+    if(!win||win.closed)win=window.open('about:blank','capitanVariantsHelper','popup=yes,width=1100,height=820,left=30,top=30');
+  }catch(_){}
   if(!win)return false;
-
   window.__capitanPreopenedVariantWindow=win;
+  try{win.resizeTo(1100,820);win.moveTo(30,30)}catch(_){}
+
+  let frame=[...document.querySelectorAll('iframe')].find(el=>/https:\/\/bulkedit\.ebay\.com\/msku/i.test(String(el.src||el.getAttribute('src')||'')))||null;
+
+  if(!frame){
+    const edit=editButton(document);
+    if(edit){
+      window.__capitanOpeningVariants=true;
+      try{edit.click()}catch(_){}
+      await sleep(50);
+      window.__capitanOpeningVariants=false;
+    }
+    for(let i=0;i<60&&!frame;i++){
+      frame=[...document.querySelectorAll('iframe')].find(el=>/https:\/\/bulkedit\.ebay\.com\/msku/i.test(String(el.src||el.getAttribute('src')||'')))||null;
+      if(frame)break;
+      await sleep(200)
+    }
+  }
+
+  if(!frame){try{win.close()}catch(_){}return false}
+
+  const target=String(frame.src||frame.getAttribute('src')||'');
+  if(!/^https:\/\/bulkedit\.ebay\.com\/msku(?:\?|$)/i.test(target)){try{win.close()}catch(_){}return false}
+
   try{
     win.name='capitan-sell-like-variants:'+JSON.stringify(st);
   }catch(e){
@@ -124,7 +137,7 @@ async function openInNewWindow(){
     console.warn('Variant state transfer failed',e);
     return false
   }
-  try{win.resizeTo(1100,820);win.moveTo(30,30)}catch(_){}
+
   try{win.location.replace(target)}catch(_){try{win.location.href=target}catch(__){return false}}
   try{win.focus()}catch(_){}
   return true
@@ -136,7 +149,7 @@ function bindFallback(){
     const b=e.target.closest('button,[role="button"],a');if(!b)return;
     const sec=section(document);if(!sec||!sec.contains(b))return;
     if(!/^edit$/i.test(clean(b.innerText||b.textContent||''))&&!/edit.*variation|variation.*edit/i.test(clean((b.innerText||b.textContent||'')+' '+(b.getAttribute('aria-label')||''))))return;
-    const st=state();if(!st||!st.data||!st.data.hasVariations)return;
+    const st=state();if(!st||!st.data||!st.data.hasVariations)return;if(window.__capitanOpeningVariants)return;
     e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
     const ok=await openInNewWindow();
     if(!ok)alert('Impossibile aprire l\'editor Variations. Usa il pulsante “Aggiungi varianti al prodotto” nel pannello Sell Like Clone.');
