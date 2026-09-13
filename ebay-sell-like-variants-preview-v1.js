@@ -2,7 +2,7 @@ javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
-const PATCH_ID='capitan-variants-preview-v8';
+const PATCH_ID='capitan-variants-preview-v9';
 const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
@@ -34,15 +34,20 @@ function applyVariantActionUi(){
   const pair=p.querySelector('[data-ebay-secondary-pair]');
   if(list)list.style.display='none';
   if(save){
-    save.dataset.ebayAction='csv';
-    save.textContent=window.__capitanVariantCsv?'Scarica CSV':'Preparazione CSV...';
-    save.style.background=window.__capitanVariantCsv?'#16a34a':'#e8eaed';
-    save.style.color=window.__capitanVariantCsv?'#fff':'#666';
-    save.style.border='1px solid '+(window.__capitanVariantCsv?'#12813a':'#b8bdc3');
-    save.style.fontWeight='700';
-    save.style.cursor=window.__capitanVariantCsv?'pointer':'default'
+    if(window.__capitanVariantCsv){
+      save.style.display='';
+      save.dataset.ebayAction='csv';
+      save.textContent='Scarica CSV';
+      save.style.background='#16a34a';
+      save.style.color='#fff';
+      save.style.border='1px solid #12813a';
+      save.style.fontWeight='700';
+      save.style.cursor='pointer'
+    }else{
+      save.style.display='none'
+    }
   }
-  if(pair)pair.style.gridTemplateColumns='1fr 1fr'
+  if(pair)pair.style.gridTemplateColumns=window.__capitanVariantCsv?'1fr 1fr':'1fr'
 }
 async function startAutomaticVariantFlow(){
   saveVariantState();
