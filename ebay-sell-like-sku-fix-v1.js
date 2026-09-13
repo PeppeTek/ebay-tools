@@ -1,12 +1,12 @@
 javascript:(()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-sku-fix-v7';
+const PATCH_ID='capitan-sku-fix-v8';
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const visible=el=>!!(el&&el.getClientRects&&el.getClientRects().length);
 
-for(const id of ['capitan-sku-fix-v3','capitan-sku-fix-v4','capitan-sku-fix-v5','capitan-sku-fix-v6'])document.getElementById(id)?.remove();
+for(const id of ['capitan-sku-fix-v3','capitan-sku-fix-v4','capitan-sku-fix-v5','capitan-sku-fix-v6','capitan-sku-fix-v7'])document.getElementById(id)?.remove();
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const panel=document.getElementById(PANEL_ID);if(!panel)return;
@@ -20,10 +20,13 @@ function setStatus(html){
 function userClick(el){
   if(!el)return false;
   try{el.scrollIntoView({block:'center',inline:'nearest'})}catch(_){}
+  const common={bubbles:true,cancelable:true,button:0,view:window};
   try{
-    el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0,view:window}));
-    el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,button:0,view:window}));
-    el.click();
+    if(typeof PointerEvent!=='undefined')el.dispatchEvent(new PointerEvent('pointerdown',common));
+    el.dispatchEvent(new MouseEvent('mousedown',common));
+    if(typeof PointerEvent!=='undefined')el.dispatchEvent(new PointerEvent('pointerup',common));
+    el.dispatchEvent(new MouseEvent('mouseup',common));
+    el.dispatchEvent(new MouseEvent('click',common));
   }catch(_){try{el.click()}catch(__){return false}}
   return true
 }
@@ -57,20 +60,40 @@ function titleOptionsButton(){
     [...document.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/title options/i.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))))||null
 }
 function titleOptionsPanel(){
-  const labels=[...document.querySelectorAll('div,section,[role="dialog"],[role="menu"],[role="group"]')].filter(visible).filter(x=>/Custom label\s*\(SKU\)/i.test(clean(x.innerText||x.textContent||'')));
-  return labels.sort((a,b)=>a.getBoundingClientRect().width*a.getBoundingClientRect().height-b.getBoundingClientRect().width*b.getBoundingClientRect().height)[0]||null
-}
-function customLabelRow(root){
-  const nodes=[...root.querySelectorAll('div,section,li,label')].filter(visible).filter(x=>{
-    const t=clean(x.innerText||x.textContent||'');
-    return /Custom label\s*\(SKU\)/i.test(t)&&t.length<600
-  });
+  const nodes=[...document.querySelectorAll('div,section,[role="dialog"],[role="menu"],[role="group"]')].filter(visible).filter(x=>/Custom label\s*\(SKU\)/i.test(clean(x.innerText||x.textContent||'')));
   return nodes.sort((a,b)=>a.getBoundingClientRect().width*a.getBoundingClientRect().height-b.getBoundingClientRect().width*b.getBoundingClientRect().height)[0]||null
 }
-function rowToggle(row){
-  if(!row)return null;
-  return row.querySelector('input[type="checkbox"],input[type="switch"],button[role="switch"],[role="switch"],button[aria-checked],[aria-checked]')||
-    [...row.querySelectorAll('button,[role="button"]')].filter(visible).find(x=>/custom label|sku/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||''))))||null
+function customLabelText(root){
+  const exact=[...root.querySelectorAll('div,span,p,strong,label')].filter(visible).filter(x=>/^Custom label\s*\(SKU\)$/i.test(clean(x.innerText||x.textContent||'')));
+  if(exact.length)return exact.sort((a,b)=>a.getBoundingClientRect().width*a.getBoundingClientRect().height-b.getBoundingClientRect().width*b.getBoundingClientRect().height)[0];
+  return [...root.querySelectorAll('div,span,p,strong,label')].filter(visible).find(x=>/Custom label\s*\(SKU\)/i.test(clean(x.innerText||x.textContent||'')))||null
+}
+function controlCandidates(root){
+  return [...root.querySelectorAll('input[type="checkbox"],input[type="switch"],button[role="switch"],[role="switch"],button[aria-checked],[aria-checked]')].filter(visible)
+}
+function customLabelToggle(root){
+  const label=customLabelText(root);if(!label)return null;
+  const lr=label.getBoundingClientRect();
+  let scope=label.parentElement;
+  for(let depth=0;depth<6&&scope;depth++,scope=scope.parentElement){
+    const cs=controlCandidates(scope);
+    if(cs.length){
+      const scored=cs.map(el=>{
+        const r=el.getBoundingClientRect();
+        const cy=r.top+r.height/2,ly=lr.top+lr.height/2;
+        const sameRow=Math.abs(cy-ly);
+        const toRight=r.left>=lr.left?0:500;
+        const distance=Math.abs(r.left-lr.right);
+        return {el,score:sameRow*20+toRight+distance}
+      }).sort((a,b)=>a.score-b.score);
+      if(scored[0]&&scored[0].score<900)return scored[0].el
+    }
+  }
+  const all=controlCandidates(root);
+  return all.map(el=>{
+    const r=el.getBoundingClientRect();
+    return {el,score:Math.abs((r.top+r.height/2)-(lr.top+lr.height/2))*20+(r.left>=lr.left?0:500)+Math.abs(r.left-lr.right)}
+  }).sort((a,b)=>a.score-b.score)[0]?.el||null
 }
 function toggleOn(el){
   if(!el)return false;
@@ -108,28 +131,40 @@ function skuFieldByLabel(){
 function findSkuField(){
   return skuFieldCandidates().find(visible)||skuFieldByLabel()||null
 }
-async function waitSkuField(ms=3500){
+async function waitSkuField(ms=8000){
   const end=Date.now()+ms;
-  while(Date.now()<end){const f=findSkuField();if(f)return f;await sleep(100)}
+  while(Date.now()<end){const f=findSkuField();if(f)return f;await sleep(120)}
+  return null
+}
+async function openTitleOptions(){
+  let pop=titleOptionsPanel();if(pop)return pop;
+  const btn=titleOptionsButton();if(!btn)return null;
+  userClick(btn);
+  const end=Date.now()+3500;
+  while(Date.now()<end){pop=titleOptionsPanel();if(pop)return pop;await sleep(100)}
   return null
 }
 async function enableCustomLabel(){
   let field=findSkuField();if(field)return field;
-  let pop=titleOptionsPanel();
-  if(!pop){
+  for(let attempt=0;attempt<3;attempt++){
+    const pop=await openTitleOptions();
+    if(!pop){await sleep(250);continue}
+    const toggle=customLabelToggle(pop);
+    if(toggle&&!toggleOn(toggle)){
+      userClick(toggle);
+      await sleep(500)
+    }
+    field=await waitSkuField(5000);
+    if(field){
+      const btn=titleOptionsButton();
+      if(titleOptionsPanel()&&btn)userClick(btn);
+      return field
+    }
     const btn=titleOptionsButton();
-    if(!btn)return null;
-    userClick(btn);
-    for(let i=0;i<20&&!pop;i++){await sleep(100);pop=titleOptionsPanel()}
+    if(btn&&titleOptionsPanel())userClick(btn);
+    await sleep(350)
   }
-  if(!pop)return null;
-  const row=customLabelRow(pop);
-  if(!row)return null;
-  const toggle=rowToggle(row);
-  if(!toggle)return null;
-  if(!toggleOn(toggle)){userClick(toggle);await sleep(350)}
-  field=await waitSkuField(3500);
-  return field
+  return null
 }
 function fieldValue(field){
   return field&&(field.isContentEditable?clean(field.textContent):clean(field.value))
@@ -137,7 +172,7 @@ function fieldValue(field){
 async function writeAndVerify(value){
   let field=findSkuField();
   if(!field)field=await enableCustomLabel();
-  if(!field)return {ok:false,reason:'Campo Custom label (SKU) non disponibile dopo See title options'};
+  if(!field)return {ok:false,reason:'Campo Custom label (SKU) non disponibile dopo attivazione automatica'};
   for(let i=0;i<4;i++){
     setNative(field,value);
     await sleep(250);
@@ -152,6 +187,11 @@ async function writeAndVerify(value){
   return {ok:false,reason:'eBay non ha mantenuto il valore nel Custom label (SKU)'}
 }
 
+(async()=>{
+  await sleep(700);
+  try{await enableCustomLabel()}catch(e){console.warn('Custom label (SKU): attivazione automatica non riuscita',e)}
+})();
+
 document.addEventListener('click',async e=>{
   const btn=e.target.closest('#capitan-amazon-insert');if(!btn)return;
   e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
@@ -162,7 +202,7 @@ document.addEventListener('click',async e=>{
   }
   const value=asins.join(' - ');
   btn.disabled=true;
-  setStatus('<span style="color:#555">Attivazione Custom label (SKU) e inserimento ASIN…</span>');
+  setStatus('<span style="color:#555">Inserimento ASIN nel Custom label (SKU)…</span>');
   try{
     const r=await writeAndVerify(value);
     if(!r.ok)throw Error(r.reason);
