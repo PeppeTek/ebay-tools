@@ -27,7 +27,10 @@ function findControlByLabel(re){
   }
   return null
 }
-function normalizePolicyName(v){return clean(v).replace(/\s*\(\s*\d+\s+listings?\s*\)\s*$/i,'').trim()}
+function normalizePolicyName(v){return clean(v)
+  .replace(/\s*[\(\[]\s*\d+\s+listings?\s*[\)\]]\s*$/i,'')
+  .replace(/\s+/g,' ')
+  .trim()}
 function controlValue(el){
   if(!el)return'';
   if(el.tagName==='SELECT'){const o=el.options&&el.options[el.selectedIndex];return clean(o&&o.textContent||el.value)}
