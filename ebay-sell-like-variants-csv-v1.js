@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v5';
+const PATCH_ID='capitan-variants-csv-v6';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -46,11 +46,12 @@ function controlValue(el){
   return clean(el.innerText||el.textContent||el.getAttribute&&el.getAttribute('aria-label')||'')
 }
 function currentTitle(){
-  const c=findControlByLabel(/^title$/i)||[...document.querySelectorAll('input,textarea')].find(x=>/title/i.test(clean([x.name,x.id,x.placeholder,x.getAttribute('aria-label')].join(' '))));
-  const live=clean(controlValue(c)).slice(0,80);
-  if(live)return live;
   const d=cloneData()||{};
-  return clean(d.title).slice(0,80)
+  const source=clean(d.title).slice(0,80);
+  if(source)return source;
+  const input=[...document.querySelectorAll('input[type="text"],textarea')]
+    .find(x=>/^title$/i.test(clean(x.getAttribute('aria-label')||x.name||x.id||'')));
+  return clean(input&&input.value).slice(0,80)
 }
 function currentDescription(){
   const candidates=[...document.querySelectorAll('textarea,[contenteditable="true"]')];
@@ -87,16 +88,15 @@ function currentConditionId(){
 }
 function currentCategoryId(){
   const d=cloneData()||{},st=variantState()||{},vd=st.data||{};
-  const vals=[d.categoryId,vd.categoryId,vd.categoryID];
-  for(const v of vals){if(/^\d{1,10}$/.test(clean(v)))return clean(v)}
-  const all=[...document.querySelectorAll('input,[data-category-id],[data-categoryid]')];
-  for(const e of all){
-    for(const v of [e.value,e.getAttribute('data-category-id'),e.getAttribute('data-categoryid')]){
-      if(/^\d{1,10}$/.test(clean(v)))return clean(v)
+  for(const v of [d.categoryId,d.categoryID,vd.categoryId,vd.categoryID]){
+    if(/^\d{2,12}$/.test(clean(v)))return clean(v)
+  }
+  for(const e of document.querySelectorAll('[data-category-id],[data-categoryid]')){
+    for(const v of [e.getAttribute('data-category-id'),e.getAttribute('data-categoryid')]){
+      if(/^\d{2,12}$/.test(clean(v)))return clean(v)
     }
   }
-  const m=(document.body&&document.body.innerHTML||'').match(/(?:categoryId|categoryID|category_id)["'=:\s]+(\d{1,10})/i);
-  return m?m[1]:''
+  return''
 }
 function policyName(kind){
   const labelText={shipping:'Shipping policy',payment:'Payment policy',return:'Return policy'}[kind]||kind+' policy';
@@ -144,10 +144,18 @@ function policyName(kind){
   return''
 }
 function currentSkuBase(){
-  const c=findControlByLabel(/custom label|sku/i)||[...document.querySelectorAll('input')].find(x=>/sku|custom.?label/i.test(clean([x.name,x.id,x.placeholder,x.getAttribute('aria-label')].join(' '))));
-  const v=clean(controlValue(c));
-  const st=variantState()||{};
-  return (v||clean(st.data&&st.data.itemId)||clean(window.__capitanSellLikeSourceItemId)||'SLV').replace(/[^A-Za-z0-9._-]+/g,'-').slice(0,36)
+  let value='';
+  for(const l of document.querySelectorAll('label')){
+    if(!/custom\s*label|sku/i.test(clean(l.innerText||l.textContent||'')))continue;
+    let e=l.htmlFor?document.getElementById(l.htmlFor):null;
+    if(!e&&l.parentElement)e=l.parentElement.querySelector('input[type="text"],input:not([type])');
+    if(e&&/^(text|search|)$/i.test(e.type||'')){value=clean(e.value);if(value)break}
+  }
+  if(!value||/^(on|off|true|false|yes|no)$/i.test(value)){
+    const st=variantState()||{},d=cloneData()||{};
+    value='EBAY-'+clean(st.data&&st.data.itemId||d.itemId||window.__capitanSellLikeSourceItemId||'SLV')
+  }
+  return value.replace(/[^A-Za-z0-9._-]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,36)
 }
 function relationshipParent(dims){
   return dims.map(d=>clean(d.name)+'='+(d.values||[]).map(clean).filter(Boolean).join(';')).join('|')
