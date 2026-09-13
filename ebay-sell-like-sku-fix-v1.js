@@ -1,12 +1,13 @@
 javascript:(()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-sku-fix-v6';
+const PATCH_ID='capitan-sku-fix-v7';
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const visible=el=>!!(el&&el.getClientRects&&el.getClientRects().length);
+
+for(const id of ['capitan-sku-fix-v3','capitan-sku-fix-v4','capitan-sku-fix-v5','capitan-sku-fix-v6'])document.getElementById(id)?.remove();
 if(document.getElementById(PATCH_ID))return;
-for(const id of ['capitan-sku-fix-v3','capitan-sku-fix-v4','capitan-sku-fix-v5'])document.getElementById(id)?.remove();
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const panel=document.getElementById(PANEL_ID);if(!panel)return;
 
@@ -16,115 +17,139 @@ function selectedAsins(){
 function setStatus(html){
   const s=panel.querySelector('#capitan-amazon-status');if(s)s.innerHTML=html
 }
+function userClick(el){
+  if(!el)return false;
+  try{el.scrollIntoView({block:'center',inline:'nearest'})}catch(_){}
+  try{
+    el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0,view:window}));
+    el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,button:0,view:window}));
+    el.click();
+  }catch(_){try{el.click()}catch(__){return false}}
+  return true
+}
 function setNative(el,value){
   if(!el)return false;
+  const v=String(value);
   el.focus?.();
   if(el.isContentEditable||el.getAttribute?.('contenteditable')==='true'){
-    el.textContent=String(value);
-    try{el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:String(value)}))}catch(_){el.dispatchEvent(new Event('input',{bubbles:true}))}
-    el.dispatchEvent(new Event('change',{bubbles:true}));return true
+    el.textContent=v;
+    try{el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}))}catch(_){el.dispatchEvent(new Event('input',{bubbles:true}))}
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    el.blur?.();
+    return true
   }
   const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
   const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
   const old=el.value;
-  if(setter)setter.call(el,String(value));else el.value=String(value);
+  if(setter)setter.call(el,v);else el.value=v;
   if(el._valueTracker&&typeof el._valueTracker.setValue==='function')el._valueTracker.setValue(old);
-  try{el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:String(value)}))}catch(_){el.dispatchEvent(new Event('input',{bubbles:true}))}
+  try{el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}))}catch(_){el.dispatchEvent(new Event('input',{bubbles:true}))}
   el.dispatchEvent(new Event('change',{bubbles:true}));
+  el.dispatchEvent(new Event('blur',{bubbles:true}));
+  el.blur?.();
   return true
 }
-function itemSpecificsRoot(){
-  const heads=[...document.querySelectorAll('h1,h2,h3,h4,legend,div,span')].filter(visible).filter(x=>/^item specifics$/i.test(clean(x.innerText||x.textContent||'')));
-  for(const h of heads){
-    let p=h;
-    for(let i=0;i<8&&p;i++,p=p.parentElement){
-      const t=clean(p.innerText||p.textContent||'');
-      if(/add custom item specific/i.test(t)&&t.length<18000)return p
-    }
-  }
-  const add=[...document.querySelectorAll('button,[role="button"]')].filter(visible).find(x=>/^add custom item specific$/i.test(clean(x.innerText||x.textContent||'')));
-  return add?add.parentElement:document
+function exactText(root,re,selector='button,[role="button"],a,span,div'){
+  return [...root.querySelectorAll(selector)].filter(visible).find(x=>re.test(clean(x.innerText||x.textContent||'')))||null
 }
-function exactAddCustomButton(root=itemSpecificsRoot()){
-  return [...root.querySelectorAll('button,[role="button"]')].filter(visible).find(x=>/^add custom item specific$/i.test(clean(x.innerText||x.textContent||'')))||null
+function titleOptionsButton(){
+  return exactText(document,/^See title options$/i,'button,[role="button"],a')||
+    [...document.querySelectorAll('button,[role="button"],a')].filter(visible).find(x=>/title options/i.test(clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||''))))||null
 }
-function dialogByTitle(){
-  const ds=[...document.querySelectorAll('[role="dialog"],dialog')].filter(visible);
-  return ds.find(d=>/^add custom item specific\b/i.test(clean(d.innerText||d.textContent||'')))||null
+function titleOptionsPanel(){
+  const labels=[...document.querySelectorAll('div,section,[role="dialog"],[role="menu"],[role="group"]')].filter(visible).filter(x=>/Custom label\s*\(SKU\)/i.test(clean(x.innerText||x.textContent||'')));
+  return labels.sort((a,b)=>a.getBoundingClientRect().width*a.getBoundingClientRect().height-b.getBoundingClientRect().width*b.getBoundingClientRect().height)[0]||null
 }
-function fieldByExactLabel(root,labelText){
-  const low=clean(labelText).toLowerCase();
-  const labels=[...root.querySelectorAll('label')].filter(visible).filter(l=>clean(l.innerText||l.textContent||'').toLowerCase()===low);
-  for(const l of labels){
-    let el=l.htmlFor?document.getElementById(l.htmlFor):null;
-    if(el&&visible(el))return el;
-    el=l.querySelector('input,textarea,[role="textbox"],[contenteditable="true"]');
-    if(el&&visible(el))return el;
-    let p=l.parentElement;
-    for(let i=0;i<4&&p;i++,p=p.parentElement){
-      el=[...p.querySelectorAll('input,textarea,[role="textbox"],[contenteditable="true"]')].find(visible);
+function customLabelRow(root){
+  const nodes=[...root.querySelectorAll('div,section,li,label')].filter(visible).filter(x=>{
+    const t=clean(x.innerText||x.textContent||'');
+    return /Custom label\s*\(SKU\)/i.test(t)&&t.length<600
+  });
+  return nodes.sort((a,b)=>a.getBoundingClientRect().width*a.getBoundingClientRect().height-b.getBoundingClientRect().width*b.getBoundingClientRect().height)[0]||null
+}
+function rowToggle(row){
+  if(!row)return null;
+  return row.querySelector('input[type="checkbox"],input[type="switch"],button[role="switch"],[role="switch"],button[aria-checked],[aria-checked]')||
+    [...row.querySelectorAll('button,[role="button"]')].filter(visible).find(x=>/custom label|sku/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||''))))||null
+}
+function toggleOn(el){
+  if(!el)return false;
+  if(el.matches('input[type="checkbox"],input[type="switch"]'))return !!el.checked;
+  const ac=el.getAttribute('aria-checked');if(ac!=null)return ac==='true';
+  const ap=el.getAttribute('aria-pressed');if(ap!=null)return ap==='true';
+  return false
+}
+function skuFieldCandidates(){
+  const sels=[
+    'input[aria-label*="custom label" i]','textarea[aria-label*="custom label" i]',
+    'input[placeholder*="custom label" i]','textarea[placeholder*="custom label" i]',
+    'input[name*="custom" i][name*="label" i]','input[id*="custom" i][id*="label" i]',
+    'input[name*="sku" i]','textarea[name*="sku" i]','input[id*="sku" i]','textarea[id*="sku" i]',
+    '[role="textbox"][aria-label*="custom label" i]','[contenteditable="true"][aria-label*="custom label" i]'
+  ];
+  const out=[];for(const s of sels){try{document.querySelectorAll(s).forEach(x=>out.push(x))}catch(_){}}
+  return [...new Set(out)]
+}
+function skuFieldByLabel(){
+  const labs=[...document.querySelectorAll('label,div,span,p,strong')].filter(visible).filter(x=>{
+    const t=clean(x.innerText||x.textContent||'');return /^(Custom label\s*\(SKU\)|Custom label|SKU)$/i.test(t)
+  });
+  for(const lab of labs){
+    let el=lab.htmlFor?document.getElementById(lab.htmlFor):null;
+    if(el&&visible(el)&&(/^(INPUT|TEXTAREA)$/.test(el.tagName)||el.getAttribute('role')==='textbox'||el.isContentEditable))return el;
+    let p=lab.parentElement;
+    for(let i=0;i<6&&p;i++,p=p.parentElement){
+      el=[...p.querySelectorAll('input,textarea,[role="textbox"],[contenteditable="true"]')].filter(visible)[0];
       if(el)return el
-    }
-  }
-  const captions=[...root.querySelectorAll('div,span,p,strong')].filter(visible).filter(x=>clean(x.innerText||x.textContent||'').toLowerCase()===low);
-  for(const cap of captions){
-    let p=cap.parentElement;
-    for(let i=0;i<4&&p;i++,p=p.parentElement){
-      const els=[...p.querySelectorAll('input,textarea,[role="textbox"],[contenteditable="true"]')].filter(visible);
-      if(els.length===1)return els[0]
     }
   }
   return null
 }
-async function waitDialog(ms=2500){
+function findSkuField(){
+  return skuFieldCandidates().find(visible)||skuFieldByLabel()||null
+}
+async function waitSkuField(ms=3500){
   const end=Date.now()+ms;
-  while(Date.now()<end){const d=dialogByTitle();if(d)return d;await sleep(100)}
+  while(Date.now()<end){const f=findSkuField();if(f)return f;await sleep(100)}
   return null
 }
-function existingSkuField(root=itemSpecificsRoot()){
-  const labels=[...root.querySelectorAll('label,div,span,p,strong')].filter(visible).filter(x=>/^sku$/i.test(clean(x.innerText||x.textContent||'')));
-  for(const l of labels){
-    let p=l.parentElement;
-    for(let i=0;i<5&&p;i++,p=p.parentElement){
-      const el=[...p.querySelectorAll('input,textarea,[role="textbox"],[contenteditable="true"]')].filter(visible)[0];
-      if(el)return el
-    }
+async function enableCustomLabel(){
+  let field=findSkuField();if(field)return field;
+  let pop=titleOptionsPanel();
+  if(!pop){
+    const btn=titleOptionsButton();
+    if(!btn)return null;
+    userClick(btn);
+    for(let i=0;i<20&&!pop;i++){await sleep(100);pop=titleOptionsPanel()}
   }
-  return null
+  if(!pop)return null;
+  const row=customLabelRow(pop);
+  if(!row)return null;
+  const toggle=rowToggle(row);
+  if(!toggle)return null;
+  if(!toggleOn(toggle)){userClick(toggle);await sleep(350)}
+  field=await waitSkuField(3500);
+  return field
 }
-async function saveDialog(dlg){
-  const save=[...dlg.querySelectorAll('button,[role="button"]')].filter(visible).find(x=>/^save$/i.test(clean(x.innerText||x.textContent||'')));
-  if(!save)return false;
-  save.click();
-  for(let i=0;i<20;i++){await sleep(120);if(!dlg.isConnected||!visible(dlg))return true}
-  return true
+function fieldValue(field){
+  return field&&(field.isContentEditable?clean(field.textContent):clean(field.value))
 }
-function verifySku(value){
-  const root=itemSpecificsRoot();
-  const t=clean(root.innerText||root.textContent||'');
-  return /\bSKU\b/i.test(t)&&t.includes(clean(value))
-}
-async function writeSkuCustomSpecific(value){
-  const root=itemSpecificsRoot();
-  const existing=existingSkuField(root);
-  if(existing){
-    setNative(existing,value);existing.blur?.();await sleep(350);
-    if(verifySku(value))return {ok:true,mode:'existing'}
+async function writeAndVerify(value){
+  let field=findSkuField();
+  if(!field)field=await enableCustomLabel();
+  if(!field)return {ok:false,reason:'Campo Custom label (SKU) non disponibile dopo See title options'};
+  for(let i=0;i<4;i++){
+    setNative(field,value);
+    await sleep(250);
+    if(fieldValue(field)!==clean(value))continue;
+    field.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Tab',code:'Tab'}));
+    field.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Tab',code:'Tab'}));
+    field.blur?.();
+    await sleep(450);
+    const again=findSkuField();
+    if(again&&fieldValue(again)===clean(value))return {ok:true,field:again}
   }
-  const add=exactAddCustomButton(root);
-  if(!add)return {ok:false,reason:'Pulsante "Add custom item specific" non trovato'};
-  add.click();
-  const dlg=await waitDialog();
-  if(!dlg)return {ok:false,reason:'Finestra "Add custom item specific" non aperta'};
-  const name=fieldByExactLabel(dlg,'Name');
-  const val=fieldByExactLabel(dlg,'Value');
-  if(!name||!val)return {ok:false,reason:'Campi Name/Value non trovati nella finestra custom item specific'};
-  setNative(name,'SKU');await sleep(120);
-  setNative(val,value);await sleep(180);
-  const saved=await saveDialog(dlg);
-  if(!saved)return {ok:false,reason:'Pulsante Save non trovato nella finestra custom item specific'};
-  for(let i=0;i<20;i++){await sleep(150);if(verifySku(value))return {ok:true,mode:'created'}}
-  return {ok:false,reason:'SKU creato ma valore non verificato negli Item Specifics'}
+  return {ok:false,reason:'eBay non ha mantenuto il valore nel Custom label (SKU)'}
 }
 
 document.addEventListener('click',async e=>{
@@ -137,11 +162,11 @@ document.addEventListener('click',async e=>{
   }
   const value=asins.join(' - ');
   btn.disabled=true;
-  setStatus('<span style="color:#555">Creazione Item Specific SKU…</span>');
+  setStatus('<span style="color:#555">Attivazione Custom label (SKU) e inserimento ASIN…</span>');
   try{
-    const r=await writeSkuCustomSpecific(value);
+    const r=await writeAndVerify(value);
     if(!r.ok)throw Error(r.reason);
-    setStatus('<span style="color:#137333;font-weight:700">SKU creato negli Item Specifics:</span> '+value)
+    setStatus('<span style="color:#137333;font-weight:700">ASIN inseriti nel Custom label (SKU):</span> '+value)
   }catch(err){
     setStatus('<span style="color:#b42318;font-weight:700">'+String(err.message||err)+'</span>')
   }finally{
