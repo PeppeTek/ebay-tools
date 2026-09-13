@@ -46,8 +46,33 @@ function triggerNativeAction(kind){const map={list:/^list it$/i,save:/^save for 
 function getLocationRow(){const p=panel();if(!p)return null;return [...p.querySelectorAll('#steps .row')].find(r=>/^Item Location:/i.test(clean(r.innerText||r.textContent)))||null;}
 function parseDisplayFromRow(row){if(!row)return'';const t=clean(row.innerText||row.textContent).replace(/^Item Location:\s*/i,'');const m=t.match(/sorgente:\s*(.*?)(?:\s+—|$)/i);return clean(m?m[1]:t.replace(/campo eBay.*$/i,''));}
 function partsFromDisplay(display){const a=display.split(',').map(clean).filter(Boolean);return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:a[2]||'',country:a[3]||''};}
+function cloneData(){try{return window.__capitanSellLikeCloneData||JSON.parse(localStorage.getItem('capitan-sell-like-clone-data-v1')||'null')}catch(_){return window.__capitanSellLikeCloneData||null}}
+function locationParts(display){
+  if(window.__capitanSellLikeMode==='variants'){
+    const d=cloneData()||{},p=d.itemLocationParts||{};
+    const city=clean(p.city),stateOrProvince=clean(p.stateOrProvince),postalCode=clean(p.postalCode),country=clean(p.country);
+    if(city||stateOrProvince||postalCode||country){
+      return {display:clean(d.itemLocation||display),city,stateOrProvince,postalCode,country}
+    }
+  }
+  return partsFromDisplay(display)
+}
 function maskedPostal(v){return /[*xX]/.test(String(v||''));}
-function countryDisplay(v){const n={US:'United States',USA:'United States',GB:'United Kingdom',UK:'United Kingdom',AU:'Australia',CA:'Canada'};return n[String(v||'').toUpperCase()]||v;}
+function countryDisplay(v){
+  const raw=clean(v),code=raw.toUpperCase();
+  if(/^[A-Z]{2}$/.test(code)){
+    try{
+      const dn=new Intl.DisplayNames(['en'],{type:'region'});
+      const name=clean(dn.of(code));
+      if(name&&name!==code)return name
+    }catch(_){}
+  }
+  const n={US:'United States',USA:'United States',GB:'United Kingdom',UK:'United Kingdom',AU:'Australia',CA:'Canada',PK:'Pakistan'};
+  return n[code]||raw
+}
+function locationDisplay(parts,postal){
+  return [clean(parts.city),clean(parts.stateOrProvince),clean(postal),countryDisplay(parts.country)].filter(Boolean).join(', ')
+}
 const US_STATES={'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA','colorado':'CO','connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY','district of columbia':'DC'};
 function stateAbbr(v){v=clean(v);return /^[A-Za-z]{2}$/.test(v)?v.toUpperCase():(US_STATES[v.toLowerCase()]||'');}
 async function resolveMaskedUsPostal(parts){
@@ -197,10 +222,10 @@ for(let i=0;i<40&&!patchUi();i++)await sleep(100);
 let row=null;for(let i=0;i<900;i++){row=getLocationRow();if(row)break;await sleep(100)}
 if(!row)return;
 const display=parseDisplayFromRow(row);if(!display)return;
-const parts=partsFromDisplay(display);
+const parts=locationParts(display);
 try{
   const result=await applyLocation(parts);
-  if(result.ok)writeLocation(row,'ok',parts.city+', '+parts.stateOrProvince+', '+result.postal+', '+parts.country);
+  if(result.ok)writeLocation(row,'ok',window.__capitanSellLikeMode==='variants'?locationDisplay(parts,result.postal):parts.city+', '+parts.stateOrProvince+', '+result.postal+', '+parts.country);
   else writeLocation(row,'warn','sorgente: '+display+' — '+result.reason);
 }catch(e){await closeLocationDialog();console.warn('Sell Like This location',e);writeLocation(row,'warn','sorgente: '+display+' — copia automatica non riuscita');}
 patchUi();
