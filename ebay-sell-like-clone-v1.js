@@ -210,5 +210,5 @@ Promise.resolve().then(async()=>{
   const ok=await applyShippingPolicy(target);
   addOrUpdateShippingRow(target,ok?'ok':'warn');
   try{window.dispatchEvent(new CustomEvent('capitan-shipping-policy-updated',{detail:{days,target,applied:ok}}))}catch(_){}
-}).catch(()=>{})catch(e){console.error(e);status.innerHTML='<span class="bad">Errore:</span> '+esc(e.message||e);stopProcessTimer()}
+}).catch(()=>{});}catch(e){console.error(e);status.innerHTML='<span class="bad">Errore:</span> '+esc(e.message||e);stopProcessTimer()}
 })();
