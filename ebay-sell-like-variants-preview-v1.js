@@ -2,7 +2,7 @@ javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
-const PATCH_ID='capitan-variants-preview-v9';
+const PATCH_ID='capitan-variants-preview-v10';
 const VAR_STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
@@ -62,6 +62,7 @@ function enforceVariantMode(){
   [...ctx.steps.querySelectorAll('.row')].forEach(r=>{
     const t=clean(r.innerText||r.textContent||'');
     if(/^Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:/i.test(t)&&r.id!=='capitan-variants-preview')r.style.display='none';
+    if(/^Condizione\s*:/i.test(t))r.style.display='none';
   });
   const be=ctx.p.querySelector('#capitan-break-even-row');if(be)be.style.display='none';
   applyVariantActionUi();
