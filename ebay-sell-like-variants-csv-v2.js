@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v11';
+const PATCH_ID='capitan-variants-csv-v12';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -317,81 +317,126 @@ function technicalSpecsFromDescription(){
 }
 function currentItemSpecifics(){
   const clone=cloneData()||{},out={};
-  const reserved=/^(title|description|category|item category|price|pricing|quantity|condition|shipping|shipping policy|payment|payment policy|returns?|return policy|location|item location|custom label|custom label \(sku\)|schedule time|format|duration|photos?|variations?)$/i;
+  const reserved=/^(title|description|category|item category|price|pricing|quantity|condition|shipping|shipping policy|payment|payment policy|returns?|return policy|location|item location|custom label|custom label \(sku\)|schedule time|format|duration|photos?|variations?|essential|optional|required)$/i;
   const badValue=(name,value)=>{
     const n=clean(name).toLowerCase(),v=clean(value);
     if(!v)return true;
     if(v.toLowerCase()===n)return true;
     if(/search(?: or enter your own)?\.?\s*(?:search results|results) appear below/i.test(v))return true;
-    if(/^(enter your own|select|choose|add)$/i.test(v))return true;
+    if(/^(enter your own|select|choose|add|suggested:.*)$/i.test(v))return true;
     return false
   };
-  const put=(name,value)=>{
-    name=clean(name).replace(/[?*:]+$/,'').trim();value=clean(value);
+  const put=(name,value,overwrite=false)=>{
+    name=clean(name).replace(/[?*:]+$/,'').trim();
+    value=clean(value);
     if(!name||!value||reserved.test(name)||name.length>90||value.length>1000)return;
     if(badValue(name,value))return;
-    if(!out[name])out[name]=value
+    if(overwrite||!out[name])out[name]=value
   };
-  for(const [k,v] of Object.entries(clone.aspects||{}))put(k,v);
-  for(const [k,v] of Object.entries(technicalSpecsFromDescription()))put(k,v);
 
-  const markers=[...document.querySelectorAll('h2,h3,h4,h5,legend,div,span')].filter(x=>/^(required|optional)$/i.test(clean(x.innerText||x.textContent||'')));
-  const roots=[];
+  // Fallback source only: competitor aspects already parsed by the backend.
+  for(const [k,v] of Object.entries(clone.aspects||{}))put(k,v,false);
+
+  // The Sell Like page is authoritative because eBay has already populated these fields.
+  const markers=[...document.querySelectorAll('h1,h2,h3,h4,h5,legend,div,span')]
+    .filter(x=>/^(essential|optional|required)$/i.test(clean(x.innerText||x.textContent||'')));
+
+  let root=null;
   for(const marker of markers){
     let p=marker.parentElement;
-    for(let depth=0;depth<7&&p;depth++,p=p.parentElement){
-      const count=p.querySelectorAll('input,textarea,select,[role="combobox"],[role="radio"],button').length;
-      if(count>=3&&count<=140){roots.push(p);break}
+    for(let depth=0;depth<8&&p;depth++,p=p.parentElement){
+      const controls=p.querySelectorAll('input,textarea,select,[role="combobox"],[role="radio"],button');
+      if(controls.length>=3&&controls.length<=180){
+        if(!root||p.querySelectorAll('*').length>root.querySelectorAll('*').length)root=p
+      }
     }
   }
-  const root=roots.sort((a,b)=>a.querySelectorAll('*').length-b.querySelectorAll('*').length)[0]||null;
+
   if(root){
-    for(const l of root.querySelectorAll('label')){
-      const name=clean(l.innerText||l.textContent||'').replace(/[?*]+$/,'').trim();
-      if(!name||reserved.test(name))continue;
-      let row=l.parentElement;
-      for(let depth=0;depth<3&&row;depth++,row=row.parentElement){
-        const exact=l.htmlFor?document.getElementById(l.htmlFor):null;
-        if(exact){
-          if((exact.type==='radio'||exact.type==='checkbox')&&!exact.checked)continue;
-          put(name,controlValue(exact));break
-        }
-        const textInput=row.querySelector('input[type="text"],input[type="search"],input:not([type]),textarea');
-        if(textInput&&clean(textInput.value)){put(name,textInput.value);break}
-        const select=row.querySelector('select');
-        if(select&&clean(controlValue(select))){put(name,controlValue(select));break}
-        const combo=row.querySelector('[role="combobox"]');
-        if(combo&&clean(controlValue(combo))){put(name,controlValue(combo));break}
-        const checked=row.querySelector('input[type="radio"]:checked,input[type="checkbox"]:checked,[role="radio"][aria-checked="true"],button[aria-pressed="true"],[data-state="checked"]');
-        if(checked){const v=clean(checked.value||checked.innerText||checked.textContent||checked.getAttribute('aria-label')||'');put(name,v);break}
+    const visibleEls=[...root.querySelectorAll('label,div,span,p')]
+      .filter(visible)
+      .filter(el=>el.children.length===0)
+      .map(el=>({el,text:clean(el.innerText||el.textContent||'')}))
+      .filter(x=>x.text&&x.text.length<=90)
+      .filter(x=>!/^(essential|optional|required|yes|no|suggested:.*|\d+\/\d+|enter your own)$/i.test(x.text))
+      .filter(x=>!reserved.test(x.text));
+
+    const controls=[...root.querySelectorAll('input,textarea,select,[role="combobox"],button,[role="radio"]')].filter(visible);
+
+    const selectedValueForRow=row=>{
+      const checked=row.querySelector('input[type="radio"]:checked,input[type="checkbox"]:checked,[role="radio"][aria-checked="true"],button[aria-pressed="true"],[data-state="checked"]');
+      if(checked){
+        const v=clean(checked.value||checked.innerText||checked.textContent||checked.getAttribute('aria-label')||'');
+        if(v)return v
+      }
+
+      const select=row.querySelector('select');
+      if(select){
+        const v=clean(controlValue(select));
+        if(v)return v
+      }
+
+      const combo=row.querySelector('[role="combobox"]');
+      if(combo){
+        const v=clean(controlValue(combo));
+        if(v)return v
+      }
+
+      const input=row.querySelector('input[type="text"],input[type="search"],input:not([type]),textarea');
+      if(input&&clean(input.value))return clean(input.value);
+
+      // eBay sometimes renders the selected value inside a button.
+      const buttons=[...row.querySelectorAll('button,[role="button"]')].filter(visible);
+      for(const b of buttons){
+        const v=clean(b.innerText||b.textContent||b.value||b.getAttribute('aria-label')||'');
+        if(v&&!/^(yes|no)$/i.test(v)&&!badValue('',v))return v
+      }
+      return''
+    };
+
+    // First pass: exact row mapping by common ancestor.
+    for(const item of visibleEls){
+      const name=item.text;
+      let row=item.el.parentElement;
+      for(let depth=0;depth<5&&row;depth++,row=row.parentElement){
+        const v=selectedValueForRow(row);
+        if(v&&!badValue(name,v)){put(name,v,true);break}
       }
     }
 
-    // eBay often renders Item Specific names as plain div/span text rather than <label>.
-    const leafNames=[...root.querySelectorAll('div,span,p')]
-      .filter(el=>el.children.length===0)
-      .map(el=>({el,name:clean(el.textContent||'').replace(/[?*]+$/,'').trim()}))
-      .filter(x=>x.name&&x.name.length<=80)
-      .filter(x=>!/^(required|optional|yes|no|suggested:|\d+\/\d+|enter your own)$/i.test(x.name))
-      .filter(x=>!reserved.test(x.name));
-    for(const item of leafNames){
-      const name=item.name;
+    // Second pass: geometric label -> control matching for eBay rows without semantic markup.
+    for(const ctrl of controls){
+      const directValue=clean(controlValue(ctrl));
+      if(!directValue||badValue('',directValue))continue;
+      if((ctrl.type==='radio'||ctrl.type==='checkbox')&&!ctrl.checked)continue;
+
+      const cr=ctrl.getBoundingClientRect();
+      const candidates=visibleEls
+        .map(x=>({x,r:x.el.getBoundingClientRect()}))
+        .filter(o=>o.r.right<=cr.left+20)
+        .filter(o=>{
+          const cy=(cr.top+cr.bottom)/2,ly=(o.r.top+o.r.bottom)/2;
+          return Math.abs(cy-ly)<=Math.max(26,cr.height)
+        })
+        .sort((a,b)=>Math.abs(((a.r.top+a.r.bottom)/2)-((cr.top+cr.bottom)/2))-Math.abs(((b.r.top+b.r.bottom)/2)-((cr.top+cr.bottom)/2)));
+
+      if(candidates.length)put(candidates[0].x.text,directValue,true)
+    }
+
+    // Explicit Yes/No rows: choose only the selected value.
+    for(const item of visibleEls){
+      const name=item.text;
       let row=item.el.parentElement;
-      for(let depth=0;depth<4&&row;depth++,row=row.parentElement){
-        const input=row.querySelector('input[type="text"],input[type="search"],input:not([type]),textarea');
-        if(input&&clean(input.value)){put(name,input.value);break}
-        const select=row.querySelector('select');
-        if(select&&clean(controlValue(select))){put(name,controlValue(select));break}
-        const combo=row.querySelector('[role="combobox"]');
-        if(combo&&clean(controlValue(combo))){put(name,controlValue(combo));break}
-        const checked=row.querySelector('input[type="radio"]:checked,input[type="checkbox"]:checked,[role="radio"][aria-checked="true"],button[aria-pressed="true"],[data-state="checked"]');
-        if(checked){
-          const v=clean(checked.value||checked.innerText||checked.textContent||checked.getAttribute('aria-label')||'');
-          put(name,v);break
+      for(let depth=0;depth<5&&row;depth++,row=row.parentElement){
+        const selected=row.querySelector('[role="radio"][aria-checked="true"],button[aria-pressed="true"],input[type="radio"]:checked,input[type="checkbox"]:checked');
+        if(selected){
+          const v=clean(selected.value||selected.innerText||selected.textContent||selected.getAttribute('aria-label')||'');
+          if(/^(yes|no)$/i.test(v)){put(name,v,true);break}
         }
       }
     }
   }
+
   return out
 }
 function dynamicAspectHeaders(dims,baseHeaders){
