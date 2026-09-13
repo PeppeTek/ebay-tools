@@ -54,24 +54,27 @@ function currentTitle(){
   return clean(input&&input.value).slice(0,80)
 }
 function currentDescription(){
+  const d=cloneData()||{};
+  const prepared=String(d.descriptionHtml||'').trim();
+  if(prepared)return prepared;
+
   const candidates=[...document.querySelectorAll('textarea,[contenteditable="true"]')];
   const descCandidates=candidates.filter(e=>{
+    const meta=clean([e.name,e.id,e.placeholder,e.getAttribute&&e.getAttribute('aria-label')].join(' '));
+    if(/\bdescription\b/i.test(meta))return true;
     let p=e,depth=0;
-    while(p&&depth<7){
+    while(p&&depth<6){
       const h=p.querySelector&&p.querySelector('h2,h3,legend,label');
-      const t=clean(h&&h.textContent||'');
-      if(/^description$/i.test(t)||/\bdescription\b/i.test(clean([e.name,e.id,e.placeholder,e.getAttribute&&e.getAttribute('aria-label')].join(' '))))return true;
+      if(/^description$/i.test(clean(h&&h.textContent||'')))return true;
       p=p.parentElement;depth++
     }
     return false
   });
-  const ordered=(descCandidates.length?descCandidates:candidates).sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight));
-  for(const e of ordered){
+  for(const e of descCandidates){
     if(e.matches('[contenteditable="true"]')){const html=String(e.innerHTML||'').trim();if(html&&html!=='<br>')return html}
     else{const v=String(e.value||'').trim();if(v)return v}
   }
-  const d=cloneData()||{};
-  return String(d.descriptionHtml||'').trim()
+  return''
 }
 function currentConditionId(){
   const direct=findControlByLabel(/condition/i);
@@ -94,6 +97,34 @@ function currentCategoryId(){
   for(const e of document.querySelectorAll('[data-category-id],[data-categoryid]')){
     for(const v of [e.getAttribute('data-category-id'),e.getAttribute('data-categoryid')]){
       if(/^\d{2,12}$/.test(clean(v)))return clean(v)
+    }
+  }
+  const categoryHeads=[...document.querySelectorAll('h2,h3,h4,div,section')].filter(e=>/^item category$/i.test(clean(e.innerText||e.textContent||'')));
+  for(const h of categoryHeads){
+    let p=h.parentElement;
+    for(let depth=0;depth<4&&p;depth++,p=p.parentElement){
+      for(const a of p.querySelectorAll('a[href]')){
+        const href=String(a.href||'');
+        const m=href.match(/(?:categoryId=|cat=|\/b\/[^/?#]+\/)(\d{2,12})(?:[/?#&]|$)/i);
+        if(m)return m[1]
+      }
+    }
+  }
+  const html=String(document.documentElement&&document.documentElement.innerHTML||'');
+  const m=html.match(/["']category(?:Id|ID)["']\s*[:=]\s*["']?(\d{2,12})/);
+  return m?m[1]:''
+}
+function currentCategoryName(){
+  const d=cloneData()||{},st=variantState()||{},vd=st.data||{};
+  let name=clean(d.categoryName||vd.categoryName||'');
+  if(name)return name.startsWith('/')?name:'/'+name;
+
+  const nodes=[...document.querySelectorAll('h2,h3,h4,div,section')].filter(e=>/^item category$/i.test(clean(e.innerText||e.textContent||'')));
+  for(const n of nodes){
+    let p=n.parentElement;
+    for(let depth=0;depth<4&&p;depth++,p=p.parentElement){
+      const a=[...p.querySelectorAll('a[href]')].find(x=>clean(x.innerText||x.textContent||''));
+      if(a){name=clean(a.innerText||a.textContent||'');if(name)return name.startsWith('/')?name:'/'+name}
     }
   }
   return''
@@ -325,7 +356,7 @@ function buildCsv(){
   const actionHeader=headers.find(h=>/^\*Action\(/i.test(h));
   const row=()=>Array(headers.length).fill('');
 
-  const title=currentTitle(),categoryId=currentCategoryId(),rawCategoryName=clean(clone.categoryName||data.categoryName||''),categoryName=rawCategoryName?(rawCategoryName.startsWith('/')?rawCategoryName:'/'+rawCategoryName):'';
+  const title=currentTitle(),categoryId=currentCategoryId(),categoryName=currentCategoryName();
   const description=String(currentDescription()||'').slice(0,32700);
   const shipping=normalizePolicyName(policyName('shipping'));
   const returns=normalizePolicyName(policyName('return'));
