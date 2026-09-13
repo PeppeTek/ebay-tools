@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-window-v5';
+const PATCH_ID='capitan-variants-window-v6';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const m=document.createElement('span');m.id=PATCH_ID;m.style.display='none';document.documentElement.appendChild(m);
@@ -60,10 +60,20 @@ async function injectEditor(win){
 async function automateChild(win){
   if(!win)return false;
   try{
-    const ok=await waitDoc(win,/VARIATIONS|Save time and money by listing multiple variations/i,15000);if(!ok)return false;
-    const b=editButton(win.document);if(!b)return false;
+    const ready=await waitDoc(win,/VARIATIONS|Save time and money by listing multiple variations|Create your variations|Attributes and options you(?:'|’)ve selected/i,15000);
+    if(!ready)return false;
+
+    const body=()=>((win.document&&win.document.body&&win.document.body.innerText)||'');
+    if(/Create your variations|Attributes and options you(?:'|’)ve selected/i.test(body())){
+      return await injectEditor(win);
+    }
+
+    const b=editButton(win.document);
+    if(!b)return false;
     b.click();
-    const wizard=await waitDoc(win,/Create your variations|Attributes and options you(?:'|’)ve selected/i,15000);if(!wizard)return false;
+
+    const wizard=await waitDoc(win,/Create your variations|Attributes and options you(?:'|’)ve selected/i,15000);
+    if(!wizard)return false;
     return await injectEditor(win);
   }catch(e){console.warn('Variant child automation failed',e);return false}
 }
