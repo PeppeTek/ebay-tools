@@ -29,16 +29,26 @@ function closePreopenedHelper(){
 }
 async function startAutomaticVariantFlow(){
   saveVariantState();
-  for(let i=0;i<40;i++){
-    if(typeof window.__capitanAutoConfigureVariants==='function'){
-      const ok=await window.__capitanAutoConfigureVariants();
-      const s=document.querySelector('#capitan-variants-auto-status');
-      if(s)s.textContent=ok?'Configurazione varianti avviata automaticamente.':'Configurazione automatica non completata: verifica la finestra Variations.';
-      return;
+  const btn=document.querySelector('#capitan-add-variants-btn');
+  const s=document.querySelector('#capitan-variants-auto-status');
+  if(!btn){if(s)s.textContent='CTA varianti non disponibile.';return}
+  btn.disabled=false;
+  btn.onclick=async()=>{
+    btn.disabled=true;
+    if(s)s.textContent='Apertura editor Variations...';
+    for(let i=0;i<40;i++){
+      if(typeof window.__capitanOpenVariantsWindow==='function'){
+        const ok=await window.__capitanOpenVariantsWindow();
+        if(s)s.textContent=ok?'Finestra Variations aperta. Ora clicca di nuovo il bookmarklet nella finestra appena aperta.':'Impossibile aprire l\'editor Variations.';
+        btn.disabled=false;
+        return
+      }
+      await sleep(100)
     }
-    await sleep(100);
-  }
-  const s=document.querySelector('#capitan-variants-auto-status');if(s)s.textContent='Modulo varianti non disponibile.';
+    if(s)s.textContent='Modulo Variations non disponibile.';
+    btn.disabled=false
+  };
+  if(s)s.textContent='Varianti pronte. Clicca “Aggiungi varianti al prodotto”.'
 }
 let variantMode=false;
 function enforceVariantMode(){
