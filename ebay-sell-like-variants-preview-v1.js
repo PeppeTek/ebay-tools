@@ -78,6 +78,7 @@ function render(data,rates,discountRate){
   const discount=ctx.p.querySelector('#capitan-discount-row');
   if(discount)discount.insertAdjacentElement('afterend',wrap);
   else ctx.steps.prepend(wrap);
+  setTimeout(()=>startAutomaticVariantFlow(),0);
   const obs=new MutationObserver(()=>enforceVariantMode());
   obs.observe(ctx.steps,{childList:true,subtree:true,characterData:true});
   let n=0;const timer=setInterval(()=>{n++;enforceVariantMode();if(n>120){clearInterval(timer);obs.disconnect()}},125);
