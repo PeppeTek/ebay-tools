@@ -77,7 +77,7 @@ function amazonEconomicsAllowed(x){
 }
 function render(list){
   const filtered=(Array.isArray(list)?list:[]).filter(amazonEconomicsAllowed);
-  lastMatches=filtered.slice(0,5);results.innerHTML='';
+  lastMatches=filtered.slice(0,10);results.innerHTML='';
   if(!lastMatches.length){results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match Amazon compatibile e profittevole trovato.</div>';return}
   const box=document.createElement('div');box.style.cssText='margin-top:8px;border:1px solid #ddd;border-radius:8px;overflow:hidden';
   lastMatches.forEach((x,i)=>{const r=document.createElement('label');r.style.cssText='display:grid;grid-template-columns:24px 1fr auto;gap:8px;align-items:center;padding:8px 9px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px';const price=x.price==null||x.price===''?'—':`${Number(x.price).toFixed(2)} ${esc(x.currency||'USD')}`;r.innerHTML=`<input type="checkbox" class="capitan-amazon-choice" value="${esc(x.asin||'')}" ${i===0?'checked':''} style="width:16px;height:16px;border-radius:0;accent-color:#111"><a href="${esc(x.url||('https://www.amazon.com/dp/'+(x.asin||'')))}" target="_blank" rel="noopener" style="color:#111;text-decoration:none"><b>${esc(x.asin||'')}</b></a><span>${price}</span>`;box.appendChild(r)});
