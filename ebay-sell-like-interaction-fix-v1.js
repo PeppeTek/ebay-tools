@@ -1,7 +1,7 @@
 javascript:(()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-interaction-fix-v2';
+const PATCH_ID='capitan-interaction-fix-v3';
 if(document.getElementById(PATCH_ID))return;
 const old=document.getElementById('capitan-interaction-fix-v1');if(old)old.remove();
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
@@ -28,11 +28,12 @@ function normalize(){
     ext.style.zIndex='999';
   }
   actionButtons().forEach(b=>{
-    b.disabled=false;
-    b.style.pointerEvents='auto';
+    const csvPending=b.dataset&&b.dataset.ebayAction==='csv'&&typeof window.__capitanDownloadVariantCsv!=='function';
+    b.disabled=!!csvPending;
+    b.style.pointerEvents=csvPending?'none':'auto';
     b.style.position='relative';
     b.style.zIndex='1001';
-    b.style.cursor='pointer';
+    b.style.cursor=csvPending?'default':'pointer';
     b.style.userSelect='none';
   });
 }
