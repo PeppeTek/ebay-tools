@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v7';
+const PATCH_ID='capitan-variants-csv-v8';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -131,34 +131,65 @@ function currentCategoryName(){
 }
 function policyName(kind){
   const label={shipping:'Shipping policy',return:'Return policy',payment:'Payment policy'}[kind];
-  const good=v=>{v=normalizePolicyName(v);if(!v||v.length>180)return'';if(/^(edit|change|select|add|help|done|\.\.\.)$/i.test(v))return'';return v};
+  const sectionWords={shipping:/\bshipping\b/i,return:/\breturns?\b/i,payment:/\bpayment\b/i}[kind];
+  const good=v=>{
+    v=normalizePolicyName(v);
+    if(!v||v.length>180)return'';
+    if(/^(edit|change|select|add|help|done|\.\.\.)$/i.test(v))return'';
+    if(v.toLowerCase()===label.toLowerCase())return'';
+    return v
+  };
+
+  for(const l of document.querySelectorAll('label')){
+    if(clean(l.innerText||l.textContent||'').toLowerCase()!==label.toLowerCase())continue;
+    const linked=l.htmlFor?document.getElementById(l.htmlFor):null;
+    const candidates=[
+      linked,
+      l.querySelector('input,textarea,select,[role="combobox"],button'),
+      l.parentElement&&l.parentElement.querySelector('input,textarea,select,[role="combobox"],button')
+    ];
+    for(const el of candidates){
+      const v=good(controlValue(el));
+      if(v)return v
+    }
+  }
+
+  const listingCandidates=[];
+  for(const el of document.querySelectorAll('input,textarea,select,button,[role="combobox"],[role="button"],div,span,p')){
+    const raw=clean(controlValue(el));
+    if(!/\b\d+\s+listings?\b/i.test(raw))continue;
+    if(raw.length>220)continue;
+    let p=el,ctx='';
+    for(let depth=0;depth<8&&p;depth++,p=p.parentElement){
+      const t=clean(p.innerText||p.textContent||'');
+      if(t.length<=900)ctx=t;
+      if(sectionWords.test(t))break
+    }
+    if(sectionWords.test(ctx))listingCandidates.push(raw)
+  }
+  for(const raw of listingCandidates){
+    const v=good(raw);
+    if(v)return v
+  }
+
   let bodyText='';
   try{
     const copy=document.body.cloneNode(true);
-    const panel=copy.querySelector('#capitan-sell-like-clone');if(panel)panel.remove();
+    const panel=copy.querySelector('#capitan-sell-like-clone');
+    if(panel)panel.remove();
     copy.querySelectorAll('script,style,noscript').forEach(x=>x.remove());
     bodyText=String(copy.innerText||copy.textContent||'')
-  }catch(_){bodyText=String(document.body&&document.body.innerText||'')}
+  }catch(_){
+    bodyText=String(document.body&&document.body.innerText||'')
+  }
   const lines=bodyText.split(/\r?\n/).map(clean).filter(Boolean);
-  const escaped=label.replace(/[.*+?^$()|[\]\\]/g,'\\$&');
-  const inlineRe=new RegExp('^'+escaped+'\\s*[\\[(]\\s*\\d+\\s+listings?','i');
-  for(const line of lines){if(inlineRe.test(line)){const v=good(line);if(v)return v}}
   for(let i=0;i<lines.length;i++){
     if(lines[i].toLowerCase()!==label.toLowerCase())continue;
-    for(let j=i+1;j<Math.min(lines.length,i+7);j++){
-      if(/^(shipping policy|return policy|payment policy)$/i.test(lines[j]))break;
-      if(/^(shipping|returns?|payment|item location|listing details|preferences)$/i.test(lines[j]))break;
+    for(let j=i+1;j<Math.min(lines.length,i+10);j++){
+      if(j>i+1&&/^(shipping policy|return policy|payment policy)$/i.test(lines[j]))break;
       const v=good(lines[j]);
       if(!v)continue;
-      if(/\b\d+\s+listings?\b/i.test(lines[j])||j===i+1)return v
-    }
-  }
-  const labels=[...document.querySelectorAll('label,div,span,p')].filter(x=>clean(x.innerText||x.textContent||'').toLowerCase()===label.toLowerCase());
-  for(const l of labels){
-    let p=l.parentElement;
-    for(let depth=0;depth<4&&p;depth++,p=p.parentElement){
-      const vals=[...p.querySelectorAll('input,textarea,select,[role="combobox"],button,[role="button"],div,span')].map(e=>controlValue(e)).filter(v=>/\b\d+\s+listings?\b/i.test(v));
-      if(vals.length){const v=good(vals[0]);if(v)return v}
+      if(/\b\d+\s+listings?\b/i.test(lines[j]))return v
     }
   }
   return''
@@ -547,7 +578,10 @@ async function run(){
         try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
       }catch(e){
         console.warn('Variant CSV',e);
-        setStatus('CSV varianti non generato: '+(e&&e.message?e.message:e),true);
+        const msg=(e&&e.message?e.message:e);
+        setStatus('CSV varianti non generato: '+msg,true);
+        const mainStatus=document.querySelector('#capitan-sell-like-clone #st');
+        if(mainStatus)mainStatus.innerHTML='<span class="bad">Preparazione non completata.</span> '+String(msg);
         try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
       }
       return
