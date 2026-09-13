@@ -50,6 +50,22 @@ function setQuantity(v){const el=labelControl(/^quantity$/i)||candidates('input'
 function setItemLocation(v){v=clean(v);if(!v)return false;let el=labelControl(/^(item location|located in|location)$/i)||candidates('input,textarea',/(item.?location|located.?in|location)/i);if(el&&nativeSet(el,v))return true;const sections=[...document.querySelectorAll('section,div')].filter(x=>/item location|located in/i.test(clean(x.querySelector('h2,h3,label,legend')?.textContent||''))&&clean(x.innerText).length<2000);for(const sec of sections){el=sec.querySelector('input,textarea');if(el&&nativeSet(el,v))return true}return false}
 function currentPageCategoryName(){
   const banned=/^(edit|help)$/i;
+
+  // Exact visible text sequence shown by eBay:
+  // ITEM CATEGORY -> Wristwatch Bands -> breadcrumb.
+  const bodyText=String(document.body&&document.body.innerText||'');
+  const lines=bodyText.split(/\r?\n/).map(clean).filter(Boolean);
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].toLowerCase()!=='item category')continue;
+    for(let j=i+1;j<Math.min(lines.length,i+5);j++){
+      const v=clean(lines[j]);
+      if(!v||banned.test(v)||/learn more|opens in a new window|sales tax/i.test(v))continue;
+      if(/\s*>\s*/.test(v))continue;
+      if(v.length<=100)return v
+    }
+  }
+
+  // DOM fallback: closest category link inside the same section.
   const exact=[...document.querySelectorAll('h1,h2,h3,h4,h5,div,span')]
     .filter(visible)
     .filter(e=>/^item category$/i.test(clean(e.innerText||e.textContent||'')));
@@ -62,12 +78,6 @@ function currentPageCategoryName(){
         .filter(v=>v&&!banned.test(v)&&!/learn more|opens in a new window|sales tax/i.test(v));
       if(links.length)return links[0]
     }
-  }
-  const text=String(document.body&&document.body.innerText||'');
-  const m=text.match(/(?:^|\n)\s*ITEM CATEGORY\s*\n\s*([^\n]+)/i);
-  if(m){
-    const v=clean(m[1]);
-    if(v&&!banned.test(v)&&!/learn more|opens in a new window|sales tax/i.test(v))return v
   }
   return''
 }
