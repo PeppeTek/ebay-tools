@@ -1,7 +1,7 @@
 javascript:(async()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-variants-window-v10';
+const PATCH_ID='capitan-variants-window-v11';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 if(document.getElementById(PATCH_ID))return;
 const m=document.createElement('span');m.id=PATCH_ID;m.style.display='none';document.documentElement.appendChild(m);
@@ -137,88 +137,44 @@ async function openInNewWindow(){
     return false
   }
 
-  let win=window.__capitanPreopenedVariantWindow||null;
-  try{
-    if(win&&!win.closed)win.close();
-  }catch(_){}
-  try{
-    win=window.open('about:blank','capitanVariantsHelper','popup=yes,width=1100,height=820,left=30,top=30');
-  }catch(_){}
+  let win=null;
+  try{win=window.open(location.href,'_blank')}catch(_){}
   if(!win){
-    window.__capitanVariantsLastError='Popup bloccato dal browser.';
+    window.__capitanVariantsLastError='Nuova scheda bloccata dal browser.';
     return false
   }
   window.__capitanPreopenedVariantWindow=win;
 
-  const transfer=()=>{
-    try{
-      win.name='capitan-sell-like-variants:'+JSON.stringify(st);
-      return true
-    }catch(_){return false}
-  };
-  if(!transfer()){
-    try{win.close()}catch(_){}
-    window.__capitanVariantsLastError='Trasferimento dati varianti non riuscito.';
-    return false
-  }
-
-  try{win.resizeTo(1100,820);win.moveTo(30,30)}catch(_){}
-  try{win.location.replace(location.href)}catch(_){
-    try{win.location.href=location.href}catch(__){
-      try{win.close()}catch(___){}
-      window.__capitanVariantsLastError='Impossibile aprire una copia della pagina eBay.';
-      return false
-    }
-  }
+  const packed=encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(st)))));
+  try{win.name='capitan-sell-like-variants:'+JSON.stringify(st)}catch(_){}
 
   let edit=null;
   for(let i=0;i<100&&!edit;i++){
     if(!win||win.closed){
-      window.__capitanVariantsLastError='La finestra Variations è stata chiusa.';
+      window.__capitanVariantsLastError='La scheda Variations è stata chiusa.';
       return false
     }
-    try{
-      if(!/^(?:www\.)?ebay\.com$/i.test(win.location.hostname)){
-        await sleep(200);
-        continue
-      }
-      edit=nativeVariationEdit(win.document);
-    }catch(_){}
+    try{edit=nativeVariationEdit(win.document)}catch(_){}
     if(!edit)await sleep(200)
   }
-
   if(!edit){
-    try{win.close()}catch(_){}
-    window.__capitanVariantsLastError='Pulsante Edit della sezione Variations non trovato nella finestra secondaria.';
+    window.__capitanVariantsLastError='Edit Variations non trovato nella nuova scheda.';
     return false
   }
 
-  transfer();
-  try{
-    edit.scrollIntoView({block:'center',inline:'center'});
-    edit.click();
-  }catch(_){
-    try{win.close()}catch(__){}
-    window.__capitanVariantsLastError='Click su Edit Variations non riuscito nella finestra secondaria.';
+  try{edit.click()}catch(_){
+    window.__capitanVariantsLastError='Click su Edit Variations non riuscito.';
     return false
   }
 
   for(let i=0;i<100;i++){
-    if(!win||win.closed){
-      window.__capitanVariantsLastError='La finestra Variations è stata chiusa.';
-      return false
-    }
     try{
-      const bulkFrame=[...win.document.querySelectorAll('iframe')].find(el=>/bulkedit\.ebay\.com\/msku/i.test(String(el.src||el.getAttribute('src')||'')))||null;
-      if(bulkFrame){
-        const target=String(bulkFrame.src||bulkFrame.getAttribute('src')||'');
-        transfer();
-        try{win.location.replace(target)}catch(_){try{win.location.href=target}catch(__){}}
-        try{win.focus()}catch(_){}
-        return true
-      }
-      const href=String(win.location.href||'');
-      if(/bulkedit\.ebay\.com\/msku/i.test(href)){
+      const frame=[...win.document.querySelectorAll('iframe')].find(el=>/bulkedit\.ebay\.com\/msku/i.test(String(el.src||el.getAttribute('src')||'')));
+      if(frame){
+        let target=String(frame.src||frame.getAttribute('src')||'');
+        target+=(target.includes('#')?'&':'#')+'capitanSLV='+packed;
+        try{win.name='capitan-sell-like-variants:'+JSON.stringify(st)}catch(_){}
+        win.location.replace(target);
         try{win.focus()}catch(_){}
         return true
       }
@@ -229,8 +185,7 @@ async function openInNewWindow(){
     await sleep(200)
   }
 
-  try{win.close()}catch(_){}
-  window.__capitanVariantsLastError='La finestra secondaria non ha raggiunto l’editor bulkedit/msku.';
+  window.__capitanVariantsLastError='Editor bulkedit/msku non raggiunto.';
   return false
 }
 window.__capitanOpenVariantsWindow=openInNewWindow;
