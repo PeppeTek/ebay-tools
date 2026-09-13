@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v14';
+const PATCH_ID='capitan-variants-csv-v15';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -135,17 +135,17 @@ function currentCategoryId(){
 function currentCategoryName(){
   const banned=/learn more|opens in a new window|sales tax|help|^edit$|feedback/i;
   const heads=[...document.querySelectorAll('h1,h2,h3,h4,div,span')]
-    .filter(e=>visible(e)&&/^item category$/i.test(clean(e.innerText||e.textContent||'')));
+    .filter(el=>visible(el)&&/^item category$/i.test(clean(el.innerText||el.textContent||'')));
 
   for(const h of heads){
     const hr=h.getBoundingClientRect();
     const candidates=[...document.querySelectorAll('a[href]')]
       .filter(visible)
-      .map(a=>({a,text:clean(a.innerText||a.textContent||''),r:a.getBoundingClientRect()}))
+      .map(a=>({text:clean(a.innerText||a.textContent||''),r:a.getBoundingClientRect()}))
       .filter(x=>x.text&&!banned.test(x.text)&&x.text.length<=100)
-      .filter(x=>x.r.top>=hr.bottom-5&&x.r.top<=hr.bottom+140)
-      .filter(x=>Math.abs(x.r.left-hr.left)<=120)
-      .sort((a,b)=>(a.r.top-b.r.top)||(a.r.left-b.r.left));
+      .filter(x=>x.r.top>=hr.bottom-8&&x.r.top<=hr.bottom+220)
+      .sort((a,b)=>Math.abs(a.r.top-hr.bottom)-Math.abs(b.r.top-hr.bottom));
+
     if(candidates.length){
       const name=candidates[0].text;
       return name.startsWith('/')?name:'/'+name
@@ -513,7 +513,7 @@ function buildCsv(){
 
   const baseHeaders=listingsExportHeaders();
   const dynamicHeaders=dynamicAspectHeaders(dims,baseHeaders);
-  const extraHeaders=['Condition','PicURL'].filter(h=>!baseHeaders.includes(h));
+  const extraHeaders=['PicURL'].filter(h=>!baseHeaders.includes(h));
   const headers=[...baseHeaders,...dynamicHeaders,...extraHeaders];
   const idx=Object.fromEntries(headers.map((h,i)=>[h,i]));
   const actionHeader=headers.find(h=>/^\*Action\(/i.test(h));
@@ -559,7 +559,6 @@ function buildCsv(){
   parent[idx['Format']]='FixedPrice';
   parent[idx['Duration']]='GTC';
   parent[idx['Location']]=location;
-  if(idx['Condition']!=null)parent[idx['Condition']]=currentConditionText();
   if(idx['PicURL']!=null)parent[idx['PicURL']]=commonImages;
   fillAspects(parent,idx,headers,clone,dims);
   fillDirectTemplateFields(parent,idx,headers,clone);
