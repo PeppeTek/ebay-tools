@@ -269,7 +269,7 @@ async function addCustomOption(root,value){
   const val=clean(value);if(!val)return false;
   if(isOptionSelected(root,val))return true;
   const zone=optionsZone(root);
-  const create=[...zone.querySelectorAll('a,button,[role="button"],span,div')].filter(visible).find(x=>/create your own/i.test(clean(x.innerText||x.textContent||'')));
+  const create=zone.querySelector('#msku-custom-option-link')||[...zone.querySelectorAll('a,button,[role="button"],span,div')].filter(visible).find(x=>/create your own/i.test(clean(x.innerText||x.textContent||'')));
   if(!create)return false;
 
   const beforeInputs=new Set([...document.querySelectorAll('input[type="text"],input:not([type]),textarea')].filter(visible));
