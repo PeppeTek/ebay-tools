@@ -27,6 +27,7 @@ function findControlByLabel(re){
   }
   return null
 }
+function normalizePolicyName(v){return clean(v).replace(/\s*\(\s*\d+\s+listings?\s*\)\s*$/i,'').trim()}
 function controlValue(el){
   if(!el)return'';
   if(el.tagName==='SELECT'){const o=el.options&&el.options[el.selectedIndex];return clean(o&&o.textContent||el.value)}
@@ -59,7 +60,7 @@ function policyName(kind){
     const meta=clean([e.name,e.id,e.placeholder,e.getAttribute('aria-label')].join(' '));
     if(re.test(meta)){
       const v=controlValue(e);
-      if(v&&!/^(edit|change|select|add)$/i.test(v))return v
+      if(v&&!/^(edit|change|select|add)$/i.test(v))return normalizePolicyName(v)
     }
   }
   const labels=[...document.querySelectorAll('label,h2,h3,h4,legend,div,span')].filter(visible).filter(x=>re.test(clean(x.innerText||x.textContent||'')));
@@ -69,7 +70,7 @@ function policyName(kind){
       const candidates=[...p.querySelectorAll('select,[role="combobox"],button,input')].filter(visible);
       for(const e of candidates){
         const v=controlValue(e);
-        if(v&&!/^(edit|change|select|add|shipping|returns?|payment)$/i.test(v)&&v.length<=80)return v
+        if(v&&!/^(edit|change|select|add|shipping|returns?|payment)$/i.test(v)&&v.length<=120)return normalizePolicyName(v)
       }
     }
   }
@@ -205,6 +206,7 @@ async function run(){
         window.__capitanVariantCsv=res;
         const panel=document.getElementById('capitan-sell-like-clone');
         const b=panel&&panel.querySelector('[data-ebay-action="csv"],[data-ebay-action="save"]');
+        window.__capitanDownloadVariantCsv=()=>download(res);
         if(b){
           b.dataset.ebayAction='csv';
           b.textContent='Scarica CSV';
@@ -213,7 +215,7 @@ async function run(){
           b.style.border='1px solid #12813a';
           b.style.fontWeight='700';
           b.style.cursor='pointer';
-          b.onclick=e=>{e.preventDefault();e.stopPropagation();download(res)}
+          b.onclick=null
         }
         const list=panel&&panel.querySelector('[data-ebay-action="list"]');
         if(list)list.style.display='none';
