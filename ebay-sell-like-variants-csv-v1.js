@@ -190,26 +190,47 @@ function defaultPhotos(data,clone){
 }
 function currentItemSpecifics(){
   const clone=cloneData()||{},out={};
-  for(const [k,v] of Object.entries(clone.aspects||{})){const n=clean(k),val=clean(v);if(n&&val)out[n]=val}
-  const headings=[...document.querySelectorAll('h2,h3,h4,legend,div,span')].filter(x=>/^item specifics$/i.test(clean(x.innerText||x.textContent||'')));
-  let section=null;
-  for(const h of headings){let p=h.parentElement;for(let depth=0;depth<6&&p;depth++,p=p.parentElement){const fields=p.querySelectorAll('input,textarea,select,[role="combobox"]');if(fields.length>=2&&fields.length<=80){section=p;break}}if(section)break}
-  if(section){
-    for(const l of section.querySelectorAll('label')){
-      const name=clean(l.innerText||l.textContent||'');if(!name||name.length>80)continue;
-      let e=l.htmlFor?document.getElementById(l.htmlFor):l.querySelector('input,textarea,select,[role="combobox"]');
-      if(!e){let p=l.parentElement;for(let i=0;i<3&&p&&!e;i++,p=p.parentElement)e=p.querySelector('input,textarea,select,[role="combobox"]')}
-      const val=clean(controlValue(e));if(val&&!/^(select|choose|add)$/i.test(val))out[name]=val
-    }
+  const reserved=/^(title|description|category|item category|price|pricing|quantity|condition|shipping|shipping policy|payment|payment policy|returns?|return policy|location|item location|custom label|custom label \(sku\)|schedule time|format|duration|photos?|variations?)$/i;
+  const put=(name,value)=>{
+    name=clean(name).replace(/[?*:]+$/,'').trim();value=clean(value);
+    if(!name||!value||reserved.test(name)||name.length>90||value.length>1000)return;
+    if(/^(select|choose|enter your own|add)$/i.test(value))return;
+    if(!out[name])out[name]=value
+  };
+
+  for(const [k,v] of Object.entries(clone.aspects||{}))put(k,v);
+
+  for(const l of document.querySelectorAll('label')){
+    const name=clean(l.innerText||l.textContent||'').replace(/[?*]+$/,'').trim();
+    if(!name||reserved.test(name))continue;
+    let e=l.htmlFor?document.getElementById(l.htmlFor):null;
+    if(!e)e=l.querySelector('input,textarea,select,[role="combobox"]');
+    if(!e&&l.parentElement)e=l.parentElement.querySelector('input,textarea,select,[role="combobox"]');
+    if(!e)continue;
+    if((e.type==='radio'||e.type==='checkbox')&&!e.checked)continue;
+    put(name,controlValue(e))
+  }
+
+  for(const e of document.querySelectorAll('input,textarea,select,[role="combobox"]')){
+    const name=clean(e.getAttribute('aria-label')||'');
+    if(!name||reserved.test(name))continue;
+    put(name,controlValue(e))
   }
   return out
 }
-function dynamicAspectHeaders(dims){
+function dynamicAspectHeaders(dims,baseHeaders){
   const source=currentItemSpecifics();
-  const blocked=new Set(dims.map(d=>clean(d.name).toLowerCase()));
+  const blocked=new Set((dims||[]).map(d=>clean(d.name).toLowerCase().replace(/colour/g,'color')));
+  const existing=new Set((baseHeaders||[]).map(h=>clean(h).toLowerCase()));
   const out=[];
-  for(const k of Object.keys(source)){const name=clean(k),val=clean(source[k]);if(!name||!val||blocked.has(name.toLowerCase()))continue;if(/^(title|description|price|quantity|condition|shipping policy|payment policy|return policy)$/i.test(name))continue;out.push({header:'C:'+name,value:val})}
-  return out.slice(0,60)
+  for(const [k,v] of Object.entries(source)){
+    const name=clean(k),val=clean(v),nk=name.toLowerCase().replace(/colour/g,'color');
+    if(!name||!val||blocked.has(nk))continue;
+    if(/^(upc|ean|isbn|epid)$/i.test(name))continue;
+    const header='C:'+name;
+    if(!existing.has(header.toLowerCase())){out.push(header);existing.add(header.toLowerCase())}
+  }
+  return out
 }
 function locationValue(clone){
   const p=clone.itemLocationParts||{};
