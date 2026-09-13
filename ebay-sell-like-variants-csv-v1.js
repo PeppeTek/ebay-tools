@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v6';
+const PATCH_ID='capitan-variants-csv-v7';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const LISTINGS_TEMPLATE_HEADERS=[
@@ -115,63 +115,52 @@ function currentCategoryId(){
   return m?m[1]:''
 }
 function currentCategoryName(){
-  const d=cloneData()||{},st=variantState()||{},vd=st.data||{};
-  let name=clean(d.categoryName||vd.categoryName||'');
-  if(name)return name.startsWith('/')?name:'/'+name;
-
-  const nodes=[...document.querySelectorAll('h2,h3,h4,div,section')].filter(e=>/^item category$/i.test(clean(e.innerText||e.textContent||'')));
-  for(const n of nodes){
-    let p=n.parentElement;
-    for(let depth=0;depth<4&&p;depth++,p=p.parentElement){
-      const a=[...p.querySelectorAll('a[href]')].find(x=>clean(x.innerText||x.textContent||''));
-      if(a){name=clean(a.innerText||a.textContent||'');if(name)return name.startsWith('/')?name:'/'+name}
+  const bad=v=>!v||/learn more|opens in a new window|^edit$/i.test(clean(v));
+  const heads=[...document.querySelectorAll('h1,h2,h3,h4,div,span')].filter(e=>/^item category$/i.test(clean(e.innerText||e.textContent||'')));
+  for(const h of heads){
+    let p=h.parentElement;
+    for(let depth=0;depth<5&&p;depth++,p=p.parentElement){
+      const links=[...p.querySelectorAll('a[href]')].map(a=>clean(a.innerText||a.textContent||'')).filter(v=>!bad(v));
+      if(links.length){const name=links[0];return name.startsWith('/')?name:'/'+name}
     }
   }
-  return''
+  const d=cloneData()||{},st=variantState()||{},vd=st.data||{};
+  let name=clean(d.categoryName||vd.categoryName||'');
+  if(bad(name))return'';
+  return name?(name.startsWith('/')?name:'/'+name):''
 }
 function policyName(kind){
-  const labelText={shipping:'Shipping policy',payment:'Payment policy',return:'Return policy'}[kind]||kind+' policy';
-  const escaped=labelText.replace(/[-\/\\^$*+?.()|[\]{}]/g,'\\$&');
-  const labelRe=new RegExp('^'+escaped+'$','i');
-  const sectionRe=kind==='return'?/\breturns?\b/i:kind==='payment'?/\bpayment\b/i:/\bshipping\b/i;
-  const good=v=>{v=normalizePolicyName(v);if(!v||labelRe.test(v)||/^(edit|change|select|add|help|done|\.\.\.|shipping|payment|returns?|policy)$/i.test(v)||v.length>180)return'';return v};
-
-  // Most reliable eBay pattern: selected business-policy controls contain '(N listings)' or '[N listings]'.
-  const listingControls=[...document.querySelectorAll('input,textarea,select,button,[role="combobox"],[role="button"]')];
-
-  // First classify directly from the selected text itself.
-  for(const e of listingControls){
-    const raw=controlValue(e);
-    if(!/\b\d+\s+listings?\b/i.test(raw))continue;
-    const txt=clean(raw);
-    const matchesKind=kind==='shipping'?(/shipping|business\s+days?|economy|standard|expedited|fedex|ups|usps/i.test(txt)):
-      kind==='return'?(/return|refund/i.test(txt)):
-      (/payment|managed\s+payments?/i.test(txt));
-    if(matchesKind){const v=good(raw);if(v)return v}
+  const label={shipping:'Shipping policy',return:'Return policy',payment:'Payment policy'}[kind];
+  const good=v=>{v=normalizePolicyName(v);if(!v||v.length>180)return'';if(/^(edit|change|select|add|help|done|\.\.\.)$/i.test(v))return'';return v};
+  let bodyText='';
+  try{
+    const copy=document.body.cloneNode(true);
+    const panel=copy.querySelector('#capitan-sell-like-clone');if(panel)panel.remove();
+    copy.querySelectorAll('script,style,noscript').forEach(x=>x.remove());
+    bodyText=String(copy.innerText||copy.textContent||'')
+  }catch(_){bodyText=String(document.body&&document.body.innerText||'')}
+  const lines=bodyText.split(/\r?\n/).map(clean).filter(Boolean);
+  const escaped=label.replace(/[.*+?^$()|[\]\\]/g,'\\$&');
+  const inlineRe=new RegExp('^'+escaped+'\\s*[\\[(]\\s*\\d+\\s+listings?','i');
+  for(const line of lines){if(inlineRe.test(line)){const v=good(line);if(v)return v}}
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].toLowerCase()!==label.toLowerCase())continue;
+    for(let j=i+1;j<Math.min(lines.length,i+7);j++){
+      if(/^(shipping policy|return policy|payment policy)$/i.test(lines[j]))break;
+      if(/^(shipping|returns?|payment|item location|listing details|preferences)$/i.test(lines[j]))break;
+      const v=good(lines[j]);
+      if(!v)continue;
+      if(/\b\d+\s+listings?\b/i.test(lines[j])||j===i+1)return v
+    }
   }
-  for(const e of listingControls){
-    const raw=controlValue(e);
-    if(!/\b\d+\s+listings?\b/i.test(raw))continue;
-    let p=e,scope='';
-    for(let depth=0;depth<7&&p;depth++,p=p.parentElement){scope=clean((p.innerText||p.textContent||'')+' '+(p.getAttribute&&p.getAttribute('aria-label')||''));if(sectionRe.test(scope))break}
-    if(sectionRe.test(scope)){const v=good(raw);if(v)return v}
+  const labels=[...document.querySelectorAll('label,div,span,p')].filter(x=>clean(x.innerText||x.textContent||'').toLowerCase()===label.toLowerCase());
+  for(const l of labels){
+    let p=l.parentElement;
+    for(let depth=0;depth<4&&p;depth++,p=p.parentElement){
+      const vals=[...p.querySelectorAll('input,textarea,select,[role="combobox"],button,[role="button"],div,span')].map(e=>controlValue(e)).filter(v=>/\b\d+\s+listings?\b/i.test(v));
+      if(vals.length){const v=good(vals[0]);if(v)return v}
+    }
   }
-
-  // Exact visible/hidden labeled field.
-  for(const l of document.querySelectorAll('label')){
-    if(!labelRe.test(clean(l.innerText||l.textContent||'')))continue;
-    const linked=l.htmlFor?document.getElementById(l.htmlFor):null;
-    for(const e of [linked,l.querySelector('input,textarea,select,[role="combobox"],button'),l.parentElement&&l.parentElement.querySelector('input,textarea,select,[role="combobox"],button')]){const v=good(controlValue(e));if(v)return v}
-  }
-
-  // Metadata fallback.
-  const metaRe=new RegExp(kind+'.*(policy|profile)|(policy|profile).*'+kind,'i');
-  for(const e of listingControls){const meta=clean([e.name,e.id,e.placeholder,e.getAttribute&&e.getAttribute('aria-label'),e.getAttribute&&e.getAttribute('data-testid'),e.getAttribute&&e.getAttribute('data-field')].join(' '));if(metaRe.test(meta)){const v=good(controlValue(e));if(v)return v}}
-
-  // Search the smallest DOM block around the exact label, including hidden mounted settings.
-  const labels=[...document.querySelectorAll('label,h2,h3,h4,legend,div,span,p')].filter(x=>labelRe.test(clean(x.innerText||x.textContent||'')));
-  for(const l of labels){let p=l.parentElement;for(let depth=0;depth<7&&p;depth++,p=p.parentElement){for(const e of p.querySelectorAll('input,textarea,select,[role="combobox"],button,[role="button"],span,div,p')){const v=good(controlValue(e));if(v&&!/\b(?:shipping|payment|return)\s+policy\b/i.test(v))return v}}}
-
   return''
 }
 function currentSkuBase(){
@@ -292,7 +281,10 @@ function locationValue(clone){
   const p=clone.itemLocationParts||{};
   const city=clean(p.city),state=clean(p.stateOrProvince);
   if(city&&state)return city+', '+state;
-  return clean(clone.itemLocation||'')
+  const raw=clean(clone.itemLocation||'');
+  const parts=raw.split(',').map(clean).filter(Boolean);
+  if(parts.length>=2)return parts[0]+', '+parts[1];
+  return raw.replace(/,?\s*\d[\d*\- ]{2,}\s*(?:,\s*[A-Z]{2})?$/i,'').trim()
 }
 function sourceValueMap(clone){
   const out={};
