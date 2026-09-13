@@ -218,15 +218,18 @@ async function run(){
         const list=panel&&panel.querySelector('[data-ebay-action="list"]');
         if(list)list.style.display='none';
         setStatus('CSV varianti pronto: '+res.rows+' varianti.');
+        try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
       }catch(e){
         console.warn('Variant CSV',e);
-        setStatus('CSV varianti non generato: '+(e&&e.message?e.message:e),true)
+        setStatus('CSV varianti non generato: '+(e&&e.message?e.message:e),true);
+        try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
       }
       return
     }
     await sleep(250)
   }
-  setStatus('CSV varianti non generato: dati non pronti.',true)
+  setStatus('CSV varianti non generato: dati non pronti.',true);
+  try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
 }
 run();
 })();
