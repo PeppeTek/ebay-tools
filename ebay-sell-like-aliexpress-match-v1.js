@@ -15,8 +15,8 @@ const actions=panel.querySelector('[data-ebay-actions]');
 const amazonWrap=panel.querySelector('#capitan-amazon-match-ext');
 const wrap=document.createElement('div');
 wrap.id=EXT_ID;
-wrap.style.cssText='padding:0 14px 8px;background:#fff';
-wrap.innerHTML='<div id="capitan-aliexpress-status" style="padding:7px 0 0;font-size:12px"></div><div id="capitan-aliexpress-results"></div>';
+wrap.style.cssText='display:none;padding:0 14px 0;background:#fff';
+wrap.innerHTML='<div id="capitan-aliexpress-status" style="display:none"></div><div id="capitan-aliexpress-results"></div>';
 if(actions){
   if(amazonWrap&&amazonWrap.parentNode===actions.parentNode)amazonWrap.parentNode.insertBefore(wrap,amazonWrap);
   else panel.insertBefore(wrap,actions);
@@ -193,18 +193,84 @@ function queryVariant(title,page){
   ].map(clean).filter(Boolean);
   return variants[Math.abs(Number(page)||0)%variants.length]||t
 }
+function collectAliValues(root,keyRe){
+  const out=[],seen=new Set();
+  function walk(v,depth,key){
+    if(depth>5||v==null)return;
+    if(typeof v!=='object'){if(keyRe.test(String(key||'')))out.push(v);return}
+    if(seen.has(v))return;seen.add(v);
+    if(Array.isArray(v)){v.forEach(y=>walk(y,depth+1,key));return}
+    Object.keys(v).forEach(k=>walk(v[k],depth+1,k))
+  }
+  walk(root,0,'');
+  return out
+}
+function numberFromAny(v){
+  if(v&&typeof v==='object'){
+    for(const k of ['value','amount','price','min','max']){
+      const n=numberFromAny(v[k]);if(isFinite(n))return n
+    }
+    return NaN
+  }
+  const m=String(v??'').replace(',','.').match(/-?\d+(?:\.\d+)?/);
+  return m?Number(m[0]):NaN
+}
+function aliProductPrice(x){
+  x=x||{};
+  const keys=['salePrice','sale_price','currentPrice','discountedPrice','discountPrice','offerPrice','skuPrice','minPrice','price','priceValue'];
+  for(const k of keys){const n=numberFromAny(x[k]);if(isFinite(n)&&n>0)return n}
+  const vals=collectAliValues(x,/^(?:sale|current|discount|offer|sku|min)?price(?:value)?$/i);
+  for(const v of vals){const n=numberFromAny(v);if(isFinite(n)&&n>0)return n}
+  return NaN
+}
+function aliShippingMetaV2(x,price){
+  x=x||{};price=Number(price);
+  const vals=collectAliValues(x,/shipping|freight|delivery/i);
+  const raw=vals.map(v=>clean(typeof v==='object'?JSON.stringify(v):v)).filter(Boolean).join(' | ');
+  let threshold=null;
+  for(const v of collectAliValues(x,/free.*shipping.*(?:threshold|min|over)|shipping.*(?:threshold|min).*free/i)){
+    const n=numberFromAny(v);if(isFinite(n)&&n>0){threshold=n;break}
+  }
+  let m=raw.match(/free\s+shipping(?:\s+on\s+orders)?\s+(?:over|above)\s*(?:US\s*)?\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
+  if(m)threshold=Number(String(m[1]).replace(',','.'));
+  let cost=null;
+  for(const v of collectAliValues(x,/shipping(?:Cost|Price|Fee)|delivery(?:Cost|Fee)|freight(?:Cost|Fee)?/i)){
+    const n=numberFromAny(v);if(isFinite(n)&&n>=0){cost=n;break}
+  }
+  if(cost==null){
+    m=raw.match(/(?:shipping\s*fee|shipping|delivery|freight)[^$0-9]{0,18}\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
+    if(m)cost=Number(String(m[1]).replace(',','.'))
+  }
+  const explicitFree=/\bfree\s+shipping\b/i.test(raw)||x.freeShipping===true||String(x.freeShipping).toLowerCase()==='true';
+  let label='';
+  if(isFinite(threshold)&&threshold>0){
+    if(isFinite(price)&&price>=threshold){cost=0;label='Free Shipping'}
+    else{if(!(isFinite(cost)&&cost>0))cost=1.99;label='Shipping fee: $'+Number(cost).toFixed(2)}
+  }else if(isFinite(cost)&&cost>0){
+    label='Shipping fee: $'+Number(cost).toFixed(2)
+  }else if(explicitFree){
+    cost=0;label='Free Shipping'
+  }else{
+    cost=null;label='Shipping da verificare'
+  }
+  const total=isFinite(price)&&price>0?price+(isFinite(cost)?cost:0):null;
+  return {label,cost,total,threshold,raw}
+}
 function aliDeliveryLabel(x){
   x=x||{};
-  const min=Number(x.minDeliveryDays??x.deliveryMinDays??x.min_days);
-  const max=Number(x.maxDeliveryDays??x.deliveryMaxDays??x.max_days);
-  if(isFinite(min)&&min>0&&isFinite(max)&&max>0)return min===max?Math.round(min)+'gg':Math.round(min)+'-'+Math.round(max)+'gg';
-  const direct=Number(x.deliveryDays??x.estimatedDeliveryDays??x.shippingDays??x.days);
-  if(isFinite(direct)&&direct>0)return Math.round(direct)+'gg';
-  const raw=clean(x.deliveryEstimate||x.deliveryTime||x.deliveryText||x.shippingText||x.shippingInfo||x.estimatedDelivery||x.delivery||'');
-  let m=raw.match(/(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*(?:business\s*)?days?/i);
-  if(m)return Number(m[1])===Number(m[2])?Number(m[1])+'gg':Number(m[1])+'-'+Number(m[2])+'gg';
-  m=raw.match(/(?:delivery|arrives?|estimated)?[^0-9]{0,15}(\d{1,2})\s*(?:business\s*)?days?/i);
-  return m?Number(m[1])+'gg':''
+  const vals=collectAliValues(x,/delivery|arrival|arrive|shipping.*day|estimated|days?/i);
+  const direct=[];
+  vals.forEach(v=>{
+    const s=clean(typeof v==='object'?JSON.stringify(v):v);
+    let m=s.match(/(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*(?:business\s*)?days?/i);
+    if(m){direct.push(Number(m[1]),Number(m[2]));return}
+    m=s.match(/(?:delivery|arrives?|estimated)?[^0-9]{0,20}(\d{1,2})\s*(?:business\s*)?days?/i);
+    if(m)direct.push(Number(m[1]))
+  });
+  if(!direct.length)return'';
+  const min=Math.min(...direct.filter(n=>isFinite(n)&&n>0)),max=Math.max(...direct.filter(n=>isFinite(n)&&n>0));
+  if(!isFinite(min)||!isFinite(max))return'';
+  return min===max?Math.round(min)+'gg':Math.round(min)+'-'+Math.round(max)+'gg'
 }
 function mergeMatches(list){
   const selected=new Set([...results.querySelectorAll('input.capitan-aliexpress-choice:checked')].map(x=>x.value));
@@ -241,33 +307,29 @@ function aliShippingMeta(x){
 function render(list,selectedIds){
   lastMatches=(Array.isArray(list)?list:[]).slice(0,100);
   results.innerHTML='';
-  if(!lastMatches.length){
-    results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match AliExpress trovato.</div>';
-    return
-  }
+  if(!lastMatches.length){wrap.style.display='none';return}
+  wrap.style.display='block';
   const selected=selectedIds instanceof Set?selectedIds:new Set();
   const box=document.createElement('div');
-  box.style.cssText='margin-top:8px;display:grid;gap:7px';
+  box.style.cssText='margin-top:0;display:grid;gap:7px';
   lastMatches.forEach((x,i)=>{
-    const price=Number(x.price),ship=aliShippingMeta(x);
+    const price=aliProductPrice(x),ship=aliShippingMetaV2(x,price),delivery=aliDeliveryLabel(x);
     const r=document.createElement('label');
     r.dataset.sourcePrice=isFinite(price)?String(price):'';
     r.dataset.shippingCost=isFinite(ship.cost)?String(ship.cost):'';
     r.dataset.totalCost=isFinite(ship.total)?String(ship.total):'';
-    r.style.cssText='display:grid;grid-template-columns:24px 68px 1fr;gap:8px;align-items:center;padding:8px 9px;border:1px solid #e1e4e8;border-radius:10px;background:#fff;cursor:pointer;font-size:11px';
+    r.style.cssText='display:grid;grid-template-columns:24px 76px minmax(0,1fr);gap:9px;align-items:start;padding:9px 10px;border:1px solid #e1e4e8;border-radius:10px;background:#fff;cursor:pointer;font-size:12.5px;line-height:1.28';
     const url=esc(x.url||('https://www.aliexpress.us/item/'+(x.productId||'')+'.html'));
     const img=productImage(x);
-    const delivery=aliDeliveryLabel(x);
-    const shipDisplay=ship.label?ship.label.replace(/^Free shipping/i,'Free Shipping'):'';
-    const shipping=shipDisplay?'<span style="color:#555">'+esc((delivery?delivery+' | ':'')+shipDisplay)+'</span>':(delivery?'<span style="color:#555">'+esc(delivery)+'</span>':'<span style="color:#999">lettura shipping…</span>');
+    const shippingLabel=esc((delivery?delivery+' | ':'')+ship.label);
     const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
     const checked=selected.has(String(x.productId||''))||(selected.size===0&&i===0);
-    const preview=img?'<img src="'+esc(img)+'" alt="AliExpress product" loading="lazy" referrerpolicy="no-referrer" style="width:68px;height:68px;object-fit:contain;border:1px solid #eee;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:68px;height:68px;border:1px solid #eee;border-radius:7px;place-items:center;color:#999;font-size:9px">No image</div>':'<div style="width:68px;height:68px;border:1px solid #eee;border-radius:7px;display:grid;place-items:center;color:#999;font-size:9px">No image</div>';
-    const brand='<span aria-label="AliExpress" style="font-weight:800;font-size:15px;color:#ff4747;opacity:.82;white-space:nowrap">AliExpress</span>';
-    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(checked?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747">'+preview+
-      '<div style="min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:700;font-size:12px">'+esc(x.productId||'')+'</a>'+brand+'</div>'+
-      '<div style="color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:7px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
-      '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px"><span data-card-shipping>'+shipping+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-weight:700;color:#111">'+priceText+'</span></div></div>';
+    const preview=img?'<img src="'+esc(img)+'" alt="AliExpress product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
+    const brand='<span aria-label="AliExpress" style="margin-left:auto;font-weight:800;font-size:16px;color:#ff4747;opacity:.86;white-space:nowrap;text-align:right">AliExpress</span>';
+    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#ff4747">'+preview+
+      '<div style="min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 5px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:800;font-size:13px;line-height:1">'+esc(x.productId||'')+'</a>'+brand+'</div>'+
+      '<div style="color:#444;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
+      '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px"><span data-card-shipping style="color:#555">'+shippingLabel+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:800;color:#111">'+priceText+'</span></div></div>';
     box.appendChild(r)
   });
   results.appendChild(box);
@@ -307,7 +369,7 @@ insertBtn.addEventListener('click',async e=>{
   if(!title){status.innerHTML='<span style="color:#b42318;font-weight:700">Titolo eBay non trovato.</span>';return}
   insertBtn.disabled=true;
   const nextPage=matchPage;
-  status.textContent=nextPage===0?'Best Match AliExpress in corso…':'Ricerca di altri Best Match AliExpress…';
+  status.textContent='';window.__capitanTestLog?.(nextPage===0?'Best Match AliExpress in corso…':'Ricerca di altri Best Match AliExpress…','warn');
   try{
     const before=new Set(lastMatches.map(aliKey));
     let collected=[],attemptsUsed=0,successfulQueries=0;
@@ -322,7 +384,8 @@ insertBtn.addEventListener('click',async e=>{
         exclude:[...before].join(','),
         searchMode:exploratory?'query':'match',
         forceRefresh:exploratory?'1':'0',
-        seed:String(page)
+        seed:String(page),
+        includeImages:'1',includeShipping:'1',includeDelivery:'1',includeDetails:'1'
       };
       if(exploratory&&attempt%2===1)params.itemId='';
       const data=await jsonp(params);
@@ -336,10 +399,10 @@ insertBtn.addEventListener('click',async e=>{
     mergeMatches([...freshMap.values()].slice(0,10));
     const added=lastMatches.filter(x=>!before.has(aliKey(x))).length;
     matchPage=nextPage+Math.max(1,attemptsUsed);
-    status.innerHTML='<span style="color:#137333;font-weight:700">Best Match AliExpress completato.</span> '+(added?('Aggiunti '+added+' nuovi prodotti · Totale '+lastMatches.length):('Il backend ha restituito solo prodotti già mostrati dopo '+successfulQueries+' ricerche alternative.'));
-    window.__capitanTestLog?.('Best Match AliExpress: +'+added+' · totale '+lastMatches.length,added?'ok':'warn')
+    status.textContent='';
+    window.__capitanTestLog?.(added?('Best Match AliExpress: +'+added+' · totale '+lastMatches.length):('Best Match AliExpress: nessun nuovo prodotto dopo '+successfulQueries+' ricerche alternative'),added?'ok':'warn')
   }catch(err){
-    console.error(err);status.innerHTML='<span style="color:#b42318;font-weight:700">Errore Best Match AliExpress:</span> '+esc(err.message||err)
+    console.error(err);status.textContent='';window.__capitanTestLog?.('Errore Best Match AliExpress: '+String(err.message||err),'bad')
   }finally{insertBtn.disabled=false}
 });
 
@@ -367,7 +430,7 @@ findBtn.addEventListener('click',()=>{
   const url='https://www.aliexpress.us/w/wholesale-'+encodeURIComponent(slug)+'.html?SearchText='+encodeURIComponent(title);
   rememberSearch(title,url);
   window.open(url,'_blank','noopener');
-  status.innerHTML='<span style="color:#137333;font-weight:700">Ricerca AliExpress aperta.</span> Titolo eBay inviato alla SERP.';
+  status.textContent='';
   window.__capitanTestLog?.('SERP AliExpress aperta per titolo','ok')
 });
 })();
