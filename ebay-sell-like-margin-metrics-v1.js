@@ -65,7 +65,16 @@ function applyManualSalePrice(value,row,span,input){
   const field=findEbayPriceField();
   if(field)setNativeInputValue(field,rounded.toFixed(2));
   window.__capitanSellLikeSalePrice=rounded;
-  try{window.dispatchEvent(new CustomEvent('capitan-sale-price-updated',{detail:{value:rounded}}))}catch(_){}
+  const source=Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice);
+  let reverseDiscount=null;
+  if(isFinite(source)&&source>0){
+    const dr=1-(rounded/source);
+    if(isFinite(dr)&&dr>=0&&dr<1)reverseDiscount=dr
+  }
+  try{window.dispatchEvent(new CustomEvent('capitan-sale-price-updated',{detail:{value:rounded,sourcePrice:source,discountRate:reverseDiscount,origin:'manual'}}))}catch(_){}
+  if(reverseDiscount!=null){
+    try{window.dispatchEvent(new CustomEvent('capitan-discount-reverse-updated',{detail:{discountRate:reverseDiscount,salePrice:rounded,sourcePrice:source}}))}catch(_){}
+  }
   setTimeout(refresh,0);
   return true
 }
@@ -102,16 +111,15 @@ function updateSalePriceLabel(){
     input.value=Number(current).toFixed(2)
   }
 }
-function removeMetricRows(){const p=panel();['capitan-margin-break','capitan-margin-amazon','capitan-margin-source','capitan-margin-delta'].forEach(id=>p?.querySelector('#'+id)?.remove())}
+function removeMetricRows(){return}
 function ensureRows(){
   const p=panel();const steps=p?.querySelector('#steps');if(!steps)return null;
   updateSalePriceLabel();
   p.querySelector('#capitan-margin-amazon')?.remove();
-  if(!hasSourcingResults()){removeMetricRows();return p}
   const be=p.querySelector('#capitan-break-even-row');if(!be)return p;
   const defs=[
-    ['capitan-margin-break','Costo tariffe stimato'],
-    ['capitan-margin-source','Costo prodotto + spedizione'],
+    ['capitan-margin-break','Costo stimato delle tariffe'],
+    ['capitan-margin-source',"Costo totale d'acquisto"],
     ['capitan-margin-delta','Utile netto rispetto al Break Even Price']
   ];
   let anchor=be;
@@ -120,19 +128,20 @@ function ensureRows(){
 }
 function setMetric(p,id,val){const el=p.querySelector('#'+id+' [data-value]');if(!el)return;el.textContent=money(val);colorValue(el,val)}
 function refresh(){
-  const p=ensureRows();if(!p||!hasSourcingResults())return false;
+  const p=ensureRows();if(!p)return false;
   const sale=salePrice(),be=breakEven(),cost=selectedSourcingCost();
-  const estimatedFees=(isFinite(sale)&&isFinite(be))?sale-be:null;
+  const estimatedFees=(isFinite(sale)&&sale>0&&isFinite(be))?sale-be:null;
   const netVsBreakEven=(isFinite(be)&&isFinite(cost))?be-cost:null;
   setMetric(p,'capitan-margin-break',estimatedFees);
   setMetric(p,'capitan-margin-source',cost);
   setMetric(p,'capitan-margin-delta',netVsBreakEven);
-  return isFinite(sale)&&isFinite(be)&&isFinite(cost);
+  return isFinite(sale)&&sale>0&&isFinite(be);
 }
 
 document.addEventListener('change',e=>{if(e.target&&e.target.matches('input.capitan-amazon-choice,input.capitan-aliexpress-choice'))setTimeout(refresh,0)},true);
-document.addEventListener('click',e=>{if(e.target&&e.target.closest('#capitan-amazon-best-match,#capitan-aliexpress-best-match')){removeMetricRows();let n=0;const t=setInterval(()=>{n++;if(hasSourcingResults()){refresh();clearInterval(t)}else if(n>120)clearInterval(t)},250)}},true);
+document.addEventListener('click',e=>{if(e.target&&e.target.closest('#capitan-amazon-best-match,#capitan-aliexpress-best-match')){let n=0;const t=setInterval(()=>{n++;refresh();if(n>120)clearInterval(t)},250)}},true);
 window.addEventListener('capitan-pricing-saved',()=>setTimeout(refresh,0));
 window.addEventListener('capitan-break-even-updated',()=>setTimeout(refresh,0));
-removeMetricRows();updateSalePriceLabel();
+updateSalePriceLabel();
+let metricTries=0;const metricTimer=setInterval(()=>{metricTries++;if(refresh()||metricTries>160)clearInterval(metricTimer)},100);
 })();
