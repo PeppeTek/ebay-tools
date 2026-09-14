@@ -2,7 +2,7 @@ javascript:(()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
 const EXT_ID='capitan-aliexpress-match-ext';
-const ENDPOINT='https://script.google.com/macros/s/AKfycbxPSCamhPhs1fvkikx0KyJFk6wfJDCxC2XqaBbRqDIqOrLN9D_QibphbRB8QenovCY5/exec';
+const ENDPOINT=String(window.__capitanSellLikeBackendEndpoint||'').replace(/\/+$/,'');
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const panel=document.getElementById(PANEL_ID);if(!panel||document.getElementById(EXT_ID))return;
