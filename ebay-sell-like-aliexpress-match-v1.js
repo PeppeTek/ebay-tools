@@ -3,6 +3,7 @@ javascript:(()=>{
 const PANEL_ID='capitan-sell-like-clone';
 const EXT_ID='capitan-aliexpress-match-ext';
 const ENDPOINT=String(window.__capitanSellLikeBackendEndpoint||'').replace(/\/+$/,'');
+const SEARCH_HISTORY_KEY='capitan-sell-like-aliexpress-search-history-v1';
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const panel=document.getElementById(PANEL_ID);if(!panel||document.getElementById(EXT_ID))return;
@@ -15,7 +16,7 @@ const amazonWrap=panel.querySelector('#capitan-amazon-match-ext');
 const wrap=document.createElement('div');
 wrap.id=EXT_ID;
 wrap.style.cssText='padding:0 14px 8px;background:#fff';
-wrap.innerHTML='<div id="capitan-aliexpress-status" style="padding:7px 0 0;font-size:12px"></div><div id="capitan-aliexpress-results"></div>';
+wrap.innerHTML='<div id="capitan-aliexpress-status" style="padding:7px 0 0;font-size:12px"></div><div id="capitan-aliexpress-history"></div><div id="capitan-aliexpress-results"></div>';
 if(actions){
   if(amazonWrap&&amazonWrap.parentNode===actions.parentNode)amazonWrap.parentNode.insertBefore(wrap,amazonWrap);
   else panel.insertBefore(wrap,actions);
@@ -60,9 +61,30 @@ if(actions){
 }
 
 const status=wrap.querySelector('#capitan-aliexpress-status');
+const historyBox=wrap.querySelector('#capitan-aliexpress-history');
 const results=wrap.querySelector('#capitan-aliexpress-results');
 let lastMatches=[];
 
+function readSearchHistory(){try{const a=JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY)||'[]');return Array.isArray(a)?a:[]}catch(_){return[]}}
+function writeSearchHistory(a){try{localStorage.setItem(SEARCH_HISTORY_KEY,JSON.stringify((a||[]).slice(0,10)))}catch(_){}}
+function rememberSearch(title,url){
+  const now=Date.now(),key=clean(itemId+'|'+title).toLowerCase();
+  const next=[{itemId,title:clean(title),url:clean(url),at:now},...readSearchHistory().filter(x=>clean((x.itemId||'')+'|'+(x.title||'')).toLowerCase()!==key)].slice(0,10);
+  writeSearchHistory(next);renderSearchHistory(next)
+}
+function renderSearchHistory(list){
+  const a=Array.isArray(list)?list:readSearchHistory();
+  historyBox.innerHTML='';
+  if(!a.length)return;
+  const box=document.createElement('div');box.style.cssText='margin-top:7px;border:1px solid #e2e2e2;border-radius:8px;overflow:hidden;background:#fff';
+  const head=document.createElement('div');head.style.cssText='padding:6px 9px;background:#fafafa;border-bottom:1px solid #eee;font-size:11px;font-weight:700;color:#555';head.textContent='Ultime ricerche AliExpress';box.appendChild(head);
+  a.forEach((x,i)=>{
+    const row=document.createElement('a');row.href=x.url||'#';row.target='_blank';row.rel='noopener';row.style.cssText='display:block;padding:7px 9px;border-bottom:'+(i===a.length-1?'0':'1px solid #eee')+';color:#111;text-decoration:none;font-size:11px;line-height:1.3';
+    row.innerHTML='<b>'+esc(x.itemId||'')+'</b>'+(x.itemId?' · ':'')+esc(x.title||'');
+    box.appendChild(row)
+  });
+  historyBox.appendChild(box)
+}
 function jsonp(params){
   return new Promise((resolve,reject)=>{
     const cb='__capitanAliCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
@@ -183,11 +205,13 @@ function currentEbayTitle(){
   if(candidate)return clean(candidate.value);
   return clean(window.__capitanSellLikeCloneData?.title||'')
 }
+renderSearchHistory();
 findBtn.addEventListener('click',()=>{
   const title=currentEbayTitle();
   if(!title){status.innerHTML='<span style="color:#b42318;font-weight:700">Titolo eBay non trovato.</span>';return}
   const slug=title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,120);
   const url='https://www.aliexpress.us/w/wholesale-'+encodeURIComponent(slug)+'.html?SearchText='+encodeURIComponent(title);
+  rememberSearch(title,url);
   window.open(url,'_blank','noopener');
   status.innerHTML='<span style="color:#137333;font-weight:700">Ricerca AliExpress aperta.</span> Titolo eBay inviato direttamente alla SERP.'
 });
