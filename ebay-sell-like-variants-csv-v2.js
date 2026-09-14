@@ -1,6 +1,6 @@
 javascript:(async()=>{
 'use strict';
-const PATCH_ID='capitan-variants-csv-v20';
+const PATCH_ID='capitan-variants-csv-v21';
 const STATE_KEY='capitan-sell-like-variants-state-v1';
 const CLONE_KEY='capitan-sell-like-clone-data-v1';
 const CATEGORY_TAXONOMY_ENDPOINT='https://script.google.com/macros/s/AKfycbxPSCamhPhs1fvkikx0KyJFk6wfJDCxC2XqaBbRqDIqOrLN9D_QibphbRB8QenovCY5/exec';
@@ -162,10 +162,11 @@ function taxonomyCategoryLookup(categoryId){
 }
 
 function currentCategoryName(){
-  const taxonomy=clean(window.__capitanTaxonomyCategoryName||'');
-  if(taxonomy)return taxonomy;
-
   const id=currentCategoryId();
+  const taxonomy=clean(window.__capitanTaxonomyCategoryName||'');
+  const taxonomyId=clean(window.__capitanTaxonomyCategoryId||'');
+  if(taxonomy&&taxonomyId===id)return taxonomy;
+
   if(id&&CAPITAN_CATEGORY_NAME_BY_ID[id]){
     return clean(CAPITAN_CATEGORY_NAME_BY_ID[id])
   }
@@ -179,6 +180,28 @@ function currentCategoryName(){
   }
   return''
 }
+async function ensureCurrentCategoryName(){
+  const categoryId=currentCategoryId();
+  if(!categoryId)throw Error('Category ID non disponibile');
+
+  try{
+    const tax=await taxonomyCategoryLookup(categoryId);
+    if(tax&&tax.ok&&clean(tax.categoryName)){
+      window.__capitanTaxonomyCategoryId=categoryId;
+      window.__capitanTaxonomyCategoryName=clean(tax.categoryName);
+      return clean(tax.categoryName)
+    }
+    if(tax&&tax.error)console.warn('eBay Taxonomy category lookup',tax.error)
+  }catch(err){
+    console.warn('eBay Taxonomy category lookup',err)
+  }
+
+  const fallback=currentCategoryName();
+  if(fallback)return fallback;
+
+  throw Error('Category name non recuperato per Category ID '+categoryId)
+}
+
 function policyName(kind){
   const label={shipping:'Shipping policy',return:'Return policy',payment:'Payment policy'}[kind];
 
@@ -611,6 +634,7 @@ function buildCsv(){
   const missing=[];
   if(!title)missing.push('Title');
   if(!categoryId)missing.push('Category ID');
+  if(!categoryName)missing.push('Category name');
   if(!description)missing.push('Description');
   if(!conditionId)missing.push('Condition ID');
   if(!location)missing.push('Location');
@@ -698,24 +722,13 @@ async function run(){
     const st=variantState(),cl=cloneData();
     if(st&&st.data&&st.data.hasVariations&&cl&&cl.ok){
       try{
-        const categoryId=currentCategoryId();
-        if(categoryId){
-          try{
-            const tax=await taxonomyCategoryLookup(categoryId);
-            if(tax&&tax.ok&&clean(tax.categoryName)){
-              window.__capitanTaxonomyCategoryName=clean(tax.categoryName)
-            }else if(tax&&tax.error){
-              console.warn('eBay Taxonomy category lookup',tax.error)
-            }
-          }catch(taxErr){
-            console.warn('eBay Taxonomy category lookup',taxErr)
-          }
-        }
+        await ensureCurrentCategoryName();
         const res=buildCsv();
         window.__capitanVariantCsv=res;
         const panel=document.getElementById('capitan-sell-like-clone');
         const b=panel&&panel.querySelector('[data-ebay-action="csv"],[data-ebay-action="save"]');
-        window.__capitanDownloadVariantCsv=()=>{
+        window.__capitanDownloadVariantCsv=async()=>{
+          await ensureCurrentCategoryName();
           const fresh=buildCsv();
           window.__capitanVariantCsv=fresh;
           download(fresh)
