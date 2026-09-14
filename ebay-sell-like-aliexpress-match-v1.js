@@ -6,6 +6,7 @@ const ENDPOINT=String(window.__capitanSellLikeBackendEndpoint||'').replace(/\/+$
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const panel=document.getElementById(PANEL_ID);if(!panel||document.getElementById(EXT_ID))return;
+panel.style.height='calc(100vh - 24px)';panel.style.maxHeight='calc(100vh - 24px)';panel.style.overflow='hidden';
 const sourceText=clean(panel.innerText||'');
 const itemId=(sourceText.match(/Source Item ID:\s*(\d{9,12})/i)||[])[1]||'';
 if(!itemId)return;
@@ -62,6 +63,8 @@ if(actions){
 const status=wrap.querySelector('#capitan-aliexpress-status');
 const results=wrap.querySelector('#capitan-aliexpress-results');
 let lastMatches=[];
+let accumulatedMatches=[];
+let searchBatch=0;
 
 function jsonp(params){
   return new Promise((resolve,reject)=>{
@@ -96,16 +99,27 @@ function selectedRows(){
 }
 function selectedProductIds(){return selectedRows().map(x=>x.productId).filter(Boolean)}
 
-function render(list){
-  lastMatches=(Array.isArray(list)?list:[]).slice(0,10);
+function render(list,append=false){
+  const incoming=Array.isArray(list)?list:[];
+  if(!append)accumulatedMatches=[];
+
+  const seen=new Set(accumulatedMatches.map(x=>String(x.productId||'')));
+  incoming.forEach(x=>{
+    const id=String(x&&x.productId||'');
+    if(id&&!seen.has(id)){seen.add(id);accumulatedMatches.push(x)}
+  });
+
+  lastMatches=accumulatedMatches.slice();
   results.innerHTML='';
   if(!lastMatches.length){
     results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match AliExpress trovato.</div>';
     return
   }
 
+  results.style.cssText='max-height:420px;overflow-y:auto;overflow-x:hidden;margin-top:6px;padding-right:2px';
+
   const box=document.createElement('div');
-  box.style.cssText='margin-top:8px;border:1px solid #ddd;border-radius:8px;overflow:hidden';
+  box.style.cssText='border:1px solid #ddd;border-radius:8px;overflow:hidden;background:#fff';
 
   lastMatches.forEach((x,i)=>{
     const r=document.createElement('label');
@@ -119,16 +133,29 @@ function render(list){
 
     const title=clean(x.title||'');
     const shortTitle=title.length>82?title.slice(0,79)+'…':title;
-    const meta=[];
-    if(clean(x.orders||''))meta.push('Venduti: '+esc(x.orders));
-    if(clean(x.stock||''))meta.push('Stock: '+esc(x.stock));
-    if(clean(x.shipping||''))meta.push('Sped.: '+esc(x.shipping));
-    if(clean(x.delivery||''))meta.push('Consegna: '+esc(x.delivery));
 
-    const info='<div style="min-width:0;line-height:1.25">'+
+    const sold=clean(x.orders||'');
+    const deliveryRaw=clean(x.delivery||'');
+    const delivery=deliveryRaw && !/\b(?:gg|giorn|day|days)\b/i.test(deliveryRaw) ? deliveryRaw+' gg' : deliveryRaw;
+    const shipping=clean(x.shipping||'');
+    const stock=clean(x.stock||'');
+
+    const line3=[];
+    if(sold)line3.push('Venduti: '+esc(sold));
+    if(delivery)line3.push('Consegna: '+esc(delivery));
+
+    const shippingLabel=shipping
+      ? (/^0(?:[.,]0+)?$/.test(shipping)?'Free shipping':shipping)
+      : '';
+    const line4=[];
+    if(shippingLabel)line4.push('Spedizione: '+esc(shippingLabel));
+    if(stock)line4.push('Stock: '+esc(stock));
+
+    const info='<div style="min-width:0;line-height:1.15">'+
       '<a href="'+url+'" target="_blank" rel="noopener" style="display:block;color:#111;text-decoration:none;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(shortTitle||x.productId||'')+'</a>'+
-      '<div style="margin-top:3px;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.productId||'')+'</div>'+
-      (meta.length?'<div style="margin-top:3px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+meta.join(' · ')+'</div>':'')+
+      '<div style="margin-top:2px;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.productId||'')+'</div>'+
+      (line3.length?'<div style="margin-top:2px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+line3.join(' · ')+'</div>':'')+
+      (line4.length?'<div style="margin-top:2px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+line4.join(' · ')+'</div>':'')+
       '</div>';
 
     r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(i===0?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747">'+aliImg+info+'<span style="white-space:nowrap;font-weight:700">'+price+'</span>';
@@ -200,21 +227,24 @@ function currentEbayTitle(){
 }
 findBtn.addEventListener('click',async()=>{
   findBtn.disabled=true;
-  status.textContent='Ricerca AliExpress tramite main image eBay…';
-  results.innerHTML='';
+  status.textContent=searchBatch===0?'Ricerca AliExpress tramite main image eBay…':'Cerco altri risultati AliExpress tramite la stessa immagine…';
   try{
-    const data=await jsonp();
+    const data=await jsonp({batch:String(searchBatch)});
     if(!data||!data.ok)throw Error(data?.error||'Risposta AliExpress non valida');
-    render(data.matches||[]);
+
+    const before=accumulatedMatches.length;
+    render(data.matches||[],searchBatch>0);
+    const added=accumulatedMatches.length-before;
+
     if(data.searchMode==='IMAGE'){
-      status.innerHTML=lastMatches.length
-        ?'<span style="color:#137333;font-weight:700">Ricerca per immagine completata.</span> Confronta la prima foto eBay con la prima foto AliExpress e poi il prezzo.'
-        :'<span style="color:#a15c00;font-weight:700">Ricerca per immagine completata.</span> Nessun risultato.'
+      status.innerHTML='<span style="color:#137333;font-weight:700">Ricerca per immagine completata.</span> '+
+        (searchBatch>0?(added?('Aggiunti '+added+' nuovi risultati.'):'Nessun nuovo risultato in questa ricerca.'):'Risultati ottenuti direttamente dalla main image eBay.');
     }else{
       const reason=clean(data.imageSearchError||'errore non specificato');
-      status.innerHTML='<span style="color:#a15c00;font-weight:700">Image search non disponibile.</span> '+esc(reason)+'<br><span style="color:#555">Fallback per titolo visualizzato sotto.</span>';
+      status.innerHTML='<span style="color:#a15c00;font-weight:700">Image search non disponibile.</span> '+esc(reason)+'<br><span style="color:#555">Fallback per titolo EBAY_IMPORT visualizzato sotto.</span>';
       if(data.imageSearchError)status.title=data.imageSearchError
     }
+    searchBatch++;
   }catch(e){
     console.error(e);
     status.innerHTML='<span style="color:#b42318;font-weight:700">Errore AliExpress:</span> '+esc(e.message||e)
