@@ -140,7 +140,8 @@ function aliShippingMeta(x){
   if(m){
     threshold=Number(String(m[1]).replace(',','.'));
     label='Free shipping over $ '+threshold.toFixed(2);
-    if(cost==null)cost=isFinite(price)&&price>=threshold?0:1.99;
+    if(isFinite(price)&&price>=threshold)cost=0;
+    else if(cost==null||cost===0)cost=1.99;
   }else if(/\bfree\s+shipping\b/i.test(raw)||x.freeShipping===true||Number(cost)===0){
     label='Free shipping';cost=0;
   }else{
