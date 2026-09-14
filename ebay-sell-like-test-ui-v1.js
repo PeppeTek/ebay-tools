@@ -44,6 +44,10 @@ function log(message,state='ok'){
   body.scrollTop=body.scrollHeight
 }
 window.__capitanTestLog=log;
+try{
+  const pending=Array.isArray(window.__capitanPendingTestLogs)?window.__capitanPendingTestLogs.splice(0):[];
+  pending.forEach(x=>log(x&&x.message||'',x&&x.state||'ok'))
+}catch(_){};
 
 function shippingCostFromLabel(label,price){
   label=clean(label);price=Number(price);
@@ -80,7 +84,8 @@ function hideOkRows(){
     if(!re.test(t))return;
     const span=r.querySelector('span');
     const ok=!!(span&&span.classList.contains('ok'));
-    r.style.display=ok?'none':''
+    const isFoto=/^Foto:/i.test(t);
+    r.style.display=(isFoto||ok)?'none':''
   })
 }
 function ensureUi(){
