@@ -226,7 +226,7 @@ async function ensurePreviewFullData(){
   if(previewPreparePromise)return previewPreparePromise;
   previewPreparePromise=(async()=>{
     const ep=endpoint();if(!ep)throw Error('URL backend mancante.');
-    status.textContent='Preview: generazione Template AI-HTML in corso…';
+    status.textContent='Generazione Template AI-HTML in corso…';
     let data=await jsonp(ep);
     if((!data||!data.ok)&&isAiDescriptionError(data&&data.error)){
       try{const recovered=await jsonpAction(AI_RECOVERY_ENDPOINT,'clone_prepare',{itemId},90000);if(recovered&&recovered.ok)data=recovered}catch(recoveryError){console.warn('Sell Like AI fallback endpoint',recoveryError)}
@@ -274,7 +274,7 @@ async function ensurePreviewFullData(){
     if(imgs.length){
       const sig=imgs.join('|');
       if(sig!==uploadedImageSignature){
-        status.textContent='Preview: caricamento foto nello stesso ordine…';
+        status.textContent='Caricamento foto nello stesso ordine…';
         try{
           const n=await uploadImages(imgs);
           uploadedImageSignature=sig;
@@ -290,12 +290,13 @@ async function ensurePreviewFullData(){
     try{localStorage.setItem('capitan-sell-like-clone-data-v1',JSON.stringify(data))}catch(_){}
     try{window.dispatchEvent(new CustomEvent('capitan-ai-description-updated',{detail:{itemId,descriptionHtml:data.descriptionHtml,aiModel:data.aiModel||''}}))}catch(_){}
     previewReady=true;
-    status.innerHTML='<span class="ok">Template AI-HTML pronto.</span> Apertura Preview…';
+    status.innerHTML='<span class="ok">Template AI-HTML pronto.</span>';
     return true
   })();
   try{return await previewPreparePromise}finally{if(!previewReady)previewPreparePromise=null}
 }
 window.__capitanPrepareAiForPreview=ensurePreviewFullData;
+window.__capitanEnsureAiTemplate=ensurePreviewFullData;
 
 try{
   const ep=endpoint();if(!ep)throw Error('URL backend mancante.');
