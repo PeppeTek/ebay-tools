@@ -68,9 +68,19 @@ let lastMatches=[];
 function readSearchHistory(){try{const a=JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY)||'[]');return Array.isArray(a)?a:[]}catch(_){return[]}}
 function writeSearchHistory(a){try{localStorage.setItem(SEARCH_HISTORY_KEY,JSON.stringify((a||[]).slice(0,10)))}catch(_){}}
 function rememberSearch(title,url){
-  const now=Date.now(),key=clean(itemId+'|'+title).toLowerCase();
-  const next=[{itemId,title:clean(title),url:clean(url),at:now},...readSearchHistory().filter(x=>clean((x.itemId||'')+'|'+(x.title||'')).toLowerCase()!==key)].slice(0,10);
-  writeSearchHistory(next);renderSearchHistory(next)
+  const now=Date.now(),key=clean(itemId+'|'+title).toLowerCase(),old=readSearchHistory().find(x=>clean((x.itemId||'')+'|'+(x.title||'')).toLowerCase()===key);
+  const next=[{itemId,title:clean(title),url:clean(url),shipping:clean(old&&old.shipping||''),at:now},...readSearchHistory().filter(x=>clean((x.itemId||'')+'|'+(x.title||'')).toLowerCase()!==key)].slice(0,10);
+  writeSearchHistory(next);renderSearchHistory(next);resolveSearchShipping(itemId,title,url)
+}
+async function resolveSearchShipping(sourceItemId,title,url){
+  if(typeof window.__capitanReadSourceShippingLabel!=='function')return;
+  try{
+    const shipping=await window.__capitanReadSourceShippingLabel(sourceItemId);
+    if(!shipping)return;
+    const key=clean(sourceItemId+'|'+title).toLowerCase();
+    const next=readSearchHistory().map(x=>clean((x.itemId||'')+'|'+(x.title||'')).toLowerCase()===key?{...x,shipping,url:clean(url)||x.url}:x);
+    writeSearchHistory(next);renderSearchHistory(next)
+  }catch(e){console.warn('AliExpress shipping history',e)}
 }
 function renderSearchHistory(list){
   const a=Array.isArray(list)?list:readSearchHistory();
@@ -80,8 +90,10 @@ function renderSearchHistory(list){
   const head=document.createElement('div');head.style.cssText='padding:6px 9px;background:#fafafa;border-bottom:1px solid #eee;font-size:11px;font-weight:700;color:#555';head.textContent='Ultime ricerche AliExpress';box.appendChild(head);
   a.forEach((x,i)=>{
     const row=document.createElement('a');row.href=x.url||'#';row.target='_blank';row.rel='noopener';row.style.cssText='display:block;padding:7px 9px;border-bottom:'+(i===a.length-1?'0':'1px solid #eee')+';color:#111;text-decoration:none;font-size:11px;line-height:1.3';
-    row.innerHTML='<b>'+esc(x.itemId||'')+'</b>'+(x.itemId?' · ':'')+esc(x.title||'');
-    box.appendChild(row)
+    const ship=clean(x.shipping||'');
+    row.innerHTML='<b>'+esc(x.itemId||'')+'</b>'+(x.itemId?' · ':'')+esc(x.title||'')+(ship?'<div style="margin-top:3px;color:#555"><b>Spedizione:</b> '+esc(ship)+'</div>':'');
+    box.appendChild(row);
+    if(!ship&&x.itemId&&typeof window.__capitanReadSourceShippingLabel==='function')resolveSearchShipping(x.itemId,x.title||'',x.url||'')
   });
   historyBox.appendChild(box)
 }
