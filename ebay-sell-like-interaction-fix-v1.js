@@ -1,9 +1,9 @@
 javascript:(()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
-const PATCH_ID='capitan-interaction-fix-v3';
+const PATCH_ID='capitan-interaction-fix-v4';
 if(document.getElementById(PATCH_ID))return;
-const old=document.getElementById('capitan-interaction-fix-v1');if(old)old.remove();
+for(const id of ['capitan-interaction-fix-v1','capitan-interaction-fix-v2','capitan-interaction-fix-v3'])document.getElementById(id)?.remove();
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const panel=document.getElementById(PANEL_ID);if(!panel)return;
 
@@ -51,6 +51,11 @@ document.addEventListener('pointerup',e=>{
   if(!document.body.contains(panel))return;
   const btn=buttonAt(e.clientX,e.clientY);
   if(!btn)return;
+
+  // Amazon/AliExpress search buttons already have their own native click handler.
+  // Let that click fire once; synthesizing another click here opens two identical tabs.
+  if(btn.id==='capitan-amazon-find'||btn.id==='capitan-aliexpress-find')return;
+
   e.preventDefault();
   e.stopPropagation();
   e.stopImmediatePropagation();
