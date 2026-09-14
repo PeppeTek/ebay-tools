@@ -108,9 +108,17 @@ function normalizeImageUrl(v){
   }
   let s=String(v||'').trim();
   if(!s)return'';
-  s=s.replace(/\\u002F/gi,'/').replace(/\\\//g,'/').replace(/&amp;/g,'&');
-  if(/^\/\//.test(s))s='https:'+s;
-  return /^https?:\/\//i.test(s)?s:''
+  s=s.replace(/\\u002F/gi,'/').replace(/\\\//g,'/').replace(/&amp;/g,'&').replace(/&quot;/g,'"');
+  let direct=s;
+  if(/^\/\//.test(direct))direct='https:'+direct;
+  if(/^https?:\/\//i.test(direct))return direct;
+  let m=s.match(/(?:src|url|imageUrl|mainImage)["'=: \\]+((?:https?:)?\/\/[^"'<>\\s]+)/i);
+  if(!m)m=s.match(/((?:https?:)?\/\/[^"'<>\\s]*(?:m\\.media-amazon\\.com|images-na\\.ssl-images-amazon\\.com)[^"'<>\\s]*)/i);
+  if(!m)m=s.match(/((?:https?:)?\/\/[^"'<>\\s]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'<>\\s]*)?)/i);
+  if(!m)return'';
+  direct=String(m[1]||'').replace(/\\\//g,'/');
+  if(/^\/\//.test(direct))direct='https:'+direct;
+  return /^https?:\/\//i.test(direct)?direct:''
 }
 function productImage(x){
   x=x||{};
