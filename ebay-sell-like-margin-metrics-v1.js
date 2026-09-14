@@ -15,14 +15,18 @@ function breakEven(){const p=panel();const el=p?.querySelector('#capitan-break-e
 function selectedSourcingCost(){
   const p=panel();if(!p)return null;
   const checked=[...p.querySelectorAll('input.capitan-amazon-choice:checked,input.capitan-aliexpress-choice:checked')];
-  const vals=checked.map(ch=>{
+  const totals=checked.map(ch=>{
     const label=ch.closest('label');if(!label)return null;
+    const total=Number(label.dataset.totalCost);
+    if(isFinite(total)&&total>0)return total;
+    const price=Number(label.dataset.sourcePrice),shipping=Number(label.dataset.shippingCost);
+    if(isFinite(price)&&price>0&&isFinite(shipping)&&shipping>=0)return price+shipping;
     const spans=[...label.querySelectorAll('span')];
     const txt=clean((spans[spans.length-1]?.textContent)||label.textContent||'');
     const m=txt.match(/([0-9]+(?:[.,][0-9]+)?)\s*(?:USD|EUR|GBP|CAD|AUD)?\s*$/i);
     return m?Number(String(m[1]).replace(',','.')):null
   }).filter(v=>isFinite(v));
-  return vals.length?Math.min(...vals):null
+  return totals.length?Math.min(...totals):null
 }
 function hasSourcingResults(){
   const p=panel();
@@ -98,7 +102,7 @@ function updateSalePriceLabel(){
     input.value=Number(current).toFixed(2)
   }
 }
-function removeMetricRows(){const p=panel();['capitan-margin-break','capitan-margin-amazon','capitan-margin-delta'].forEach(id=>p?.querySelector('#'+id)?.remove())}
+function removeMetricRows(){const p=panel();['capitan-margin-break','capitan-margin-amazon','capitan-margin-source','capitan-margin-delta'].forEach(id=>p?.querySelector('#'+id)?.remove())}
 function ensureRows(){
   const p=panel();const steps=p?.querySelector('#steps');if(!steps)return null;
   updateSalePriceLabel();
@@ -107,6 +111,7 @@ function ensureRows(){
   const be=p.querySelector('#capitan-break-even-row');if(!be)return p;
   const defs=[
     ['capitan-margin-break','Costo tariffe stimato'],
+    ['capitan-margin-source','Costo prodotto + spedizione'],
     ['capitan-margin-delta','Utile netto rispetto al Break Even Price']
   ];
   let anchor=be;
@@ -120,6 +125,7 @@ function refresh(){
   const estimatedFees=(isFinite(sale)&&isFinite(be))?sale-be:null;
   const netVsBreakEven=(isFinite(be)&&isFinite(cost))?be-cost:null;
   setMetric(p,'capitan-margin-break',estimatedFees);
+  setMetric(p,'capitan-margin-source',cost);
   setMetric(p,'capitan-margin-delta',netVsBreakEven);
   return isFinite(sale)&&isFinite(be)&&isFinite(cost);
 }
