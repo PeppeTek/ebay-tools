@@ -16,7 +16,7 @@ const amazonWrap=panel.querySelector('#capitan-amazon-match-ext');
 const wrap=document.createElement('div');
 wrap.id=EXT_ID;
 wrap.style.cssText='padding:0 14px 8px;background:#fff';
-wrap.innerHTML='<div id="capitan-aliexpress-status" style="padding:7px 0 0;font-size:12px"></div><div id="capitan-aliexpress-history"></div><div id="capitan-aliexpress-results"></div>';
+wrap.innerHTML='<div id="capitan-aliexpress-status" style="padding:7px 0 0;font-size:12px"></div><div id="capitan-aliexpress-results"></div>';
 if(actions){
   if(amazonWrap&&amazonWrap.parentNode===actions.parentNode)amazonWrap.parentNode.insertBefore(wrap,amazonWrap);
   else panel.insertBefore(wrap,actions);
@@ -39,7 +39,7 @@ if(actions){
   findBtn.style.cssText='height:42px;border:1px solid #b52a00;border-radius:22px 0 0 22px;background:#ff4747;color:#fff;font-size:14px;cursor:pointer;width:100%';
 
   insertBtn=document.createElement('button');
-  insertBtn.id='capitan-aliexpress-insert';
+  insertBtn.id='capitan-aliexpress-best-match';
   insertBtn.textContent='Best Match AliExpress';
   insertBtn.style.cssText='height:42px;border:1px solid #b52a00;border-radius:0 22px 22px 0;background:#fff;color:#ff4747;font-size:14px;cursor:pointer;width:100%';
 
@@ -52,7 +52,7 @@ if(actions){
   findBtn.style.cssText='width:100%;height:42px;border:1px solid #b52a00;border-radius:22px;background:#ff4747;color:#fff;font-size:14px;cursor:pointer;margin-top:8px';
 
   insertBtn=document.createElement('button');
-  insertBtn.id='capitan-aliexpress-insert';
+  insertBtn.id='capitan-aliexpress-best-match';
   insertBtn.textContent='Best Match AliExpress';
   insertBtn.style.cssText='width:100%;height:42px;border:1px solid #b52a00;border-radius:22px;background:#fff;color:#ff4747;font-size:14px;cursor:pointer;margin-top:8px';
 
@@ -61,7 +61,7 @@ if(actions){
 }
 
 const status=wrap.querySelector('#capitan-aliexpress-status');
-const historyBox=wrap.querySelector('#capitan-aliexpress-history');
+const historyBox=null;
 const results=wrap.querySelector('#capitan-aliexpress-results');
 let lastMatches=[],matchPage=0;
 
@@ -83,6 +83,7 @@ async function resolveSearchShipping(sourceItemId,title,url){
   }catch(e){console.warn('AliExpress shipping history',e)}
 }
 function renderSearchHistory(list){
+  if(!historyBox)return;
   const a=Array.isArray(list)?list:readSearchHistory();
   historyBox.innerHTML='';
   if(!a.length)return;
