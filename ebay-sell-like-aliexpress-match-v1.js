@@ -268,9 +268,9 @@ insertBtn.addEventListener('click',async e=>{
   status.textContent=nextPage===0?'Best Match AliExpress in corso…':'Ricerca di altri Best Match AliExpress…';
   try{
     const before=new Set(lastMatches.map(aliKey));
-    let collected=[];
-    for(let attempt=0;attempt<3;attempt++){
-      const page=nextPage+attempt;
+    let collected=[],attemptsUsed=0;
+    for(let attempt=0;attempt<6;attempt++){
+      const page=nextPage+attempt;attemptsUsed=attempt+1;
       const data=await jsonp({
         query:queryVariant(title,page),
         page:String(page+1),
@@ -279,12 +279,15 @@ insertBtn.addEventListener('click',async e=>{
         exclude:[...before].join(',')
       });
       if(data&&data.ok)collected=collected.concat(data.matches||[]);
-      const fresh=collected.filter(x=>{const k=aliKey(x);return k&&!before.has(k)});
-      if(fresh.length>=5)break
+      const uniq=new Map();
+      collected.forEach(x=>{const k=aliKey(x);if(k&&!before.has(k)&&!uniq.has(k))uniq.set(k,x)});
+      if(uniq.size>=10)break
     }
-    mergeMatches(collected);
+    const freshMap=new Map();
+    collected.forEach(x=>{const k=aliKey(x);if(k&&!before.has(k)&&!freshMap.has(k))freshMap.set(k,x)});
+    mergeMatches([...freshMap.values()].slice(0,10));
     const added=lastMatches.filter(x=>!before.has(aliKey(x))).length;
-    matchPage=nextPage+1;
+    matchPage=nextPage+Math.max(1,attemptsUsed);
     status.innerHTML='<span style="color:#137333;font-weight:700">Best Match AliExpress completato.</span> '+(added?('Aggiunti '+added+' nuovi prodotti · Totale '+lastMatches.length):'Nessun nuovo prodotto oltre quelli già mostrati.');
     window.__capitanTestLog?.('Best Match AliExpress: +'+added+' · totale '+lastMatches.length,added?'ok':'warn')
   }catch(err){
