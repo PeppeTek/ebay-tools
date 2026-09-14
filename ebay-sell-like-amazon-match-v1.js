@@ -16,7 +16,7 @@ if(!itemId)return;
 const priceMatch=sourceText.match(/Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:\s*([0-9]+(?:[.,][0-9]+)?)/i);
 let currentSalePrice=priceMatch?Number(String(priceMatch[1]).replace(',','.')):(isFinite(Number(window.__capitanSellLikeSalePrice))?Number(window.__capitanSellLikeSalePrice):null);
 const actions=panel.querySelector('[data-ebay-actions]');
-const wrap=document.createElement('div');wrap.id=EXT_ID;wrap.style.cssText='padding:0 14px 10px;background:#fff';wrap.innerHTML='<div id="capitan-amazon-status" style="padding:7px 0 0;font-size:12px"></div><div id="capitan-amazon-results"></div>';
+const wrap=document.createElement('div');wrap.id=EXT_ID;wrap.style.cssText='display:none;padding:0 14px 0;background:#fff';wrap.innerHTML='<div id="capitan-amazon-status" style="display:none"></div><div id="capitan-amazon-results"></div>';
 if(actions)panel.insertBefore(wrap,actions);else (panel.querySelector('.b')||panel).appendChild(wrap);
 let findBtn=null,insertBtn=null;
 if(actions){
@@ -196,25 +196,29 @@ function amazonEconomicsAllowed(x){
 }
 function render(list,selectedIds){
   lastMatches=(Array.isArray(list)?list:[]).slice(0,100);results.innerHTML='';
-  if(!lastMatches.length){results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match Amazon compatibile e profittevole trovato.</div>';return}
+  if(!lastMatches.length){wrap.style.display='none';return}
+  wrap.style.display='block';
   const selected=selectedIds instanceof Set?selectedIds:new Set();
-  const box=document.createElement('div');box.style.cssText='margin-top:8px;display:grid;gap:7px';
+  const box=document.createElement('div');box.style.cssText='margin-top:0;display:grid;gap:7px';
   lastMatches.forEach((x,i)=>{
-    const price=Number(x.price),ship=amazonShippingMeta(x),url=esc(x.url||('https://www.amazon.com/dp/'+(x.asin||''))),img=productImage(x);
+    const price=Number(x.price),ship=amazonShippingMeta(x),url=esc(x.url||('https://www.amazon.com/dp/'+(x.asin||'')));
+    const detected=productImage(x);
+    const fallback=x.asin?'https://images-na.ssl-images-amazon.com/images/P/'+encodeURIComponent(x.asin)+'.01.LZZZZZZZ.jpg':'';
+    const img=detected||fallback;
     const r=document.createElement('label');
     r.dataset.sourcePrice=isFinite(price)?String(price):'';
     r.dataset.shippingCost=isFinite(ship.cost)?String(ship.cost):'';
     r.dataset.totalCost=isFinite(ship.total)?String(ship.total):'';
-    r.style.cssText='display:grid;grid-template-columns:24px 68px 1fr;gap:8px;align-items:center;padding:8px 9px;border:1px solid #e1e4e8;border-radius:10px;background:#fff;cursor:pointer;font-size:11px';
-    const shipping=ship.label?'<span style="color:#555">'+esc(ship.label)+'</span>':'<span style="color:#999">lettura shipping…</span>';
+    r.style.cssText='display:grid;grid-template-columns:24px 76px minmax(0,1fr);gap:9px;align-items:start;padding:9px 10px;border:1px solid #e1e4e8;border-radius:10px;background:#fff;cursor:pointer;font-size:12.5px;line-height:1.28';
+    const shipping=ship.label?'<span style="color:#555">'+esc(ship.label)+'</span>':'<span style="color:#999">Shipping da verificare</span>';
     const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
     const checked=selected.has(String(x.asin||''))||(selected.size===0&&i===0);
-    const preview=img?'<img src="'+esc(img)+'" alt="Amazon product" loading="lazy" referrerpolicy="no-referrer" style="width:68px;height:68px;object-fit:contain;border:1px solid #eee;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:68px;height:68px;border:1px solid #eee;border-radius:7px;place-items:center;color:#999;font-size:9px">No image</div>':'<div style="width:68px;height:68px;border:1px solid #eee;border-radius:7px;display:grid;place-items:center;color:#999;font-size:9px">No image</div>';
-    const brand='<span aria-label="Amazon" style="display:inline-flex;flex-direction:column;align-items:flex-end;justify-content:center;flex:0 0 auto;min-width:72px;margin-left:auto;opacity:.82;line-height:1;text-align:right"><span style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;letter-spacing:-.4px;color:#111">amazon</span><svg viewBox="0 0 52 8" width="48" height="7" preserveAspectRatio="xMidYMid meet" style="display:block;margin-top:1px"><path d="M2 1.5 C15 7,34 7,47 2" fill="none" stroke="#f59b23" stroke-width="1.8" stroke-linecap="round" vector-effect="non-scaling-stroke"/><path d="M43.5 1 L49 1.4 L46.4 5.5" fill="none" stroke="#f59b23" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg></span>';
-    r.innerHTML='<input type="checkbox" class="capitan-amazon-choice" value="'+esc(x.asin||'')+'" '+(checked?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#111">'+preview+
-      '<div style="min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:700;font-size:12px">'+esc(x.asin||'')+'</a>'+brand+'</div>'+
-      '<div style="color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:7px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
-      '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px"><span data-card-shipping>'+shipping+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-weight:700;color:#111">'+priceText+'</span></div></div>';
+    const preview=img?'<img src="'+esc(img)+'" alt="Amazon product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
+    const brand='<span aria-label="Amazon" style="display:inline-flex;flex-direction:column;align-items:flex-end;justify-content:center;flex:0 0 auto;margin-left:auto;opacity:.84;line-height:1;text-align:right"><span style="font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;letter-spacing:-.4px;color:#111">amazon</span><svg viewBox="0 0 52 8" width="48" height="7" preserveAspectRatio="xMidYMid meet" style="display:block;margin-top:1px"><path d="M2 1.5 C15 7,34 7,47 2" fill="none" stroke="#f59b23" stroke-width="1.8" stroke-linecap="round" vector-effect="non-scaling-stroke"/><path d="M43.5 1 L49 1.4 L46.4 5.5" fill="none" stroke="#f59b23" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg></span>';
+    r.innerHTML='<input type="checkbox" class="capitan-amazon-choice" value="'+esc(x.asin||'')+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#111">'+preview+
+      '<div style="min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 5px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:800;font-size:13px;line-height:1">'+esc(x.asin||'')+'</a>'+brand+'</div>'+
+      '<div style="color:#444;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
+      '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px"><span data-card-shipping>'+shipping+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:800;color:#111">'+priceText+'</span></div></div>';
     box.appendChild(r)
   });
   results.appendChild(box);
@@ -257,7 +261,7 @@ insertBtn.addEventListener('click',async e=>{
   if(!title){status.innerHTML='<span style="color:#b42318;font-weight:700">Titolo eBay non trovato.</span>';return}
   insertBtn.disabled=true;
   const nextPage=matchPage;
-  status.textContent=nextPage===0?'Best Match Amazon in corso…':'Ricerca di altri Best Match Amazon…';
+  status.textContent='';window.__capitanTestLog?.(nextPage===0?'Best Match Amazon in corso…':'Ricerca di altri Best Match Amazon…','warn');
   try{
     const before=new Set(lastMatches.map(amazonKey));
     const breakEven=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);
@@ -272,7 +276,8 @@ insertBtn.addEventListener('click',async e=>{
         limit:'10',
         exclude:[...before].join(','),
         breakEven:breakEven==null?'':String(breakEven),
-        maxLoss:String(AMAZON_MAX_NEGATIVE_MARGIN)
+        maxLoss:String(AMAZON_MAX_NEGATIVE_MARGIN),
+        includeImages:'1',includeShipping:'1',includeDetails:'1'
       });
       if(data&&data.ok)collected=collected.concat(data.matches||[]);
       const uniq=new Map();
@@ -284,10 +289,10 @@ insertBtn.addEventListener('click',async e=>{
     mergeMatches([...freshMap.values()].slice(0,10));
     const added=lastMatches.filter(x=>!before.has(amazonKey(x))).length;
     matchPage=nextPage+Math.max(1,attemptsUsed);
-    status.innerHTML='<span style="color:#137333;font-weight:700">Best Match Amazon completato.</span> '+(added?('Aggiunti '+added+' nuovi prodotti · Totale '+lastMatches.length):'Nessun nuovo prodotto oltre quelli già mostrati.');
-    window.__capitanTestLog?.('Best Match Amazon: +'+added+' · totale '+lastMatches.length,added?'ok':'warn')
+    status.textContent='';
+    window.__capitanTestLog?.(added?('Best Match Amazon: +'+added+' · totale '+lastMatches.length):'Best Match Amazon: nessun nuovo prodotto',added?'ok':'warn')
   }catch(err){
-    console.error(err);status.innerHTML='<span style="color:#b42318;font-weight:700">Errore Best Match Amazon:</span> '+esc(err.message||err)
+    console.error(err);status.textContent='';window.__capitanTestLog?.('Errore Best Match Amazon: '+String(err.message||err),'bad')
   }finally{insertBtn.disabled=false}
 });
 function currentEbayTitle(){
@@ -312,7 +317,7 @@ findBtn.addEventListener('click',()=>{
   const url='https://www.amazon.com/s?k='+encodeURIComponent(title);
   rememberSearch(title,url);
   window.open(url,'_blank','noopener');
-  status.innerHTML='<span style="color:#137333;font-weight:700">Ricerca Amazon aperta.</span> Titolo eBay inviato alla SERP.';
+  status.textContent='';
   window.__capitanTestLog?.('SERP Amazon aperta per titolo','ok')
 });
 window.addEventListener('capitan-sale-price-updated',e=>{
