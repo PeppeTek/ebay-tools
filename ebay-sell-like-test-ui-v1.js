@@ -18,7 +18,6 @@ style.textContent=`
 #${PANEL_ID} .brand{padding:7px 12px 0!important}
 #${PANEL_ID} .brand img{max-height:38px!important;opacity:.94}
 #${PANEL_ID} #capitan-test-badge{display:inline-flex;align-items:center;height:19px;padding:0 7px;border-radius:999px;background:#fff3cd;color:#7a5200;border:1px solid #f1d27a;font:700 10px/19px Arial,sans-serif;letter-spacing:.5px}
-#${PANEL_ID} #capitan-analytics-strip{display:flex;align-items:center;gap:5px;margin-top:3px;color:#777;font:600 10px/20px Arial,sans-serif}
 #${PANEL_ID} #capitan-process-timer{border:0!important;border-radius:0!important;background:transparent!important;min-width:0!important;width:auto!important;height:auto!important;line-height:20px!important;padding:0!important;color:#555!important;box-shadow:none!important}
 #${PANEL_ID} #capitan-test-log{margin-top:2px;border-top:1px solid #e7e7e7;padding-top:7px}
 #${PANEL_ID} #capitan-test-log-title{display:flex;align-items:center;justify-content:space-between;font-size:10px;font-weight:700;color:#666;margin-bottom:5px}
@@ -95,12 +94,10 @@ function ensureUi(){
   if(title&&!p.querySelector('#capitan-test-badge')){
     const b=document.createElement('span');b.id='capitan-test-badge';b.textContent='TEST';title.insertAdjacentElement('afterend',b)
   }
-  const brand=p.querySelector('.brand'),timer=p.querySelector('#capitan-process-timer');
-  if(brand&&timer&&!p.querySelector('#capitan-analytics-strip')){
-    const strip=document.createElement('div');strip.id='capitan-analytics-strip';
-    const label=document.createElement('span');label.textContent='Analytics ·';
-    strip.appendChild(label);strip.appendChild(timer);brand.appendChild(strip)
-  }
+  const timer=p.querySelector('#capitan-process-timer');
+  p.querySelector('#capitan-analytics-strip')?.remove();
+  const controls=p.querySelector('#capitan-header-controls');
+  if(timer&&controls&&timer.parentElement!==controls)controls.appendChild(timer);
   const actions=p.querySelector('[data-ebay-actions]');
   if(actions&&!p.querySelector('#capitan-test-log')){
     const wrap=document.createElement('div');wrap.id='capitan-test-log';
@@ -128,7 +125,11 @@ function observeStatus(){
   st.dataset.testObserved='1';
   const read=()=>{
     const t=clean(st.innerText||st.textContent||'');
-    if(t&&t!==lastStatus){lastStatus=t;log(t,/errore|fallit|non avviata/i.test(t)?'bad':/attesa|corso|verifica|warn/i.test(t)?'warn':'ok')}
+    if(t&&t!==lastStatus){
+      lastStatus=t;
+      if(/Preparazione iniziale completata senza AI|Template AI-HTML verrà generato solo al click su Preview/i.test(t)){st.textContent='';return}
+      log(t,/errore|fallit|non avviata/i.test(t)?'bad':/attesa|corso|verifica|warn/i.test(t)?'warn':'ok')
+    }
   };
   new MutationObserver(read).observe(st,{childList:true,subtree:true,characterData:true});read()
 }
