@@ -8,7 +8,7 @@ const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.disp
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const now=()=>new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-let lastStatus='',seenClicks=new WeakSet();
+let lastStatus='',seenClicks=new WeakSet(),shippingFallbackPromise=null;
 
 const style=document.createElement('style');
 style.id='capitan-test-ui-style';
@@ -45,6 +45,33 @@ function log(message,state='ok'){
 }
 window.__capitanTestLog=log;
 
+function shippingCostFromLabel(label,price){
+  label=clean(label);price=Number(price);
+  let m=label.match(/free\s+shipping\s+(?:over|above)\s*\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
+  if(m){const t=Number(String(m[1]).replace(',','.'));return isFinite(price)&&price>=t?0:1.99}
+  if(/^free\s+shipping$/i.test(label))return 0;
+  m=label.match(/\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/);
+  return m?Number(String(m[1]).replace(',','.')):null
+}
+function hydrateShippingCards(){
+  const p=panel();if(!p||typeof window.__capitanReadSourceShippingLabel!=='function')return;
+  const pending=[...p.querySelectorAll('[data-card-shipping]')].filter(el=>/lettura shipping/i.test(clean(el.textContent||'')));
+  if(!pending.length)return;
+  const source=(clean(p.innerText||'').match(/Source Item ID:\s*(\d{9,12})/i)||[])[1]||'';
+  if(!source)return;
+  if(!shippingFallbackPromise)shippingFallbackPromise=window.__capitanReadSourceShippingLabel(source).finally(()=>{shippingFallbackPromise=null});
+  shippingFallbackPromise.then(label=>{
+    if(!label)return;
+    pending.forEach(el=>{
+      el.innerHTML='<span style="color:#555">'+esc(label)+'</span>';
+      const card=el.closest('label');if(!card)return;
+      const price=Number(card.dataset.sourcePrice),cost=shippingCostFromLabel(label,price);
+      if(isFinite(cost)&&cost>=0){card.dataset.shippingCost=String(cost);if(isFinite(price)&&price>0)card.dataset.totalCost=String(price+cost)}
+      const ch=card.querySelector('input[type="checkbox"]');if(ch&&ch.checked)ch.dispatchEvent(new Event('change',{bubbles:true}))
+    });
+    log('Shipping card completato: '+label,'ok')
+  }).catch(err=>log('Shipping card non leggibile: '+String(err&&err.message||err),'warn'))
+}
 function hideOkRows(){
   const p=panel();if(!p)return;
   const re=/^(Quantit[aà]|Condizione|Item Location|Descrizione|Foto):/i;
