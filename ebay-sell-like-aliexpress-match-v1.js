@@ -99,44 +99,17 @@ function selectedRows(){
 }
 function selectedProductIds(){return selectedRows().map(x=>x.productId).filter(Boolean)}
 
-function aliLogoSvg(){
-  return '<svg viewBox="0 0 92 24" width="58" height="16" aria-label="AliExpress" style="display:block"><defs><linearGradient id="aliG" x1="0" x2="1"><stop offset="0" stop-color="#ff8a00"/><stop offset=".55" stop-color="#ff4747"/><stop offset="1" stop-color="#d71920"/></linearGradient></defs><text x="1" y="17" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="url(#aliG)">AliExpress</text></svg>'
-}
-function shippingNumeric(v){
-  const t=clean(v||'');
-  if(!t||/free\s+shipping/i.test(t))return 0;
-  const m=t.match(/(?:USD|US\s*\$|\$)?\s*([0-9]+(?:[.,][0-9]+)?)/i);
-  return m?Number(String(m[1]).replace(',','.')):0
-}
-function cardTotal(x){
-  const base=Number(x&&x.price);
-  if(!isFinite(base))return null;
-  const ship=clean(x&&x.shipping||'');
-  if(/free\s+shipping\s+over/i.test(ship))return Math.round((base+1.99)*100)/100;
-  const explicit=Number(x&&x.shippingAmount);
-  if(isFinite(explicit)&&explicit>0)return Math.round((base+explicit)*100)/100;
-  const parsed=shippingNumeric(ship);
-  return Math.round((base+(isFinite(parsed)?parsed:0))*100)/100
-}
 function render(list,append=false){
-  const incoming=(Array.isArray(list)?list:[]).filter(x=>{
-    const hasImage=!!clean(x&&x.image||'');
-    const hasShipping=!!clean(x&&x.shipping||'');
-    return hasImage&&hasShipping
-  });
+  const incoming=Array.isArray(list)?list:[];
   if(!append)accumulatedMatches=[];
 
-  const existingIds=new Set(accumulatedMatches.map(x=>String(x&&x.productId||'')));
-  const fresh=[];
+  const seen=new Set(accumulatedMatches.map(x=>String(x.productId||'')));
   incoming.forEach(x=>{
     const id=String(x&&x.productId||'');
-    if(id&&!existingIds.has(id)){existingIds.add(id);fresh.push(x)}
+    if(id&&!seen.has(id)){seen.add(id);accumulatedMatches.push(x)}
   });
 
-  // Latest search first, older results below.
-  accumulatedMatches=append?fresh.concat(accumulatedMatches):fresh;
   lastMatches=accumulatedMatches.slice();
-
   results.innerHTML='';
   if(!lastMatches.length){
     results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match AliExpress trovato.</div>';
@@ -150,9 +123,8 @@ function render(list,append=false){
 
   lastMatches.forEach((x,i)=>{
     const r=document.createElement('label');
-    r.style.cssText='position:relative;display:grid;grid-template-columns:24px 72px minmax(0,1fr);gap:8px;align-items:center;padding:7px 8px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px;min-height:82px';
-    const total=cardTotal(x);
-    const price=total==null?'—':Number(total).toFixed(2)+' '+esc(x.currency||'USD');
+    r.style.cssText='display:grid;grid-template-columns:24px 72px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 8px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px;min-height:78px';
+    const price=x.price==null||x.price===''?'—':Number(x.price).toFixed(2)+' '+esc(x.currency||'USD');
     const url=esc(x.url||('https://www.aliexpress.us/item/'+(x.productId||'')+'.html'));
     const aliImage=clean(x.image||'');
     const aliImg=aliImage
@@ -160,33 +132,36 @@ function render(list,append=false){
       :'<div style="width:72px;height:72px;border:1px solid #ddd;border-radius:7px;display:grid;place-items:center;color:#999">—</div>';
 
     const title=clean(x.title||'');
-    const shortTitle=title.length>72?title.slice(0,69)+'…':title;
+    const shortTitle=title.length>82?title.slice(0,79)+'…':title;
+
     const sold=clean(x.orders||'');
     const deliveryRaw=clean(x.delivery||'');
     const delivery=deliveryRaw && !/\b(?:gg|giorn|day|days)\b/i.test(deliveryRaw) ? deliveryRaw+' gg' : deliveryRaw;
     const shipping=clean(x.shipping||'');
     const stock=clean(x.stock||'');
 
-    const shippingLabel=shipping;
-    const meta1=[];
-    if(sold)meta1.push('Venduti: '+esc(sold));
-    if(delivery)meta1.push('Consegna: '+esc(delivery));
-    const meta2='Spedizione: '+esc(shippingLabel)+(stock?' · Stock: '+esc(stock):'');
+    const line3=[];
+    if(sold)line3.push('Venduti: '+esc(sold));
+    if(delivery)line3.push('Consegna: '+esc(delivery));
 
-    const info='<div style="min-width:0;line-height:1.12;padding-right:66px">'+
+    const shippingLabel=shipping
+      ? (/^0(?:[.,]0+)?$/.test(shipping)?'Free shipping':shipping)
+      : '';
+    const line4=[];
+    line4.push('Spedizione: '+esc(shippingLabel||'n.d.'));
+    if(stock)line4.push('Stock: '+esc(stock));
+
+    const info='<div style="min-width:0;line-height:1.15">'+
       '<a href="'+url+'" target="_blank" rel="noopener" style="display:block;color:#111;text-decoration:none;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(shortTitle||x.productId||'')+'</a>'+
       '<div style="margin-top:2px;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.productId||'')+'</div>'+
-      (meta1.length?'<div style="margin-top:2px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+meta1.join(' · ')+'</div>':'')+
-      '<div style="margin-top:2px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:66px">'+meta2+'</div>'+
+      (line3.length?'<div style="margin-top:2px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+line3.join(' · ')+'</div>':'')+
+      (line4.length?'<div style="margin-top:2px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+line4.join(' · ')+'</div>':'')+
       '</div>';
 
-    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(i===0?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747">'+aliImg+info+
-      '<span style="position:absolute;top:6px;right:7px;opacity:.95">'+aliLogoSvg()+'</span>'+
-      '<span title="Totale prodotto + spedizione" style="position:absolute;right:8px;bottom:7px;white-space:nowrap;font-weight:700">'+price+'</span>';
+    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(i===0?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747">'+aliImg+info+'<span style="white-space:nowrap;font-weight:700">'+price+'</span>';
     box.appendChild(r)
   });
-  results.appendChild(box);
-  if(append)results.scrollTop=0
+  results.appendChild(box)
 }
 
 function findSkuField(){
@@ -263,8 +238,8 @@ findBtn.addEventListener('click',async()=>{
     const added=accumulatedMatches.length-before;
 
     if(data.searchMode==='IMAGE'||data.searchMode==='IMAGE_PLUS_TITLE'){
-      status.innerHTML='<span style="color:#137333;font-weight:700">'+(data.searchMode==='IMAGE_PLUS_TITLE'?'Ricerca immagine + titolo completata.':'Ricerca per immagine completata.')+'</span> '+
-        (searchBatch>0?(added?('Aggiunti '+added+' nuovi risultati in cima.'):'Nessun nuovo risultato in questa ricerca.'):'Risultati ottenuti dalla main image eBay.');
+      status.innerHTML='<span style="color:#137333;font-weight:700">'+(data.searchMode==='IMAGE_PLUS_TITLE'?'Ricerca immagine + nuovi candidati completata.':'Ricerca per immagine completata.')+'</span> '+
+        (searchBatch>0?(added?('Aggiunti '+added+' nuovi risultati.'):'Nessun nuovo risultato in questa ricerca.'):'Risultati ottenuti direttamente dalla main image eBay.');
     }else{
       const reason=clean(data.imageSearchError||'errore non specificato');
       status.innerHTML='<span style="color:#a15c00;font-weight:700">Image search non disponibile.</span> '+esc(reason)+'<br><span style="color:#555">Fallback per titolo EBAY_IMPORT visualizzato sotto.</span>';
