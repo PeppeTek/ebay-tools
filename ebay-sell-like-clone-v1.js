@@ -160,7 +160,7 @@ if(!/^\d{9,12}$/.test(itemId)){
 localStorage.setItem(SOURCE_KEY,itemId);window.__capitanSellLikeSourceItemId=itemId;try{window.dispatchEvent(new CustomEvent('capitan-source-item-ready',{detail:{itemId}}))}catch(_){}
 document.getElementById(ID)?.remove();
 const style=document.createElement('style');
-style.textContent=`#${ID}{position:fixed;top:12px;right:12px;z-index:2147483647;width:430px;max-height:calc(100vh - 24px);overflow:auto;background:#fff;color:#111;border:1px solid #bbb;border-radius:12px;box-shadow:0 12px 40px #0004;font:13px Arial,sans-serif}#${ID} *{box-sizing:border-box}#${ID} .h{display:flex;justify-content:flex-start;align-items:center;gap:10px;padding:12px 92px 12px 14px;border-bottom:1px solid #ddd;font-weight:700;font-size:16px;min-height:54px}#${ID} .title{font-weight:700;font-size:16px;line-height:1.2;white-space:nowrap}#${ID} #capitan-process-timer{min-width:75px;text-align:center;padding:0;border:1px solid #b9b9b9;border-radius:8px;background:#fff;color:#333;font:700 11px/28px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:0;box-sizing:border-box}#${ID} .brand{padding:12px 14px 0}#${ID} .brand img{display:block;max-width:100%;height:auto;max-height:56px}#${ID} .b{padding:12px 14px}#${ID} .row{padding:7px 0;border-bottom:1px solid #eee}#${ID} .ok{color:#137333;font-weight:700}#${ID} .warn{color:#b06000;font-weight:700}#${ID} .bad{color:#b3261e;font-weight:700}#${ID} .muted{color:#666}#${ID} button{padding:7px 10px;border:1px solid #aaa;border-radius:7px;background:#fff;cursor:pointer}`;
+style.textContent=`#${ID}{position:fixed;top:12px;right:12px;z-index:2147483647;width:500px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto;background:#fff;color:#111;border:1px solid #bbb;border-radius:12px;box-shadow:0 12px 40px #0004;font:13px Arial,sans-serif}#${ID} *{box-sizing:border-box}#${ID} .h{display:flex;justify-content:flex-start;align-items:center;gap:10px;padding:12px 92px 12px 14px;border-bottom:1px solid #ddd;font-weight:700;font-size:16px;min-height:54px}#${ID} .title{font-weight:700;font-size:16px;line-height:1.2;white-space:nowrap}#${ID} #capitan-process-timer{min-width:75px;text-align:center;padding:0;border:1px solid #b9b9b9;border-radius:8px;background:#fff;color:#333;font:700 11px/28px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:0;box-sizing:border-box}#${ID} .brand{padding:12px 14px 0}#${ID} .brand img{display:block;max-width:100%;height:auto;max-height:56px}#${ID} .b{padding:12px 14px}#${ID} .row{padding:7px 0;border-bottom:1px solid #eee}#${ID} .ok{color:#137333;font-weight:700}#${ID} .warn{color:#b06000;font-weight:700}#${ID} .bad{color:#b3261e;font-weight:700}#${ID} .muted{color:#666}#${ID} button{padding:7px 10px;border:1px solid #aaa;border-radius:7px;background:#fff;cursor:pointer}`;
 document.head.appendChild(style);
 const panel=document.createElement('div');panel.id=ID;panel.innerHTML=`<div class="brand"><img src="${LOGO_SRC}" alt="Dropper Analytics"></div><div class="h"><span class="title">Sell Like This ${V}</span><span id="capitan-process-timer" title="Tempo di preparazione">00:00</span><button data-close>×</button></div><div class="b"><div class="row"><b>Source Item ID:</b> ${esc(itemId)}</div><div class="row" id="st">Preparazione…</div><div id="steps"></div></div>`;document.body.appendChild(panel);
 const processTimerEl=panel.querySelector('#capitan-process-timer');
@@ -376,6 +376,17 @@ async function ensurePreviewFullData(){
 }
 window.__capitanPrepareAiForPreview=ensurePreviewFullData;
 window.__capitanEnsureAiTemplate=ensurePreviewFullData;
+window.addEventListener('capitan-discount-reverse-updated',e=>{
+  const dr=Number(e&&e.detail&&e.detail.discountRate);
+  const sale=Number(e&&e.detail&&e.detail.salePrice);
+  const source=Number(e&&e.detail&&e.detail.sourcePrice);
+  if(!setDiscountLocal(dr))return;
+  const data=window.__capitanSellLikeCloneData||{};
+  if(isFinite(source)&&source>0){data.sourcePrice=source;window.__capitanSellLikeSourcePrice=source}
+  if(isFinite(sale)&&sale>0){data.targetPrice=sale;window.__capitanSellLikeSalePrice=sale}
+  window.__capitanSellLikeCloneData=data;
+  try{localStorage.setItem('capitan-sell-like-clone-data-v1',JSON.stringify(data))}catch(_){}
+});
 window.addEventListener('capitan-discount-updated',e=>{
   const dr=Number(e&&e.detail&&e.detail.discountRate);
   if(!setDiscountLocal(dr))return;
@@ -434,9 +445,7 @@ try{
 
   setStep('Policy','ok','non modificate');
   setStep('Pubblicazione','ok','List it lasciato manuale');
-  status.innerHTML=sellMode==='variants'
-    ?'Generazione CSV varianti in corso… <span class="ok">AI solo su Preview.</span>'
-    :'<span class="ok">Preparazione iniziale completata senza AI.</span> Il Template AI-HTML verrà generato solo al click su Preview.';
+  status.textContent='';
   if(sellMode==='mono')stopProcessTimer()
 }catch(e){
   console.error(e);
