@@ -3,7 +3,7 @@ javascript:(()=>{
 const PANEL_ID='capitan-sell-like-clone';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
 const DISCOUNT_KEY='capitan-sell-like-discount-rate-v1';
-let discountRate=.02;
+let discountRate=.02,reverseSaveTimer=null;
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 function endpoint(){return String(localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}
 function jsonpAction(action,params){const ep=endpoint();return new Promise((resolve,reject)=>{if(!ep)return reject(Error('Endpoint Apps Script non configurato'));const cb='__capitanDiscountCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),30000);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:Date.now().toString(),...(params||{})});s.src=ep+(ep.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
@@ -27,11 +27,13 @@ async function persistDiscount(){
     if(saved&&saved.ok&&saved.rates)window.dispatchEvent(new CustomEvent('capitan-pricing-saved',{detail:{rates:saved.rates}}))
   }catch(e){console.warn('Discount save',e)}
 }
+function numericDiscountInput(v){return Number(String(v??'').replace('%','').replace(',','.').trim())}
 function applyDiscountPct(v,persist){
-  const pct=Number(String(v).replace(',','.'));
+  const pct=numericDiscountInput(v);
   if(!isFinite(pct)||pct<0||pct>=100)return false;
   discountRate=pct/100;emitDiscount();cleanup();if(persist)persistDiscount();return true
 }
+function formatDiscountField(){return String(discountNumber()).replace('.',',')+'%'}
 function cleanup(){
   const p=document.getElementById(PANEL_ID);if(!p)return false;
   const rows=[...p.querySelectorAll('#steps .row')];
@@ -52,17 +54,19 @@ function cleanup(){
     discountRow.id='capitan-discount-row';
     discountRow.className='row';
     discountRow.style.cssText='display:flex;align-items:center;gap:8px';
-    discountRow.innerHTML='<b>Riduzione prezzo rispetto alla concorrenza:</b><span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px"><input id="capitan-discount-manual" type="text" inputmode="decimal" aria-label="Riduzione prezzo percentuale" style="width:58px;height:28px;border:1px solid #b7b7b7;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111"><b style="color:#137333">%</b></span>';
+    discountRow.innerHTML='<b>Riduzione prezzo rispetto alla concorrenza:</b><input id="capitan-discount-manual" type="text" inputmode="decimal" aria-label="Riduzione prezzo percentuale" placeholder="%" style="margin-left:auto;width:82px;height:28px;box-sizing:border-box;border:1px solid #b7b7b7;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111">';
     sourceRow.insertAdjacentElement('afterend',discountRow);
     const input=discountRow.querySelector('#capitan-discount-manual');
-    input.value=String(discountNumber()).replace('.',',');
+    input.value=formatDiscountField();
+    input.addEventListener('focus',()=>{input.value=String(discountNumber()).replace('.',',');input.select()});
     input.addEventListener('input',()=>applyDiscountPct(input.value,false));
-    input.addEventListener('change',()=>{if(applyDiscountPct(input.value,true))input.value=String(discountNumber()).replace('.',',')});
+    input.addEventListener('change',()=>{if(applyDiscountPct(input.value,true))input.value=formatDiscountField()});
+    input.addEventListener('blur',()=>{if(applyDiscountPct(input.value,true))input.value=formatDiscountField();else input.value=formatDiscountField()});
     input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();input.blur()}});
     input.addEventListener('click',e=>e.stopPropagation());
   }else if(discountRow){
     const input=discountRow.querySelector('#capitan-discount-manual');
-    if(input&&document.activeElement!==input)input.value=String(discountNumber()).replace('.',',');
+    if(input&&document.activeElement!==input)input.value=formatDiscountField();
   }
 
   // Sale-price row: percentage is no longer repeated in the label/value.
@@ -96,7 +100,27 @@ function cleanup(){
 }
 let n=0;const t=setInterval(()=>{n++;cleanup();if(n>120)clearInterval(t)},125);
 window.addEventListener('capitan-break-even-updated',cleanup);
-window.addEventListener('capitan-pricing-saved',e=>{if(e.detail?.rates&&isFinite(Number(e.detail.rates.discountRate)))discountRate=Number(e.detail.rates.discountRate);emitDiscount();cleanup()});
+window.addEventListener('capitan-pricing-saved',e=>{
+  const dr=Number(e.detail?.rates?.discountRate);
+  if(isFinite(dr)&&dr>=0&&dr<1)discountRate=dr;
+  emitDiscount();cleanup()
+});
+window.addEventListener('capitan-discount-reverse-updated',e=>{
+  const dr=Number(e.detail?.discountRate);
+  if(!isFinite(dr)||dr<0||dr>=1)return;
+  discountRate=dr;storeDiscount();cleanup();
+  clearTimeout(reverseSaveTimer);reverseSaveTimer=setTimeout(()=>persistDiscount(),700)
+});
 cleanup();
-(async()=>{try{const d=await jsonpAction('sell_like_pricing_get');if(d&&d.ok&&d.rates&&isFinite(Number(d.rates.discountRate)))discountRate=Number(d.rates.discountRate);else{const local=Number(localStorage.getItem(DISCOUNT_KEY));if(isFinite(local)&&local>=0&&local<1)discountRate=local}}catch(e){console.warn('Sell Like discount load',e);try{const local=Number(localStorage.getItem(DISCOUNT_KEY));if(isFinite(local)&&local>=0&&local<1)discountRate=local}catch(_){}}emitDiscount();cleanup()})();
+(async()=>{try{
+  const d=await jsonpAction('sell_like_pricing_get');
+  const remote=Number(d?.rates?.discountRate),local=Number(localStorage.getItem(DISCOUNT_KEY));
+  if(d&&d.ok&&isFinite(remote)&&remote>=0&&remote<1)discountRate=remote;
+  else if(isFinite(local)&&local>=0&&local<1)discountRate=local;
+  else discountRate=.02
+}catch(e){
+  console.warn('Sell Like discount load',e);
+  try{const local=Number(localStorage.getItem(DISCOUNT_KEY));discountRate=isFinite(local)&&local>=0&&local<1?local:.02}catch(_){discountRate=.02}
+}
+emitDiscount();cleanup()})();
 })();
