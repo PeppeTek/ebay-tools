@@ -167,22 +167,28 @@ insertBtn.addEventListener('click',()=>{
   }
 });
 
-findBtn.addEventListener('click',async()=>{
-  findBtn.disabled=true;
-  status.textContent='Ricerca AliExpress in corso…';
-  results.innerHTML='';
-  try{
-    const data=await jsonp();
-    if(!data||!data.ok)throw Error(data?.error||'Risposta AliExpress non valida');
-    render(data.matches||[],data.sourceImage||'');
-    status.innerHTML=lastMatches.length
-      ?'<span style="color:#137333;font-weight:700">Match AliExpress completato.</span> Risultati ordinati con la logica EBAY_IMPORT.'
-      :'<span style="color:#a15c00;font-weight:700">Ricerca completata.</span> Nessun match AliExpress trovato.'
-  }catch(e){
-    console.error(e);
-    status.innerHTML='<span style="color:#b42318;font-weight:700">Errore AliExpress:</span> '+esc(e.message||e)
-  }finally{
-    findBtn.disabled=false
+function currentEbayTitle(){
+  for(const l of document.querySelectorAll('label')){
+    const t=clean(l.innerText||l.textContent);
+    if(!/^(item title|title)$/i.test(t))continue;
+    let el=l.htmlFor?document.getElementById(l.htmlFor):l.querySelector('input,textarea');
+    if(el&&clean(el.value))return clean(el.value);
+    let p=l.parentElement;
+    for(let i=0;i<4&&p;i++,p=p.parentElement){
+      el=p.querySelector('input,textarea');
+      if(el&&clean(el.value))return clean(el.value)
+    }
   }
+  const candidate=[...document.querySelectorAll('input,textarea')].find(el=>/(^|\b)(title|itemtitle)(\b|$)/i.test(clean([el.name,el.id,el.getAttribute('aria-label'),el.placeholder].join(' ')))&&clean(el.value));
+  if(candidate)return clean(candidate.value);
+  return clean(window.__capitanSellLikeCloneData?.title||'')
+}
+findBtn.addEventListener('click',()=>{
+  const title=currentEbayTitle();
+  if(!title){status.innerHTML='<span style="color:#b42318;font-weight:700">Titolo eBay non trovato.</span>';return}
+  const slug=title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,120);
+  const url='https://www.aliexpress.us/w/wholesale-'+encodeURIComponent(slug)+'.html?SearchText='+encodeURIComponent(title);
+  window.open(url,'_blank','noopener');
+  status.innerHTML='<span style="color:#137333;font-weight:700">Ricerca AliExpress aperta.</span> Titolo eBay inviato direttamente alla SERP.'
 });
 })();
