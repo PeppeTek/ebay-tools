@@ -60,8 +60,7 @@ function applyManualSalePrice(value,row,span,input){
   const n=Number(String(value).replace(',','.'));
   if(!isFinite(n)||n<=0)return false;
   const rounded=Math.round(n*100)/100;
-  if(span){span.textContent=' '+rounded.toFixed(2)+' USD';colorValue(span,rounded)}
-  if(input&&document.activeElement!==input)input.value=rounded.toFixed(2);
+  if(span){span.textContent=rounded.toFixed(2)+' USD';colorValue(span,rounded)}
   const field=findEbayPriceField();
   if(field)setNativeInputValue(field,rounded.toFixed(2));
   window.__capitanSellLikeSalePrice=rounded;
@@ -69,7 +68,7 @@ function applyManualSalePrice(value,row,span,input){
   let reverseDiscount=null;
   if(isFinite(source)&&source>0){
     const dr=1-(rounded/source);
-    if(isFinite(dr)&&dr>=0&&dr<1)reverseDiscount=dr
+    if(isFinite(dr)&&dr>-10&&dr<1)reverseDiscount=dr
   }
   try{window.dispatchEvent(new CustomEvent('capitan-sale-price-updated',{detail:{value:rounded,sourcePrice:source,discountRate:reverseDiscount,origin:'manual'}}))}catch(_){}
   if(reverseDiscount!=null){
@@ -79,54 +78,76 @@ function applyManualSalePrice(value,row,span,input){
   return true
 }
 function updateSalePriceLabel(){
-  const r=rows().find(x=>/^Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:/i.test(clean(x.innerText||x.textContent)));
+  const r=rows().find(x=>/^Prezzo(?: di vendita)?(?: \(-?\d+(?:[.,]\d+)?%\))?:/i.test(clean(x.innerText||x.textContent)));
   if(!r)return;
+  r.id='capitan-sale-price-row';
   const b=r.querySelector('b');if(b)b.textContent='Prezzo di vendita:';
   let span=[...r.querySelectorAll('span')].find(x=>x.id!=='capitan-sale-price-editor')||null;
   if(!span){
     const nodes=[...r.childNodes].filter(n=>n.nodeType===3&&clean(n.textContent));
-    if(nodes.length){span=document.createElement('span');span.textContent=' '+clean(nodes.map(n=>n.textContent).join(' '));nodes.forEach(n=>n.remove());r.appendChild(span)}
+    if(nodes.length){span=document.createElement('span');span.textContent=clean(nodes.map(n=>n.textContent).join(' '));nodes.forEach(n=>n.remove());r.appendChild(span)}
   }
   let current=null;
   if(span){
-    let t=clean(span.textContent||'').replace(/\s*\(-\d+(?:[.,]\d+)?%\)\s*$/i,'');
+    const t=clean(span.textContent||'').replace(/\s*\(-?\d+(?:[.,]\d+)?%\)\s*$/i,'');
     current=parseNumber(t,/([0-9]+(?:[.,][0-9]+)?)/);
-    if(isFinite(current)){span.textContent=' '+Number(current).toFixed(2)+' USD';colorValue(span,current)}
+    if(isFinite(current)){span.textContent=Number(current).toFixed(2)+' USD';colorValue(span,current)}
+    span.style.gridColumn='3';span.style.justifySelf='end';span.style.textAlign='right';span.style.whiteSpace='nowrap'
   }
-  r.style.display='flex';r.style.alignItems='center';r.style.gap='8px';
+  r.style.display='grid';r.style.gridTemplateColumns='minmax(0,1fr) 82px 104px';r.style.alignItems='center';r.style.gap='8px';r.style.minHeight='38px';
+  if(b)b.style.gridColumn='1';
   let input=r.querySelector('#capitan-sale-price-manual');
   if(!input){
     input=document.createElement('input');
     input.id='capitan-sale-price-manual';
-    input.type='text';
-    input.inputMode='decimal';
+    input.type='text';input.inputMode='decimal';
     input.title='Modifica manualmente il prezzo di vendita';
-    input.style.cssText='margin-left:auto;width:82px;height:28px;box-sizing:border-box;border:1px solid #b7b7b7;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111';
+    input.style.cssText='grid-column:2;width:82px;height:28px;box-sizing:border-box;border:1px solid #b7b7b7;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111';
     if(isFinite(current))input.value=Number(current).toFixed(2);
-    input.addEventListener('input',()=>applyManualSalePrice(input.value,r,span,input));
+    input.addEventListener('focus',()=>input.select());
     input.addEventListener('change',()=>{if(applyManualSalePrice(input.value,r,span,input))input.value=Number(String(input.value).replace(',','.')).toFixed(2)});
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();input.blur()}});
     input.addEventListener('click',e=>e.stopPropagation());
-    r.appendChild(input)
-  }else if(isFinite(current)&&document.activeElement!==input){
-    input.value=Number(current).toFixed(2)
+    if(span)r.insertBefore(input,span);else r.appendChild(input)
+  }else{
+    input.style.gridColumn='2';
+    if(isFinite(current)&&document.activeElement!==input)input.value=Number(current).toFixed(2)
   }
 }
 function removeMetricRows(){return}
+function styleMetricRow(r){
+  if(!r)return;
+  r.style.display='grid';r.style.gridTemplateColumns='minmax(0,1fr) 82px 104px';r.style.alignItems='center';r.style.gap='8px';r.style.minHeight='38px';
+  const b=r.querySelector('b');if(b)b.style.gridColumn='1';
+  const val=r.querySelector('[data-value],#capitan-break-even-value');
+  if(val){val.style.gridColumn='3';val.style.justifySelf='end';val.style.textAlign='right';val.style.whiteSpace='nowrap'}
+}
 function ensureRows(){
   const p=panel();const steps=p?.querySelector('#steps');if(!steps)return null;
   updateSalePriceLabel();
   p.querySelector('#capitan-margin-amazon')?.remove();
   const be=p.querySelector('#capitan-break-even-row');if(!be)return p;
-  const defs=[
-    ['capitan-margin-break','Costo stimato delle tariffe'],
-    ['capitan-margin-source',"Costo totale d'acquisto"],
-    ['capitan-margin-delta','Utile netto rispetto al Break Even Price']
-  ];
-  let anchor=be;
-  defs.forEach(([id,label])=>{let r=p.querySelector('#'+id);if(!r){r=document.createElement('div');r.id=id;r.className='row';r.innerHTML=`<b>${label}:</b> <span data-value>—</span>`;anchor.insertAdjacentElement('afterend',r)}else{const b=r.querySelector('b');if(b)b.textContent=label+':'}anchor=r});
-  return p;
+  let fee=p.querySelector('#capitan-margin-break');
+  if(!fee){fee=document.createElement('div');fee.id='capitan-margin-break';fee.className='row';fee.innerHTML='<b>Costo stimato delle tariffe:</b> <span data-value>—</span>'}
+  const priceRow=p.querySelector('#capitan-sale-price-row');
+  if(priceRow&&fee.previousElementSibling!==priceRow)priceRow.insertAdjacentElement('afterend',fee);
+  if(fee.nextElementSibling!==be)fee.insertAdjacentElement('afterend',be);
+
+  let purchase=p.querySelector('#capitan-margin-source');
+  if(!purchase){purchase=document.createElement('div');purchase.id='capitan-margin-source';purchase.className='row';purchase.innerHTML='<b>Costo totale d\'acquisto:</b> <span data-value>—</span>'}
+  if(be.nextElementSibling!==purchase)be.insertAdjacentElement('afterend',purchase);
+
+  let profit=p.querySelector('#capitan-margin-delta');
+  if(!profit){profit=document.createElement('div');profit.id='capitan-margin-delta';profit.className='row';profit.innerHTML='<b>Il mio utile netto:</b> <span data-value>—</span>'}
+  if(purchase.nextElementSibling!==profit)purchase.insertAdjacentElement('afterend',profit);
+
+  const pb=profit.querySelector('b');if(pb)pb.textContent='Il mio utile netto:';
+  const fb=fee.querySelector('b');if(fb)fb.textContent='Costo stimato delle tariffe:';
+  const cb=purchase.querySelector('b');if(cb)cb.textContent="Costo totale d'acquisto:";
+  [fee,be,purchase,profit].forEach(styleMetricRow);
+  return p
 }
-function setMetric(p,id,val){const el=p.querySelector('#'+id+' [data-value]');if(!el)return;el.textContent=money(val);colorValue(el,val)}
+function setMetric(p,id,val){const el=p.querySelector('#'+id+' [data-value]');if(!el)return;el.textContent=money(val);el.style.justifySelf='end';el.style.textAlign='right';colorValue(el,val)}
 function refresh(){
   const p=ensureRows();if(!p)return false;
   const sale=salePrice(),be=breakEven(),cost=selectedSourcingCost();
