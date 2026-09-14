@@ -75,13 +75,46 @@ function amazonEconomicsAllowed(x){
   const verySimilar=!!(x&&x.verySimilar)||!!(x&&x.strongIdentifierMatch)||Number(x&&x.titleCoverage||0)>=.72||Number(x&&x.aiConfidence||0)>=85;
   return net>=-AMAZON_MAX_NEGATIVE_MARGIN&&verySimilar;
 }
+function amazonLogoSvg(){
+  return '<svg viewBox="0 0 88 24" width="58" height="16" aria-label="Amazon" style="display:block"><text x="1" y="15" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#111">amazon</text><path d="M44 18c9 5 20 4 27 1" fill="none" stroke="#ff9900" stroke-width="2" stroke-linecap="round"/><path d="M69 17l4 0-2 4" fill="none" stroke="#ff9900" stroke-width="2" stroke-linecap="round"/></svg>'
+}
 function render(list){
   const filtered=(Array.isArray(list)?list:[]).filter(amazonEconomicsAllowed);
-  lastMatches=filtered.slice(0,10);results.innerHTML='';
-  if(!lastMatches.length){results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match Amazon compatibile e profittevole trovato.</div>';return}
-  const box=document.createElement('div');box.style.cssText='margin-top:8px;border:1px solid #ddd;border-radius:8px;overflow:hidden';
-  lastMatches.forEach((x,i)=>{const r=document.createElement('label');r.style.cssText='display:grid;grid-template-columns:24px 1fr auto;gap:8px;align-items:center;padding:8px 9px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px';const price=x.price==null||x.price===''?'—':`${Number(x.price).toFixed(2)} ${esc(x.currency||'USD')}`;r.innerHTML=`<input type="checkbox" class="capitan-amazon-choice" value="${esc(x.asin||'')}" ${i===0?'checked':''} style="width:16px;height:16px;border-radius:0;accent-color:#111"><a href="${esc(x.url||('https://www.amazon.com/dp/'+(x.asin||'')))}" target="_blank" rel="noopener" style="color:#111;text-decoration:none"><b>${esc(x.asin||'')}</b></a><span>${price}</span>`;box.appendChild(r)});
-  results.appendChild(box);
+  lastMatches=filtered.slice(0,10);
+  results.innerHTML='';
+  if(!lastMatches.length){
+    results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun risultato Amazon compatibile con il margine impostato.</div>';
+    return
+  }
+  results.style.cssText='max-height:420px;overflow-y:auto;overflow-x:hidden;margin-top:6px;padding-right:2px';
+  const box=document.createElement('div');
+  box.style.cssText='border:1px solid #ddd;border-radius:8px;overflow:hidden;background:#fff';
+
+  lastMatches.forEach((x,i)=>{
+    const r=document.createElement('label');
+    r.style.cssText='position:relative;display:grid;grid-template-columns:24px 72px minmax(0,1fr);gap:8px;align-items:center;padding:7px 8px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px;min-height:82px';
+
+    const price=x.price==null||x.price===''?'—':Number(x.price).toFixed(2)+' '+esc(x.currency||'USD');
+    const url=esc(x.url||('https://www.amazon.com/dp/'+(x.asin||'')));
+    const image=clean(x.image||'');
+    const img=image
+      ?'<img src="'+esc(image)+'" referrerpolicy="no-referrer" alt="Amazon" style="width:72px;height:72px;object-fit:contain;border:1px solid #ddd;border-radius:7px;background:#fff">'
+      :'<div style="width:72px;height:72px;border:1px solid #ddd;border-radius:7px;display:grid;place-items:center;color:#999">—</div>';
+
+    const title=clean(x.title||'');
+    const shortTitle=title.length>72?title.slice(0,69)+'…':title;
+    const info='<div style="min-width:0;line-height:1.12;padding-right:68px">'+
+      '<a href="'+url+'" target="_blank" rel="noopener" style="display:block;color:#111;text-decoration:none;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(shortTitle||x.asin||'')+'</a>'+
+      '<div style="margin-top:2px;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.asin||'')+'</div>'+
+      '</div>';
+
+    r.innerHTML='<input type="checkbox" class="capitan-amazon-choice" value="'+esc(x.asin||'')+'" '+(i===0?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#111">'+img+info+
+      '<span style="position:absolute;top:6px;right:7px;opacity:.95">'+amazonLogoSvg()+'</span>'+
+      '<span style="position:absolute;right:8px;bottom:7px;white-space:nowrap;font-weight:700">'+price+'</span>';
+
+    box.appendChild(r)
+  });
+  results.appendChild(box)
 }
 
 function findSkuField(){
@@ -131,12 +164,34 @@ function currentEbayTitle(){
   if(candidate)return clean(candidate.value);
   return clean(window.__capitanSellLikeCloneData?.title||'')
 }
-findBtn.addEventListener('click',()=>{
+findBtn.addEventListener('click',async()=>{
   const title=currentEbayTitle();
-  if(!title){status.innerHTML='<span style="color:#b42318;font-weight:700">Titolo eBay non trovato.</span>';return}
-  const url='https://www.amazon.com/s?k='+encodeURIComponent(title);
-  window.open(url,'_blank','noopener');
-  status.innerHTML='<span style="color:#137333;font-weight:700">Ricerca Amazon aperta.</span> Titolo eBay inviato direttamente alla SERP.'
+  if(!title){
+    status.innerHTML='<span style="color:#b42318;font-weight:700">Titolo eBay non trovato.</span>';
+    return
+  }
+  findBtn.disabled=true;
+  status.textContent='Ricerca Amazon per titolo in corso…';
+  results.innerHTML='';
+  try{
+    const breakEven=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);
+    const data=await jsonpAction('amazon_match',{
+      itemId,
+      breakEven:breakEven==null?'':String(breakEven),
+      maxLoss:String(AMAZON_MAX_NEGATIVE_MARGIN),
+      simpleTitle:'1'
+    });
+    if(!data||!data.ok)throw Error(data?.error||'Risposta Amazon non valida');
+    render(data.matches||[]);
+    status.innerHTML=lastMatches.length
+      ?'<span style="color:#137333;font-weight:700">Ricerca Amazon completata.</span> Risultati ottenuti dal titolo eBay.'
+      :'<span style="color:#a15c00;font-weight:700">Ricerca Amazon completata.</span> Nessun risultato compatibile con il margine.'
+  }catch(e){
+    console.error(e);
+    status.innerHTML='<span style="color:#b42318;font-weight:700">Errore Amazon:</span> '+esc(e.message||e)
+  }finally{
+    findBtn.disabled=false
+  }
 });
 window.addEventListener('capitan-sale-price-updated',e=>{
   const v=Number(e&&e.detail&&e.detail.value);
