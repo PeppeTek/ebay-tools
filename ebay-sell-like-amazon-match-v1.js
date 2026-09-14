@@ -243,9 +243,9 @@ insertBtn.addEventListener('click',async e=>{
   try{
     const before=new Set(lastMatches.map(amazonKey));
     const breakEven=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);
-    let collected=[];
-    for(let attempt=0;attempt<3;attempt++){
-      const page=nextPage+attempt;
+    let collected=[],attemptsUsed=0;
+    for(let attempt=0;attempt<6;attempt++){
+      const page=nextPage+attempt;attemptsUsed=attempt+1;
       const data=await jsonpAction('amazon_match',{
         itemId,
         query:queryVariant(title,page),
@@ -257,12 +257,15 @@ insertBtn.addEventListener('click',async e=>{
         maxLoss:String(AMAZON_MAX_NEGATIVE_MARGIN)
       });
       if(data&&data.ok)collected=collected.concat(data.matches||[]);
-      const fresh=collected.filter(x=>{const k=amazonKey(x);return k&&!before.has(k)});
-      if(fresh.length>=5)break
+      const uniq=new Map();
+      collected.filter(amazonEconomicsAllowed).forEach(x=>{const k=amazonKey(x);if(k&&!before.has(k)&&!uniq.has(k))uniq.set(k,x)});
+      if(uniq.size>=10)break
     }
-    mergeMatches(collected);
+    const freshMap=new Map();
+    collected.filter(amazonEconomicsAllowed).forEach(x=>{const k=amazonKey(x);if(k&&!before.has(k)&&!freshMap.has(k))freshMap.set(k,x)});
+    mergeMatches([...freshMap.values()].slice(0,10));
     const added=lastMatches.filter(x=>!before.has(amazonKey(x))).length;
-    matchPage=nextPage+1;
+    matchPage=nextPage+Math.max(1,attemptsUsed);
     status.innerHTML='<span style="color:#137333;font-weight:700">Best Match Amazon completato.</span> '+(added?('Aggiunti '+added+' nuovi prodotti · Totale '+lastMatches.length):'Nessun nuovo prodotto oltre quelli già mostrati.');
     window.__capitanTestLog?.('Best Match Amazon: +'+added+' · totale '+lastMatches.length,added?'ok':'warn')
   }catch(err){
