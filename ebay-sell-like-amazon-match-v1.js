@@ -138,7 +138,7 @@ function mergeMatches(list){
   const selected=new Set([...results.querySelectorAll('input.capitan-amazon-choice:checked')].map(x=>x.value));
   const map=new Map(lastMatches.map(x=>[amazonKey(x),x]));
   (Array.isArray(list)?list:[]).filter(amazonEconomicsAllowed).forEach(x=>{const k=amazonKey(x);if(k&&!map.has(k))map.set(k,x)});
-  lastMatches=[...map.values()].slice(0,40);
+  lastMatches=[...map.values()].slice(0,100);
   render(lastMatches,selected)
 }
 function amazonShippingMeta(x){
@@ -177,7 +177,7 @@ function amazonEconomicsAllowed(x){
   return net>=-AMAZON_MAX_NEGATIVE_MARGIN&&verySimilar;
 }
 function render(list,selectedIds){
-  lastMatches=(Array.isArray(list)?list:[]).slice(0,40);results.innerHTML='';
+  lastMatches=(Array.isArray(list)?list:[]).slice(0,100);results.innerHTML='';
   if(!lastMatches.length){results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match Amazon compatibile e profittevole trovato.</div>';return}
   const selected=selectedIds instanceof Set?selectedIds:new Set();
   const box=document.createElement('div');box.style.cssText='margin-top:8px;display:grid;gap:7px';
