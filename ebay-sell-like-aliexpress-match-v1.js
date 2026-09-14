@@ -180,7 +180,7 @@ function render(list,sourceImage){
     const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
     r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(i===0?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747">'+sourceImg+
       '<span style="text-align:center;color:#aaa">→</span>'+aliImg+
-      '<div style="min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><span style="font-weight:800;color:#ff4747;opacity:.70">AliExpress</span><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:700">'+esc(x.productId||'')+'</a></div>'+
+      '<div style="min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:700;font-size:12px">'+esc(x.productId||'')+'</a><svg aria-label="AliExpress" viewBox="0 0 118 28" style="width:92px;height:22px;display:block;flex:0 0 auto;opacity:.82"><text x="2" y="18" font-family="Arial,Helvetica,sans-serif" font-size="16" font-weight="700" fill="#ff4747">AliExpress</text></svg></div>'+
       '<div style="color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:7px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
       '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px"><span data-card-shipping>'+shipping+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-weight:700;color:#111">'+priceText+'</span></div></div>';
     box.appendChild(r)
