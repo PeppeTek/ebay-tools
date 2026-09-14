@@ -12,6 +12,8 @@
 const SELL_LIKE_CLONE = Object.freeze({
   backendVersion: 'v2.4-clean-specs-location',
   action: 'clone_prepare',
+  dataAction: 'clone_prepare_data',
+  previewAction: 'sell_like_ai_preview',
   defaultModel: 'gpt-5.6-luna',
   quantity: 3,
   discountRate: 0.02,
@@ -22,7 +24,7 @@ const SELL_LIKE_CLONE = Object.freeze({
 // Override web-app GET while preserving the existing status page.
 function doGet(e) {
   const action = String(e && e.parameter && e.parameter.action || '').trim();
-  if (action === SELL_LIKE_CLONE.action) return sellLikeCloneJsonp_(e);
+  if (action === SELL_LIKE_CLONE.action || action === SELL_LIKE_CLONE.dataAction || action === SELL_LIKE_CLONE.previewAction) return sellLikeCloneJsonp_(e);
 
   try {
     const ss = SpreadsheetApp.openById(BOOKMARKLET_EBAY_IMPORT_CONFIG.spreadsheetId);
@@ -51,11 +53,16 @@ function sellLikeCloneJsonp_(e) {
   try {
     const itemId = ebayCanonicalExtractItemId_(e && e.parameter && e.parameter.itemId || '');
     if (!itemId) throw new Error('eBay Item ID mancante/non valido.');
-    payload = sellLikeClonePrepare_(itemId);
+    const action = String(e && e.parameter && e.parameter.action || '').trim();
+    payload = action === SELL_LIKE_CLONE.dataAction
+      ? sellLikeClonePrepareData_(itemId)
+      : sellLikeClonePrepare_(itemId);
     try {
       ebayCanonicalLog_('Sell Like Clone', payload.country || '-', itemId, 'OK',
-        'Pacchetto clone preparato: immagini, descrizione AI/template, prezzo -2%, New, quantita 3.',
-        Date.now() - started, 'images=' + payload.images.length + '; model=' + payload.aiModel);
+        action === SELL_LIKE_CLONE.dataAction
+          ? 'Pacchetto clone preparato senza AI: immagini, prezzo, location e metadati.'
+          : 'Pacchetto clone preparato: immagini, descrizione AI/template, prezzo -2%, New, quantita 3.',
+        Date.now() - started, 'images=' + payload.images.length + '; model=' + (payload.aiModel || 'deferred'));
     } catch (ignored) {}
   } catch (err) {
     payload = {ok:false, error:String(err && err.message || err)};
@@ -68,6 +75,48 @@ function sellLikeCloneJsonp_(e) {
   return ContentService
     .createTextOutput(callback + '(' + JSON.stringify(payload).replace(/<\//g, '<\\/') + ');')
     .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function sellLikeClonePrepareData_(itemId) {
+  const fetched = ebayImportFetchItemWithFallback_(itemId);
+  const parsed = ebayCanonicalParseFetched_(fetched, itemId);
+  const price = Number(parsed.price);
+  if (!isFinite(price) || price <= 0) throw new Error('Prezzo sorgente non disponibile o non valido.');
+
+  const images = (parsed.images || [])
+    .map(function(x){ return String(x || '').trim(); })
+    .filter(function(x){ return /^https?:\/\//i.test(x); });
+  if (!images.length) throw new Error('Nessuna immagine sorgente disponibile.');
+
+  const aspects = sellLikeCloneAspectsFromParsed_(parsed);
+  const technicalRows = sellLikeCloneTechnicalRows_(parsed, aspects);
+  const country = String(parsed.country || '').toUpperCase() || 'US';
+  const locationParts = sellLikeCloneLocationParts_(fetched, parsed);
+
+  return {
+    ok: true,
+    backendVersion: SELL_LIKE_CLONE.backendVersion,
+    itemId: String(itemId),
+    country: country,
+    title: String(parsed.title || ''),
+    categoryId: String(parsed.categoryId || parsed.categoryID || ''),
+    categoryName: String(parsed.categoryName || ''),
+    aspects: aspects,
+    sourcePrice: Number(price.toFixed(2)),
+    targetPrice: Number((price * (1 - SELL_LIKE_CLONE.discountRate)).toFixed(2)),
+    quantity: SELL_LIKE_CLONE.quantity,
+    condition: 'New',
+    images: images,
+    descriptionHtml: '',
+    aiModel: '',
+    aiDeferred: true,
+    descriptionReady: false,
+    itemLocation: locationParts.display,
+    itemLocationParts: locationParts,
+    technicalSpecsCount: technicalRows.length,
+    untouched: ['Title','Category','Item Specifics','Policies'],
+    source: fetched && fetched.source || ''
+  };
 }
 
 function sellLikeClonePrepare_(itemId) {
@@ -119,6 +168,8 @@ function sellLikeClonePrepare_(itemId) {
     images: images,
     descriptionHtml: html,
     aiModel: ai.model,
+    aiDeferred: false,
+    descriptionReady: true,
     itemLocation: locationParts.display,
     itemLocationParts: locationParts,
     technicalSpecsCount: technicalRows.length,
