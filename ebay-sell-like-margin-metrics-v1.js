@@ -10,7 +10,7 @@ const money=n=>isFinite(n)?`${n.toFixed(2)} USD`:'—';
 function panel(){return document.getElementById(PANEL_ID)}
 function rows(){const p=panel();return p?[...p.querySelectorAll('#steps .row')]:[]}
 function parseNumber(text,re){const m=clean(text).match(re);return m?Number(String(m[1]).replace(',','.')):null}
-function salePrice(){const r=rows().find(x=>/^Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:/i.test(clean(x.innerText||x.textContent)));return r?parseNumber(r.innerText||r.textContent,/Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:\s*([0-9]+(?:[.,][0-9]+)?)/i):null}
+function salePrice(){const r=rows().find(x=>/^Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:/i.test(clean(x.innerText||x.textContent)));const dom=r?parseNumber(r.innerText||r.textContent,/Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:\s*([0-9]+(?:[.,][0-9]+)?)/i):null;const global=Number(window.__capitanSellLikeSalePrice);return isFinite(dom)&&dom>0?dom:(isFinite(global)&&global>0?global:null)}
 function breakEven(){const p=panel();const el=p?.querySelector('#capitan-break-even-value');if(!el)return null;return parseNumber(el.textContent||'',/([0-9]+(?:[.,][0-9]+)?)/)}
 function selectedSourcingCost(){
   const p=panel();if(!p)return null;
@@ -131,7 +131,7 @@ function refresh(){
 }
 
 document.addEventListener('change',e=>{if(e.target&&e.target.matches('input.capitan-amazon-choice,input.capitan-aliexpress-choice'))setTimeout(refresh,0)},true);
-document.addEventListener('click',e=>{if(e.target&&e.target.closest('#capitan-amazon-find,#capitan-aliexpress-find')){removeMetricRows();let n=0;const t=setInterval(()=>{n++;if(hasSourcingResults()){refresh();clearInterval(t)}else if(n>120)clearInterval(t)},250)}},true);
+document.addEventListener('click',e=>{if(e.target&&e.target.closest('#capitan-amazon-best-match,#capitan-aliexpress-best-match')){removeMetricRows();let n=0;const t=setInterval(()=>{n++;if(hasSourcingResults()){refresh();clearInterval(t)}else if(n>120)clearInterval(t)},250)}},true);
 window.addEventListener('capitan-pricing-saved',()=>setTimeout(refresh,0));
 window.addEventListener('capitan-break-even-updated',()=>setTimeout(refresh,0));
 removeMetricRows();updateSalePriceLabel();
