@@ -13,7 +13,9 @@ let lastStatus='',seenClicks=new WeakSet(),shippingFallbackPromise=null;
 const style=document.createElement('style');
 style.id='capitan-test-ui-style';
 style.textContent=`
+#${PANEL_ID}{width:500px!important;min-width:500px!important;max-width:none!important}
 #${PANEL_ID} .h{padding:6px 72px 5px 12px!important;min-height:36px!important;gap:7px!important;font-size:13px!important}
+#${PANEL_ID} #capitan-discount-row,#${PANEL_ID} #capitan-sale-price-row,#${PANEL_ID} #capitan-margin-break,#${PANEL_ID} #capitan-break-even-row,#${PANEL_ID} #capitan-margin-source,#${PANEL_ID} #capitan-margin-delta{min-height:38px!important;padding:5px 0!important}
 #${PANEL_ID} .h .title{font-size:13px!important}
 #${PANEL_ID} .brand{padding:7px 12px 0!important}
 #${PANEL_ID} .brand img{max-height:38px!important;opacity:.94}
@@ -57,23 +59,7 @@ function shippingCostFromLabel(label,price){
   return m?Number(String(m[1]).replace(',','.')):null
 }
 function hydrateShippingCards(){
-  const p=panel();if(!p||typeof window.__capitanReadSourceShippingLabel!=='function')return;
-  const pending=[...p.querySelectorAll('[data-card-shipping]')].filter(el=>/lettura shipping/i.test(clean(el.textContent||'')));
-  if(!pending.length)return;
-  const source=(clean(p.innerText||'').match(/Source Item ID:\s*(\d{9,12})/i)||[])[1]||'';
-  if(!source)return;
-  if(!shippingFallbackPromise)shippingFallbackPromise=window.__capitanReadSourceShippingLabel(source).finally(()=>{shippingFallbackPromise=null});
-  shippingFallbackPromise.then(label=>{
-    if(!label)return;
-    pending.forEach(el=>{
-      el.innerHTML='<span style="color:#555">'+esc(label)+'</span>';
-      const card=el.closest('label');if(!card)return;
-      const price=Number(card.dataset.sourcePrice),cost=shippingCostFromLabel(label,price);
-      if(isFinite(cost)&&cost>=0){card.dataset.shippingCost=String(cost);if(isFinite(price)&&price>0)card.dataset.totalCost=String(price+cost)}
-      const ch=card.querySelector('input[type="checkbox"]');if(ch&&ch.checked)ch.dispatchEvent(new Event('change',{bubbles:true}))
-    });
-    log('Shipping card completato: '+label,'ok')
-  }).catch(err=>log('Shipping card non leggibile: '+String(err&&err.message||err),'warn'))
+  return
 }
 function hideOkRows(){
   const p=panel();if(!p)return;
@@ -89,6 +75,7 @@ function hideOkRows(){
 }
 function ensureUi(){
   const p=panel();if(!p)return false;
+  p.style.width='500px';p.style.minWidth='500px';p.style.maxWidth='none';
   const header=p.querySelector('.h');
   const title=header?.querySelector('.title')||header?.querySelector('span');
   if(title&&!p.querySelector('#capitan-test-badge')){
