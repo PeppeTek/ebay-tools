@@ -71,13 +71,14 @@ function jsonpAction(action,params){const ep=action==='amazon_match'?AMAZON_MATC
 
 function ensureBreakEvenRow(){
   const steps=panel.querySelector('#steps');if(!steps)return null;
-  let row=panel.querySelector('#capitan-break-even-row');if(row){const pr=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo(?: di vendita)?:/i.test(clean(r.innerText||r.textContent)));if(pr&&row.previousElementSibling!==pr)pr.insertAdjacentElement('afterend',row);return row;}
-  const priceRow=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo:/i.test(clean(r.innerText||r.textContent)));
-  row=document.createElement('div');row.id='capitan-break-even-row';row.className='row';row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px';
-  row.innerHTML='<span><b>Break Even Price:</b> <span id="capitan-break-even-value">—</span></span><button type="button" id="capitan-pricing-open" title="Aggiorna tariffe" aria-label="Aggiorna tariffe" style="margin-left:auto;width:28px;height:28px;padding:0;border:0;background:transparent;color:#3665f3;font-size:18px;line-height:28px;cursor:pointer;border-radius:50%">⚙</button>';
-  if(priceRow)priceRow.insertAdjacentElement('afterend',row);else steps.prepend(row);
-  row.querySelector('#capitan-pricing-open').addEventListener('click',e=>{e.preventDefault();openPricingModal()});
-  return row;
+  let row=panel.querySelector('#capitan-break-even-row');if(row)return row;
+  const priceRow=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo(?: di vendita)?:/i.test(clean(r.innerText||r.textContent)));
+  const fee=panel.querySelector('#capitan-margin-break');
+  row=document.createElement('div');row.id='capitan-break-even-row';row.className='row';
+  row.innerHTML='<b>Break Even Price:</b> <span id="capitan-break-even-value">—</span>';
+  const anchor=fee||priceRow;
+  if(anchor)anchor.insertAdjacentElement('afterend',row);else steps.prepend(row);
+  return row
 }
 function breakEvenValueEl(){ensureBreakEvenRow();return panel.querySelector('#capitan-break-even-value')}
 function selectedRows(){return [...results.querySelectorAll('input.capitan-amazon-choice:checked')].map(el=>lastMatches.find(x=>x.asin===el.value)).filter(Boolean)}
