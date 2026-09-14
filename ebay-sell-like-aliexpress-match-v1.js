@@ -128,7 +128,7 @@ function render(list,append=false){
     const url=esc(x.url||('https://www.aliexpress.us/item/'+(x.productId||'')+'.html'));
     const aliImage=clean(x.image||'');
     const aliImg=aliImage
-      ?'<img src="'+esc(aliImage)+'" alt="AliExpress" style="width:72px;height:72px;object-fit:contain;border:1px solid #ddd;border-radius:7px;background:#fff">'
+      ?'<img src="'+esc(aliImage)+'" referrerpolicy="no-referrer" alt="AliExpress" style="width:72px;height:72px;object-fit:contain;border:1px solid #ddd;border-radius:7px;background:#fff">'
       :'<div style="width:72px;height:72px;border:1px solid #ddd;border-radius:7px;display:grid;place-items:center;color:#999">—</div>';
 
     const title=clean(x.title||'');
@@ -148,7 +148,7 @@ function render(list,append=false){
       ? (/^0(?:[.,]0+)?$/.test(shipping)?'Free shipping':shipping)
       : '';
     const line4=[];
-    if(shippingLabel)line4.push('Spedizione: '+esc(shippingLabel));
+    line4.push('Spedizione: '+esc(shippingLabel||'n.d.'));
     if(stock)line4.push('Stock: '+esc(stock));
 
     const info='<div style="min-width:0;line-height:1.15">'+
@@ -229,15 +229,16 @@ findBtn.addEventListener('click',async()=>{
   findBtn.disabled=true;
   status.textContent=searchBatch===0?'Ricerca AliExpress tramite main image eBay…':'Cerco altri risultati AliExpress tramite la stessa immagine…';
   try{
-    const data=await jsonp({batch:String(searchBatch)});
+    const excludeIds=accumulatedMatches.map(x=>String(x&&x.productId||'')).filter(Boolean).join(',');
+    const data=await jsonp({batch:String(searchBatch),excludeIds});
     if(!data||!data.ok)throw Error(data?.error||'Risposta AliExpress non valida');
 
     const before=accumulatedMatches.length;
     render(data.matches||[],searchBatch>0);
     const added=accumulatedMatches.length-before;
 
-    if(data.searchMode==='IMAGE'){
-      status.innerHTML='<span style="color:#137333;font-weight:700">Ricerca per immagine completata.</span> '+
+    if(data.searchMode==='IMAGE'||data.searchMode==='IMAGE_PLUS_TITLE'){
+      status.innerHTML='<span style="color:#137333;font-weight:700">'+(data.searchMode==='IMAGE_PLUS_TITLE'?'Ricerca immagine + nuovi candidati completata.':'Ricerca per immagine completata.')+'</span> '+
         (searchBatch>0?(added?('Aggiunti '+added+' nuovi risultati.'):'Nessun nuovo risultato in questa ricerca.'):'Risultati ottenuti direttamente dalla main image eBay.');
     }else{
       const reason=clean(data.imageSearchError||'errore non specificato');
