@@ -170,7 +170,7 @@ function mergeMatches(list){
   const selected=new Set([...results.querySelectorAll('input.capitan-aliexpress-choice:checked')].map(x=>x.value));
   const map=new Map(lastMatches.map(x=>[aliKey(x),x]));
   (Array.isArray(list)?list:[]).forEach(x=>{const k=aliKey(x);if(k&&!map.has(k))map.set(k,x)});
-  lastMatches=[...map.values()].slice(0,40);
+  lastMatches=[...map.values()].slice(0,100);
   render(lastMatches,selected)
 }
 function aliShippingMeta(x){
@@ -199,7 +199,7 @@ function aliShippingMeta(x){
 }
 
 function render(list,selectedIds){
-  lastMatches=(Array.isArray(list)?list:[]).slice(0,40);
+  lastMatches=(Array.isArray(list)?list:[]).slice(0,100);
   results.innerHTML='';
   if(!lastMatches.length){
     results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match AliExpress trovato.</div>';
