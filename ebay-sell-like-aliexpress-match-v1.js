@@ -183,12 +183,29 @@ function currentEbayTitle(){
   if(candidate)return clean(candidate.value);
   return clean(window.__capitanSellLikeCloneData?.title||'')
 }
-findBtn.addEventListener('click',()=>{
-  const title=currentEbayTitle();
-  if(!title){status.innerHTML='<span style="color:#b42318;font-weight:700">Titolo eBay non trovato.</span>';return}
-  const slug=title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,120);
-  const url='https://www.aliexpress.us/w/wholesale-'+encodeURIComponent(slug)+'.html?SearchText='+encodeURIComponent(title);
-  window.open(url,'_blank','noopener');
-  status.innerHTML='<span style="color:#137333;font-weight:700">Ricerca AliExpress aperta.</span> Titolo eBay inviato direttamente alla SERP.'
+findBtn.addEventListener('click',async()=>{
+  findBtn.disabled=true;
+  status.textContent='Ricerca AliExpress tramite main image eBay…';
+  results.innerHTML='';
+  try{
+    const data=await jsonp();
+    if(!data||!data.ok)throw Error(data?.error||'Risposta AliExpress non valida');
+
+    render(data.matches||[],data.sourceImage||'');
+
+    if(data.searchMode==='IMAGE'){
+      status.innerHTML=lastMatches.length
+        ?'<span style="color:#137333;font-weight:700">Ricerca per immagine completata.</span> Confronta la prima foto eBay con la prima foto AliExpress e poi il prezzo.'
+        :'<span style="color:#a15c00;font-weight:700">Ricerca per immagine completata.</span> Nessun risultato.'
+    }else{
+      status.innerHTML='<span style="color:#a15c00;font-weight:700">Image search non disponibile.</span> Mostrato fallback per titolo.'
+      if(data.imageSearchError)status.title=data.imageSearchError
+    }
+  }catch(e){
+    console.error(e);
+    status.innerHTML='<span style="color:#b42318;font-weight:700">Errore AliExpress:</span> '+esc(e.message||e)
+  }finally{
+    findBtn.disabled=false
+  }
 });
 })();
