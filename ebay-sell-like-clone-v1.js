@@ -7,6 +7,8 @@ const ID='capitan-sell-like-clone';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
 const SOURCE_KEY='capitan-sell-like-last-source-item';
 const SHIPPING_CACHE_KEY='capitan-sell-like-source-shipping-cache-v1';
+const SOURCE_PRICE_CACHE_KEY='capitan-sell-like-source-price-cache-v1';
+const DISCOUNT_KEY='capitan-sell-like-discount-rate-v1';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function shippingCacheRead(){
   try{const x=JSON.parse(localStorage.getItem(SHIPPING_CACHE_KEY)||'{}');return x&&typeof x==='object'?x:{}}catch(_){return{}}
@@ -80,9 +82,55 @@ async function readSourceShippingLabel(sourceItemId){
   try{return await shippingInflight[sourceItemId]}finally{delete shippingInflight[sourceItemId]}
 }
 window.__capitanReadSourceShippingLabel=readSourceShippingLabel;
+function sourcePriceCacheRead(){try{const x=JSON.parse(localStorage.getItem(SOURCE_PRICE_CACHE_KEY)||'{}');return x&&typeof x==='object'?x:{}}catch(_){return{}}}
+function sourcePriceCacheWrite(x){try{localStorage.setItem(SOURCE_PRICE_CACHE_KEY,JSON.stringify(x||{}))}catch(_){}}
+function parseSourcePrice(html){
+  const raw=String(html||'').replace(/\\u0024/gi,'$').replace(/&dollar;|&#36;/gi,'$');
+  if(!raw)return null;
+  const regs=[
+    /["']price["']\s*:\s*["']([0-9]+(?:[.,][0-9]{1,2})?)["']/i,
+    /["']value["']\s*:\s*["']([0-9]+(?:[.,][0-9]{1,2})?)["'][^{}]{0,180}["']currency["']\s*:\s*["']USD["']/i,
+    /["']convertedFromValue["']\s*:\s*["']?([0-9]+(?:[.,][0-9]{1,2})?)/i
+  ];
+  for(const re of regs){const m=raw.match(re);if(m){const n=Number(String(m[1]).replace(',','.'));if(isFinite(n)&&n>0)return n}}
+  try{
+    const doc=new DOMParser().parseFromString(raw,'text/html');
+    const sels=['meta[itemprop="price"]','meta[property="product:price:amount"]','meta[property="og:price:amount"]','[itemprop="price"]'];
+    for(const sel of sels){
+      const el=doc.querySelector(sel);if(!el)continue;
+      const v=el.getAttribute('content')||el.getAttribute('value')||el.textContent||'';
+      const n=Number(String(v).replace(/[^0-9.,]/g,'').replace(',','.'));if(isFinite(n)&&n>0)return n
+    }
+    const txt=String(doc.body?.innerText||'').replace(/\s+/g,' ');
+    const m=txt.match(/(?:US\s*)?\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
+    if(m){const n=Number(String(m[1]).replace(',','.'));if(isFinite(n)&&n>0)return n}
+  }catch(_){}
+  return null
+}
+async function readSourcePrice(sourceItemId){
+  sourceItemId=String(sourceItemId||'').trim();
+  const cache=sourcePriceCacheRead(),hit=cache[sourceItemId];
+  if(hit&&isFinite(Number(hit.price))&&Number(hit.price)>0&&Date.now()-Number(hit.at||0)<12*60*60*1000)return Number(hit.price);
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+  try{
+    const r=await fetch('https://www.ebay.com/itm/'+encodeURIComponent(sourceItemId),{credentials:'include',cache:'no-store',signal:controller.signal});
+    if(!r.ok)throw Error('eBay HTTP '+r.status);
+    const price=parseSourcePrice(await r.text());
+    if(!isFinite(price)||price<=0)throw Error('Prezzo sorgente non riconosciuto');
+    const latest=sourcePriceCacheRead();latest[sourceItemId]={price,at:Date.now()};sourcePriceCacheWrite(latest);
+    return price
+  }finally{clearTimeout(timer)}
+}
+window.__capitanReadSourcePrice=readSourcePrice;
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');
 const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
+function readDiscountLocal(){try{const n=Number(localStorage.getItem(DISCOUNT_KEY));return isFinite(n)&&n>=0&&n<1?n:.02}catch(_){return .02}}
+let currentDiscountRate=readDiscountLocal();
+function setDiscountLocal(v){v=Number(v);if(!isFinite(v)||v<0||v>=1)return false;currentDiscountRate=v;try{localStorage.setItem(DISCOUNT_KEY,String(v))}catch(_){}return true}
+function targetFromSource(source){source=Number(source);return isFinite(source)&&source>0?Math.round(source*(1-currentDiscountRate)*100)/100:null}
+function discountLabel(){const n=Math.round(currentDiscountRate*10000)/100;return Number.isInteger(n)?String(n):String(n).replace('.',',')}
+function operationalLog(message,state='ok'){if(typeof window.__capitanTestLog==='function')window.__capitanTestLog(message,state);else{window.__capitanPendingTestLogs=window.__capitanPendingTestLogs||[];window.__capitanPendingTestLogs.push({message:String(message||''),state})}}
 function idFromTrustedText(v){const s=String(v||'');for(const re of[/[?&](?:itemId|itemid|sourceItemId|originalItemId)=(\d{9,12})/i,/\/itm\/(?:[^/?#]+\/)?(\d{9,12})(?:[/?#]|$)/i]){const m=s.match(re);if(m)return m[1]}return''}
 function idFromManual(v){const s=String(v||'');return idFromTrustedText(s)||((s.match(/\b(\d{9,12})\b/)||[])[1]||'')}
 function detectSourceItemId(){const u=new URL(location.href);for(const k of['itemId','itemid','sourceItemId','originalItemId']){const v=u.searchParams.get(k);if(/^\d{9,12}$/.test(String(v||'')))return String(v)}let id=idFromTrustedText(location.href);if(id)return id;id=idFromTrustedText(document.referrer);if(id)return id;return''}
@@ -205,7 +253,7 @@ function dataFromPreflight(pre){
     categoryName:clean(pre.categoryName||''),
     aspects:pre.aspects||{},
     sourcePrice:isFinite(source)&&source>0?source:null,
-    targetPrice:isFinite(target)&&target>0?target:(isFinite(source)&&source>0?Math.round(source*.98*100)/100:null),
+    targetPrice:isFinite(source)&&source>0?targetFromSource(source):(isFinite(target)&&target>0?target:null),
     quantity:3,
     condition:'New',
     images,
@@ -216,10 +264,22 @@ function dataFromPreflight(pre){
   }
 }
 async function initialNonAiData(){
+  try{
+    const ep=endpoint();
+    if(ep){const pricing=await jsonpAction(ep,'sell_like_pricing_get',{},25000);const dr=Number(pricing&&pricing.rates&&pricing.rates.discountRate);if(isFinite(dr)&&dr>=0&&dr<1)setDiscountLocal(dr)}
+  }catch(e){console.warn('Discount pricing preload',e)}
   let mi=null;
   try{mi=window.__capitanSellLikeModePromise?await Promise.race([window.__capitanSellLikeModePromise,sleep(12000).then(()=>null)]):null}catch(_){}
   const pre=(mi&&mi.data&&mi.data.ok?mi.data:null)||(window.__capitanSellLikePreflight&&window.__capitanSellLikePreflight.ok?window.__capitanSellLikePreflight:null);
-  return {mode:(mi&&mi.mode==='variants')||(pre&&pre.hasVariations)?'variants':'mono',data:dataFromPreflight(pre)}
+  const data=dataFromPreflight(pre);
+  if(!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0){
+    try{data.sourcePrice=await readSourcePrice(itemId)}catch(e){console.warn('Source price fallback',e)}
+  }
+  if(isFinite(Number(data.sourcePrice))&&Number(data.sourcePrice)>0){
+    window.__capitanSellLikeSourcePrice=Number(data.sourcePrice);
+    data.targetPrice=targetFromSource(data.sourcePrice)
+  }
+  return {mode:(mi&&mi.mode==='variants')||(pre&&pre.hasVariations)?'variants':'mono',data}
 }
 async function ensurePreviewFullData(){
   if(previewReady)return true;
@@ -241,6 +301,10 @@ async function ensurePreviewFullData(){
       }catch(aiErr){console.warn('Sell Like Preview AI retry',aiErr)}
     }
     if(data.aiFallback||!clean(data.descriptionHtml))throw Error('Template AI-HTML non disponibile: Preview non avviata.');
+    let fullSource=Number(data.sourcePrice);
+    if(!isFinite(fullSource)||fullSource<=0)fullSource=Number(window.__capitanSellLikeSourcePrice);
+    if(!isFinite(fullSource)||fullSource<=0){try{fullSource=await readSourcePrice(itemId)}catch(_){}}
+    if(isFinite(fullSource)&&fullSource>0){data.sourcePrice=fullSource;window.__capitanSellLikeSourcePrice=fullSource;data.targetPrice=targetFromSource(fullSource)}
 
     window.__capitanSellLikeCloneData=data;
     try{localStorage.setItem('capitan-sell-like-clone-data-v1',JSON.stringify(data))}catch(_){}
@@ -251,7 +315,7 @@ async function ensurePreviewFullData(){
       if(isFinite(sale)&&sale>0){
         window.__capitanSellLikeSalePrice=sale;
         const ok=setPrice(sale);
-        setStep('Prezzo',ok?'ok':'warn',ok?sale.toFixed(2)+' (-2%)':'campo non trovato')
+        setStep('Prezzo',ok?'ok':'warn',ok?sale.toFixed(2)+' (-'+discountLabel()+'%)':'campo non trovato')
       }
       const q=Number(data.quantity||3);
       const qtyOk=setQuantity(q);
@@ -278,9 +342,9 @@ async function ensurePreviewFullData(){
         try{
           const n=await uploadImages(imgs);
           uploadedImageSignature=sig;
-          setStep('Foto','ok',n+'/'+imgs.length+' inviate all’uploader eBay')
+          operationalLog('Foto: '+n+'/'+imgs.length+' caricate su eBay','ok')
         }catch(imgErr){
-          setStep('Foto','warn',imgErr.message+' — verifica manualmente');
+          operationalLog('Foto: '+imgErr.message+' — verifica manualmente','bad');
           throw imgErr
         }
       }
@@ -297,6 +361,20 @@ async function ensurePreviewFullData(){
 }
 window.__capitanPrepareAiForPreview=ensurePreviewFullData;
 window.__capitanEnsureAiTemplate=ensurePreviewFullData;
+window.addEventListener('capitan-discount-updated',e=>{
+  const dr=Number(e&&e.detail&&e.detail.discountRate);
+  if(!setDiscountLocal(dr))return;
+  const data=window.__capitanSellLikeCloneData||{};
+  const source=Number(data.sourcePrice||window.__capitanSellLikeSourcePrice);
+  if(!isFinite(source)||source<=0)return;
+  const sale=targetFromSource(source);
+  data.sourcePrice=source;data.targetPrice=sale;
+  window.__capitanSellLikeSourcePrice=source;window.__capitanSellLikeSalePrice=sale;window.__capitanSellLikeCloneData=data;
+  try{localStorage.setItem('capitan-sell-like-clone-data-v1',JSON.stringify(data))}catch(_){}
+  const ok=setPrice(sale);setStep('Prezzo',ok?'ok':'warn',ok?sale.toFixed(2)+' (-'+discountLabel()+'%)':'campo non trovato');
+  try{window.dispatchEvent(new CustomEvent('capitan-sale-price-updated',{detail:{value:sale,sourcePrice:source,discountRate:currentDiscountRate}}))}catch(_){}
+  operationalLog('Riduzione prezzo aggiornata a '+discountLabel()+'% · nuovo prezzo '+sale.toFixed(2)+' USD','ok')
+});
 
 try{
   const ep=endpoint();if(!ep)throw Error('URL backend mancante.');
@@ -313,8 +391,9 @@ try{
     if(isFinite(sale)&&sale>0){
       window.__capitanSellLikeSalePrice=sale;
       const priceOk=setPrice(sale);
-      setStep('Prezzo',priceOk?'ok':'warn',priceOk?sale.toFixed(2)+' (-2%)':'campo non trovato')
-    }else setStep('Prezzo','warn','in attesa di Preview');
+      setStep('Prezzo',priceOk?'ok':'warn',priceOk?sale.toFixed(2)+' (-'+discountLabel()+'%)':'campo non trovato');
+      try{window.dispatchEvent(new CustomEvent('capitan-sale-price-updated',{detail:{value:sale,sourcePrice:Number(data.sourcePrice),discountRate:currentDiscountRate}}))}catch(_){}
+    }else setStep('Prezzo','warn','prezzo sorgente non disponibile');
     const qtyOk=setQuantity(3);
     setStep('Quantità',qtyOk?'ok':'warn',qtyOk?'3':'campo non trovato')
   }else setStep('Quantità','ok','3');
@@ -334,9 +413,9 @@ try{
     try{
       const n=await uploadImages(data.images);
       uploadedImageSignature=data.images.join('|');
-      setStep('Foto','ok',n+'/'+data.images.length+' inviate all’uploader eBay')
-    }catch(imgErr){setStep('Foto','warn',imgErr.message+' — verrà ritentato prima della Preview')}
-  }else setStep('Foto','warn','in attesa di Preview');
+      operationalLog('Foto: '+n+'/'+data.images.length+' caricate su eBay','ok')
+    }catch(imgErr){operationalLog('Foto: '+imgErr.message+' — ritento prima della Preview','warn')}
+  }else operationalLog('Foto: nessuna immagine disponibile nella preparazione iniziale; ritento in Preview','warn');
 
   setStep('Policy','ok','non modificate');
   setStep('Pubblicazione','ok','List it lasciato manuale');
