@@ -137,9 +137,9 @@ window.__capitanReadSourcePrice=readSourcePrice;
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');
 const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
-function readDiscountLocal(){try{const n=Number(localStorage.getItem(DISCOUNT_KEY));return isFinite(n)&&n>=0&&n<1?n:.02}catch(_){return .02}}
+function readDiscountLocal(){try{const n=Number(localStorage.getItem(DISCOUNT_KEY));return isFinite(n)&&n>-10&&n<1?n:.02}catch(_){return .02}}
 let currentDiscountRate=readDiscountLocal();
-function setDiscountLocal(v){v=Number(v);if(!isFinite(v)||v<0||v>=1)return false;currentDiscountRate=v;try{localStorage.setItem(DISCOUNT_KEY,String(v))}catch(_){}return true}
+function setDiscountLocal(v){v=Number(v);if(!isFinite(v)||v<=-10||v>=1)return false;currentDiscountRate=v;try{localStorage.setItem(DISCOUNT_KEY,String(v))}catch(_){}return true}
 function targetFromSource(source){source=Number(source);return isFinite(source)&&source>0?Math.round(source*(1-currentDiscountRate)*100)/100:null}
 function discountLabel(){const n=Math.round(currentDiscountRate*10000)/100;return Number.isInteger(n)?String(n):String(n).replace('.',',')}
 function operationalLog(message,state='ok'){if(typeof window.__capitanTestLog==='function')window.__capitanTestLog(message,state);else{window.__capitanPendingTestLogs=window.__capitanPendingTestLogs||[];window.__capitanPendingTestLogs.push({message:String(message||''),state})}}
@@ -160,7 +160,7 @@ if(!/^\d{9,12}$/.test(itemId)){
 localStorage.setItem(SOURCE_KEY,itemId);window.__capitanSellLikeSourceItemId=itemId;try{window.dispatchEvent(new CustomEvent('capitan-source-item-ready',{detail:{itemId}}))}catch(_){}
 document.getElementById(ID)?.remove();
 const style=document.createElement('style');
-style.textContent=`#${ID}{position:fixed;top:12px;right:12px;z-index:2147483647;width:500px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto;background:#fff;color:#111;border:1px solid #bbb;border-radius:12px;box-shadow:0 12px 40px #0004;font:13px Arial,sans-serif}#${ID} *{box-sizing:border-box}#${ID} .h{display:flex;justify-content:flex-start;align-items:center;gap:10px;padding:12px 92px 12px 14px;border-bottom:1px solid #ddd;font-weight:700;font-size:16px;min-height:54px}#${ID} .title{font-weight:700;font-size:16px;line-height:1.2;white-space:nowrap}#${ID} #capitan-process-timer{min-width:75px;text-align:center;padding:0;border:1px solid #b9b9b9;border-radius:8px;background:#fff;color:#333;font:700 11px/28px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:0;box-sizing:border-box}#${ID} .brand{padding:12px 14px 0}#${ID} .brand img{display:block;max-width:100%;height:auto;max-height:56px}#${ID} .b{padding:12px 14px}#${ID} .row{padding:7px 0;border-bottom:1px solid #eee}#${ID} .ok{color:#137333;font-weight:700}#${ID} .warn{color:#b06000;font-weight:700}#${ID} .bad{color:#b3261e;font-weight:700}#${ID} .muted{color:#666}#${ID} button{padding:7px 10px;border:1px solid #aaa;border-radius:7px;background:#fff;cursor:pointer}`;
+style.textContent=`#${ID}{position:fixed;top:12px;right:12px;z-index:2147483647;width:500px;max-width:none;max-height:calc(100vh - 24px);overflow:auto;background:#fff;color:#111;border:1px solid #bbb;border-radius:12px;box-shadow:0 12px 40px #0004;font:13px Arial,sans-serif}#${ID} *{box-sizing:border-box}#${ID} .h{display:flex;justify-content:flex-start;align-items:center;gap:10px;padding:12px 92px 12px 14px;border-bottom:1px solid #ddd;font-weight:700;font-size:16px;min-height:54px}#${ID} .title{font-weight:700;font-size:16px;line-height:1.2;white-space:nowrap}#${ID} #capitan-process-timer{min-width:75px;text-align:center;padding:0;border:1px solid #b9b9b9;border-radius:8px;background:#fff;color:#333;font:700 11px/28px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:0;box-sizing:border-box}#${ID} .brand{padding:12px 14px 0}#${ID} .brand img{display:block;max-width:100%;height:auto;max-height:56px}#${ID} .b{padding:12px 14px}#${ID} .row{padding:7px 0;border-bottom:1px solid #eee}#${ID} .ok{color:#137333;font-weight:700}#${ID} .warn{color:#b06000;font-weight:700}#${ID} .bad{color:#b3261e;font-weight:700}#${ID} .muted{color:#666}#${ID} button{padding:7px 10px;border:1px solid #aaa;border-radius:7px;background:#fff;cursor:pointer}`;
 document.head.appendChild(style);
 const panel=document.createElement('div');panel.id=ID;panel.innerHTML=`<div class="brand"><img src="${LOGO_SRC}" alt="Dropper Analytics"></div><div class="h"><span class="title">Sell Like This ${V}</span><span id="capitan-process-timer" title="Tempo di preparazione">00:00</span><button data-close>×</button></div><div class="b"><div class="row"><b>Source Item ID:</b> ${esc(itemId)}</div><div class="row" id="st">Preparazione…</div><div id="steps"></div></div>`;document.body.appendChild(panel);
 const processTimerEl=panel.querySelector('#capitan-process-timer');
@@ -279,7 +279,7 @@ function dataFromPreflight(pre){
 async function initialNonAiData(){
   try{
     const ep=endpoint();
-    if(ep){const pricing=await jsonpAction(ep,'sell_like_pricing_get',{},25000);const dr=Number(pricing&&pricing.rates&&pricing.rates.discountRate);if(isFinite(dr)&&dr>=0&&dr<1)setDiscountLocal(dr)}
+    if(ep){const pricing=await jsonpAction(ep,'sell_like_pricing_get',{},25000);const dr=Number(pricing&&pricing.rates&&pricing.rates.discountRate);if(isFinite(dr)&&dr>-10&&dr<1)setDiscountLocal(dr)}
   }catch(e){console.warn('Discount pricing preload',e)}
   let mi=null;
   try{mi=window.__capitanSellLikeModePromise?await Promise.race([window.__capitanSellLikeModePromise,sleep(12000).then(()=>null)]):null}catch(_){}
