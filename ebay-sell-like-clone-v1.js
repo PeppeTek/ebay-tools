@@ -170,6 +170,7 @@ function labelControl(re){for(const l of document.querySelectorAll('label')){con
 function candidates(sel,re){return [...document.querySelectorAll(sel)].filter(e=>!e.disabled).sort((a,b)=>(visible(b)?1:0)-(visible(a)?1:0)).find(e=>re.test(clean([e.name,e.id,e.getAttribute('aria-label'),e.placeholder].join(' '))))||null}
 function nativeSet(el,value){if(!el)return false;const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const set=Object.getOwnPropertyDescriptor(proto,'value')?.set;set?set.call(el,String(value)):el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));el.blur?.();return true}
 function setPrice(v){const el=labelControl(/^(price|buy it now price|fixed price)$/i)||candidates('input',/(^|\b)(price|binprice|startprice)(\b|$)/i);return !!(el&&nativeSet(el,Number(v).toFixed(2)))}
+function readEditorPrice(){const el=labelControl(/^(price|buy it now price|fixed price)$/i)||candidates('input',/(^|\b)(price|binprice|startprice)(\b|$)/i);if(!el)return null;const n=Number(String(el.value||el.getAttribute('value')||'').replace(/[^0-9.,]/g,'').replace(',','.'));return isFinite(n)&&n>0?n:null}
 function setQuantity(v){const el=labelControl(/^quantity$/i)||candidates('input',/(^|\b)(quantity|qty)(\b|$)/i);return !!(el&&nativeSet(el,String(v)))}
 function setItemLocation(v){v=clean(v);if(!v)return false;let el=labelControl(/^(item location|located in|location)$/i)||candidates('input,textarea',/(item.?location|located.?in|location)/i);if(el&&nativeSet(el,v))return true;const sections=[...document.querySelectorAll('section,div')].filter(x=>/item location|located in/i.test(clean(x.querySelector('h2,h3,label,legend')?.textContent||''))&&clean(x.innerText).length<2000);for(const sec of sections){el=sec.querySelector('input,textarea');if(el&&nativeSet(el,v))return true}return false}
 async function setConditionNew(){const c=labelControl(/condition/i)||candidates('select,[role="combobox"]',/condition/i);if(c&&c.tagName==='SELECT'){const o=[...c.options].find(o=>/^new$/i.test(clean(o.textContent))||/^1000$/.test(String(o.value)));if(o){c.value=o.value;c.dispatchEvent(new Event('change',{bubbles:true}));return true}}const section=[...document.querySelectorAll('section,div')].find(x=>/\bcondition\b/i.test(clean(x.querySelector('h2,h3,label')?.textContent||''))&&clean(x.innerText).length<1500);if(section){const btn=[...section.querySelectorAll('button,[role="option"],[role="radio"]')].find(x=>/^new$/i.test(clean(x.innerText||x.textContent)));if(btn){btn.click();await sleep(300);return true}}return false}
@@ -273,7 +274,9 @@ async function initialNonAiData(){
   const pre=(mi&&mi.data&&mi.data.ok?mi.data:null)||(window.__capitanSellLikePreflight&&window.__capitanSellLikePreflight.ok?window.__capitanSellLikePreflight:null);
   const data=dataFromPreflight(pre);
   if(!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0){
-    try{data.sourcePrice=await readSourcePrice(itemId)}catch(e){console.warn('Source price fallback',e)}
+    const editorPrice=readEditorPrice();
+    if(isFinite(editorPrice)&&editorPrice>0)data.sourcePrice=editorPrice;
+    else try{data.sourcePrice=await readSourcePrice(itemId)}catch(e){console.warn('Source price fallback',e)}
   }
   if(isFinite(Number(data.sourcePrice))&&Number(data.sourcePrice)>0){
     window.__capitanSellLikeSourcePrice=Number(data.sourcePrice);
