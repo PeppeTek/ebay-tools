@@ -109,14 +109,29 @@ function render(list){
 
   lastMatches.forEach((x,i)=>{
     const r=document.createElement('label');
-    r.style.cssText='display:grid;grid-template-columns:24px 64px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 8px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px';
+    r.style.cssText='display:grid;grid-template-columns:24px 72px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 8px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px;min-height:78px';
     const price=x.price==null||x.price===''?'—':Number(x.price).toFixed(2)+' '+esc(x.currency||'USD');
     const url=esc(x.url||('https://www.aliexpress.us/item/'+(x.productId||'')+'.html'));
     const aliImage=clean(x.image||'');
     const aliImg=aliImage
-      ?'<img src="'+esc(aliImage)+'" alt="AliExpress" style="width:64px;height:64px;object-fit:contain;border:1px solid #ddd;border-radius:7px;background:#fff">'
-      :'<div style="width:64px;height:64px;border:1px solid #ddd;border-radius:7px;display:grid;place-items:center;color:#999">—</div>';
-    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(i===0?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747">'+aliImg+'<a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>'+esc(x.productId||'')+'</b></a><span style="white-space:nowrap">'+price+'</span>';
+      ?'<img src="'+esc(aliImage)+'" alt="AliExpress" style="width:72px;height:72px;object-fit:contain;border:1px solid #ddd;border-radius:7px;background:#fff">'
+      :'<div style="width:72px;height:72px;border:1px solid #ddd;border-radius:7px;display:grid;place-items:center;color:#999">—</div>';
+
+    const title=clean(x.title||'');
+    const shortTitle=title.length>82?title.slice(0,79)+'…':title;
+    const meta=[];
+    if(clean(x.orders||''))meta.push('Venduti: '+esc(x.orders));
+    if(clean(x.stock||''))meta.push('Stock: '+esc(x.stock));
+    if(clean(x.shipping||''))meta.push('Sped.: '+esc(x.shipping));
+    if(clean(x.delivery||''))meta.push('Consegna: '+esc(x.delivery));
+
+    const info='<div style="min-width:0;line-height:1.25">'+
+      '<a href="'+url+'" target="_blank" rel="noopener" style="display:block;color:#111;text-decoration:none;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(shortTitle||x.productId||'')+'</a>'+
+      '<div style="margin-top:3px;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.productId||'')+'</div>'+
+      (meta.length?'<div style="margin-top:3px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+meta.join(' · ')+'</div>':'')+
+      '</div>';
+
+    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(i===0?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747">'+aliImg+info+'<span style="white-space:nowrap;font-weight:700">'+price+'</span>';
     box.appendChild(r)
   });
   results.appendChild(box)
