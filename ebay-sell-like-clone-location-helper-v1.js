@@ -28,7 +28,31 @@ function patchUi(){
     box.style.cssText='padding:12px 14px;border-top:1px solid #ddd;display:grid;gap:8px;background:#fff;position:sticky;bottom:0;';
     box.innerHTML='<div data-amazon-actions-slot style="display:grid;grid-template-columns:1fr 1fr;gap:4px"></div><button data-ebay-action="list" style="height:44px;border:0;border-radius:24px;background:#1668e8;color:#fff;font-weight:700;font-size:14px;">List it</button><div data-ebay-secondary-pair style="display:grid;grid-template-columns:1fr 1fr;gap:4px"><button data-ebay-action="save" style="height:42px;border:1px solid #111;border-radius:22px 0 0 22px;background:#fff;color:#111;font-size:14px;">Save for later</button><button data-ebay-action="preview" style="height:42px;border:1px solid #111;border-radius:0 22px 22px 0;background:#f1f3f4;color:#111;font-size:14px;">Preview</button></div>';
     p.appendChild(box);
-    box.addEventListener('click',e=>{const b=e.target.closest('button[data-ebay-action]');if(!b)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const kind=b.dataset.ebayAction;if(kind==='csv'){if(typeof window.__capitanDownloadVariantCsv==='function')window.__capitanDownloadVariantCsv();else alert('CSV varianti non ancora pronto.');return}triggerNativeAction(kind);},true);
+    box.addEventListener('click',async e=>{const b=e.target.closest('button[data-ebay-action]');if(!b)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const kind=b.dataset.ebayAction;
+      if(kind==='save'){triggerNativeAction(kind);return}
+      if(kind==='list'||kind==='preview'||kind==='csv'){
+        const oldText=b.textContent;b.disabled=true;
+        try{
+          if(typeof window.__capitanEnsureAiDescription==='function'){
+            b.textContent='Preparo descrizione…';
+            await window.__capitanEnsureAiDescription()
+          }
+          if(kind==='csv'){
+            if(typeof window.__capitanDownloadVariantCsv==='function')await window.__capitanDownloadVariantCsv();
+            else alert('CSV varianti non ancora pronto.');
+          }else{
+            triggerNativeAction(kind)
+          }
+        }catch(err){
+          console.warn('Lazy AI before action',err);
+          if(typeof window.__capitanLog==='function')window.__capitanLog('Descrizione non completata: '+String(err&&err.message||err),'warn')
+        }finally{
+          b.disabled=false;b.textContent=oldText
+        }
+        return
+      }
+      triggerNativeAction(kind)
+    },true);
   }
 
   // Move the completion message to the bottom, immediately before the action buttons.
