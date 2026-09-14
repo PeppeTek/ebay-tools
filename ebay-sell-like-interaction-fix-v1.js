@@ -8,7 +8,7 @@ const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.disp
 const panel=document.getElementById(PANEL_ID);if(!panel)return;
 
 function actionButtons(){
-  return [...panel.querySelectorAll('[data-ebay-actions] button,#capitan-amazon-insert,#capitan-amazon-find')];
+  return [...panel.querySelectorAll('[data-ebay-actions] button,#capitan-amazon-best-match,#capitan-aliexpress-best-match,#capitan-amazon-find,#capitan-aliexpress-find')];
 }
 function normalize(){
   panel.style.pointerEvents='auto';
