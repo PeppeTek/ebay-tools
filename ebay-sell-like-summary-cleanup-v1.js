@@ -30,7 +30,7 @@ async function persistDiscount(){
 function numericDiscountInput(v){return Number(String(v??'').replace('%','').replace(',','.').trim())}
 function applyDiscountPct(v,persist){
   const pct=numericDiscountInput(v);
-  if(!isFinite(pct)||pct<0||pct>=100)return false;
+  if(!isFinite(pct)||pct<=-1000||pct>=100)return false;
   discountRate=pct/100;emitDiscount();cleanup();if(persist)persistDiscount();return true
 }
 function formatDiscountField(){return String(discountNumber()).replace('.',',')+'%'}
@@ -53,8 +53,8 @@ function cleanup(){
     discountRow=document.createElement('div');
     discountRow.id='capitan-discount-row';
     discountRow.className='row';
-    discountRow.style.cssText='display:flex;align-items:center;gap:8px';
-    discountRow.innerHTML='<b>Riduzione prezzo rispetto alla concorrenza:</b><input id="capitan-discount-manual" type="text" inputmode="decimal" aria-label="Riduzione prezzo percentuale" placeholder="%" style="margin-left:auto;width:82px;height:28px;box-sizing:border-box;border:1px solid #b7b7b7;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111">';
+    discountRow.style.cssText='display:grid;grid-template-columns:minmax(0,1fr) 82px 104px;align-items:center;gap:8px;min-height:38px';
+    discountRow.innerHTML='<b>Riduzione prezzo rispetto alla concorrenza:</b><input id="capitan-discount-manual" type="text" inputmode="decimal" aria-label="Riduzione prezzo percentuale" placeholder="%" style="width:82px;height:28px;box-sizing:border-box;border:1px solid #b7b7b7;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111"><span id="capitan-competitor-price" style="justify-self:end;text-align:right;white-space:nowrap;color:#7a1f2b;font-weight:700">—</span>';
     sourceRow.insertAdjacentElement('afterend',discountRow);
     const input=discountRow.querySelector('#capitan-discount-manual');
     input.value=formatDiscountField();
@@ -67,6 +67,12 @@ function cleanup(){
   }else if(discountRow){
     const input=discountRow.querySelector('#capitan-discount-manual');
     if(input&&document.activeElement!==input)input.value=formatDiscountField();
+  }
+
+  const competitor=p.querySelector('#capitan-competitor-price');
+  if(competitor){
+    const source=Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice);
+    competitor.textContent=isFinite(source)&&source>0?source.toFixed(2)+' USD':'—';
   }
 
   // Sale-price row: percentage is no longer repeated in the label/value.
@@ -102,12 +108,12 @@ let n=0;const t=setInterval(()=>{n++;cleanup();if(n>120)clearInterval(t)},125);
 window.addEventListener('capitan-break-even-updated',cleanup);
 window.addEventListener('capitan-pricing-saved',e=>{
   const dr=Number(e.detail?.rates?.discountRate);
-  if(isFinite(dr)&&dr>=0&&dr<1)discountRate=dr;
+  if(isFinite(dr)&&dr>-10&&dr<1)discountRate=dr;
   emitDiscount();cleanup()
 });
 window.addEventListener('capitan-discount-reverse-updated',e=>{
   const dr=Number(e.detail?.discountRate);
-  if(!isFinite(dr)||dr<0||dr>=1)return;
+  if(!isFinite(dr)||dr<=-10||dr>=1)return;
   discountRate=dr;storeDiscount();cleanup();
   clearTimeout(reverseSaveTimer);reverseSaveTimer=setTimeout(()=>persistDiscount(),700)
 });
@@ -115,12 +121,12 @@ cleanup();
 (async()=>{try{
   const d=await jsonpAction('sell_like_pricing_get');
   const remote=Number(d?.rates?.discountRate),local=Number(localStorage.getItem(DISCOUNT_KEY));
-  if(d&&d.ok&&isFinite(remote)&&remote>=0&&remote<1)discountRate=remote;
-  else if(isFinite(local)&&local>=0&&local<1)discountRate=local;
+  if(d&&d.ok&&isFinite(remote)&&remote>-10&&remote<1)discountRate=remote;
+  else if(isFinite(local)&&local>-10&&local<1)discountRate=local;
   else discountRate=.02
 }catch(e){
   console.warn('Sell Like discount load',e);
-  try{const local=Number(localStorage.getItem(DISCOUNT_KEY));discountRate=isFinite(local)&&local>=0&&local<1?local:.02}catch(_){discountRate=.02}
+  try{const local=Number(localStorage.getItem(DISCOUNT_KEY));discountRate=isFinite(local)&&local>-10&&local<1?local:.02}catch(_){discountRate=.02}
 }
 emitDiscount();cleanup()})();
 })();
