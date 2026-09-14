@@ -135,7 +135,9 @@ function currentCategoryId(){
   return m?m[1]:''
 }
 function categoryTaxonomyEndpoint(){
-  const u=clean(localStorage.getItem(CATEGORY_TAXONOMY_ENDPOINT_KEY)||'').replace(/\/+$/,'');
+  let u=clean(window.__capitanSellLikeBackendEndpoint||'').replace(/\/+$/,'');
+  if(/^https:\/\/script\.google\.com\/macros\/s\//i.test(u))return u;
+  try{u=clean(localStorage.getItem(CATEGORY_TAXONOMY_ENDPOINT_KEY)||'').replace(/\/+$/,'')}catch(_){u=''}
   return /^https:\/\/script\.google\.com\/macros\/s\//i.test(u)?u:''
 }
 function taxonomyCategoryLookup(categoryId){
