@@ -2,7 +2,7 @@ javascript:(()=>{
 'use strict';
 const PANEL_ID='capitan-sell-like-clone';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
-const AMAZON_MATCH_ENDPOINT='https://script.google.com/macros/s/AKfycbxPSCamhPhs1fvkikx0KyJFk6wfJDCxC2XqaBbRqDIqOrLN9D_QibphbRB8QenovCY5/exec';
+const AMAZON_MATCH_ENDPOINT=String(window.__capitanSellLikeBackendEndpoint||'').replace(/\/+$/,'');
 const AMAZON_MAX_NEGATIVE_MARGIN=2;
 const EXT_ID='capitan-amazon-match-ext';
 const MODAL_ID='capitan-pricing-modal';
@@ -32,7 +32,7 @@ const status=wrap.querySelector('#capitan-amazon-status'),results=wrap.querySele
 let lastMatches=[];
 let pricingRates={ebayFee:.136,internationalFee:.016,marketingFee:.02,vatOnFees:.22,salesTaxEstimate:.06,fixedFee:.40};
 
-function endpoint(){return (localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}
+function endpoint(){let u=String(window.__capitanSellLikeBackendEndpoint||'').trim();if(u)return u.replace(/\/+$/,'');try{return (localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}catch(_){return''}}
 function jsonpAction(action,params){const ep=action==='amazon_match'?AMAZON_MATCH_ENDPOINT:endpoint();return new Promise((resolve,reject)=>{if(!ep)return reject(Error('Endpoint Apps Script non configurato'));const cb='__capitanCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),90000);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:Date.now().toString(),...(params||{})});s.src=ep+(ep.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
 
 function ensureBreakEvenRow(){
