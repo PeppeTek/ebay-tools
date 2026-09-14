@@ -96,7 +96,7 @@ function selectedRows(){
 }
 function selectedProductIds(){return selectedRows().map(x=>x.productId).filter(Boolean)}
 
-function render(list){
+function render(list,sourceImage){
   lastMatches=(Array.isArray(list)?list:[]).slice(0,10);
   results.innerHTML='';
   if(!lastMatches.length){
@@ -104,14 +104,19 @@ function render(list){
     return
   }
 
+  const source=clean(sourceImage||window.__capitanSellLikeCloneData?.images?.[0]||window.__capitanSellLikeCloneData?.mainImage||'');
   const box=document.createElement('div');
   box.style.cssText='margin-top:8px;border:1px solid #ddd;border-radius:8px;overflow:hidden';
+
   lastMatches.forEach((x,i)=>{
     const r=document.createElement('label');
-    r.style.cssText='display:grid;grid-template-columns:24px 1fr auto;gap:8px;align-items:center;padding:8px 9px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px';
+    r.style.cssText='display:grid;grid-template-columns:24px 72px 18px 72px 1fr auto;gap:8px;align-items:center;padding:8px 9px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px';
     const price=x.price==null||x.price===''?'—':Number(x.price).toFixed(2)+' '+esc(x.currency||'USD');
     const url=esc(x.url||('https://www.aliexpress.us/item/'+(x.productId||'')+'.html'));
-    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(i===0?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none"><b>'+esc(x.productId||'')+'</b></a><span>'+price+'</span>';
+    const aliImage=clean(x.image||'');
+    const sourceImg=source?'<img src="'+esc(source)+'" alt="eBay" style="width:72px;height:72px;object-fit:contain;border:1px solid #ddd;border-radius:7px;background:#fff">':'<div style="width:72px;height:72px;border:1px solid #ddd;border-radius:7px;display:grid;place-items:center;color:#999">—</div>';
+    const aliImg=aliImage?'<img src="'+esc(aliImage)+'" alt="AliExpress" style="width:72px;height:72px;object-fit:contain;border:1px solid #ddd;border-radius:7px;background:#fff">':'<div style="width:72px;height:72px;border:1px solid #ddd;border-radius:7px;display:grid;place-items:center;color:#999">—</div>';
+    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(i===0?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747">'+sourceImg+'<span style="text-align:center;color:#999">→</span>'+aliImg+'<a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none"><b>'+esc(x.productId||'')+'</b></a><span style="white-space:nowrap">'+price+'</span>';
     box.appendChild(r)
   });
   results.appendChild(box)
@@ -169,7 +174,7 @@ findBtn.addEventListener('click',async()=>{
   try{
     const data=await jsonp();
     if(!data||!data.ok)throw Error(data?.error||'Risposta AliExpress non valida');
-    render(data.matches||[]);
+    render(data.matches||[],data.sourceImage||'');
     status.innerHTML=lastMatches.length
       ?'<span style="color:#137333;font-weight:700">Match AliExpress completato.</span> Risultati ordinati con la logica EBAY_IMPORT.'
       :'<span style="color:#a15c00;font-weight:700">Ricerca completata.</span> Nessun match AliExpress trovato.'
