@@ -119,7 +119,11 @@ function cardTotal(x){
   return Math.round((base+(isFinite(parsed)?parsed:0))*100)/100
 }
 function render(list,append=false){
-  const incoming=Array.isArray(list)?list:[];
+  const incoming=(Array.isArray(list)?list:[]).filter(x=>{
+    const hasImage=!!clean(x&&x.image||'');
+    const hasShipping=!!clean(x&&x.shipping||'');
+    return hasImage&&hasShipping
+  });
   if(!append)accumulatedMatches=[];
 
   const existingIds=new Set(accumulatedMatches.map(x=>String(x&&x.productId||'')));
@@ -163,7 +167,7 @@ function render(list,append=false){
     const shipping=clean(x.shipping||'');
     const stock=clean(x.stock||'');
 
-    const shippingLabel=shipping || 'Spedizione non recuperata';
+    const shippingLabel=shipping;
     const meta1=[];
     if(sold)meta1.push('Venduti: '+esc(sold));
     if(delivery)meta1.push('Consegna: '+esc(delivery));
