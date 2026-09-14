@@ -12,6 +12,7 @@ let panel=null,logBody=null,alertChip=null;
 const lastStatus=new Map();
 const logSeen=new Set();
 let warnCount=0;
+const pendingLogs=[];
 
 function now(){
   try{return new Intl.DateTimeFormat('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date())}
@@ -51,19 +52,34 @@ function ensureLog(){
   logBody=box.querySelector('#capitan-oplog-body');
   return !!logBody
 }
-function log(msg,level='info'){
-  msg=clean(msg);if(!msg)return;
-  const key=level+'|'+msg;
-  if(logSeen.has(key))return;
-  logSeen.add(key);
-  if(logSeen.size>160){const first=logSeen.values().next().value;logSeen.delete(first)}
-  if(!ensureLog())return;
+function writeLog(msg,level){
+  if(!ensureLog())return false;
   const row=document.createElement('div');
   row.style.cssText='display:grid;grid-template-columns:72px 1fr;gap:0;padding:3px 7px;border-bottom:1px solid #eee;color:'+levelColor(level);
   row.innerHTML='<span>'+esc(now())+'</span><span>'+esc(msg)+'</span>';
   logBody.appendChild(row);
   logBody.scrollTop=logBody.scrollHeight;
-  if(level==='warn'||level==='bad')markAlert()
+  if(level==='warn'||level==='bad')markAlert();
+  return true
+}
+function flushPending(){
+  if(!ensureLog())return;
+  while(pendingLogs.length){
+    const x=pendingLogs.shift();
+    writeLog(x.msg,x.level)
+  }
+}
+function log(msg,level='info'){
+  msg=clean(msg);if(!msg)return;
+  const key=level+'|'+msg;
+  if(logSeen.has(key))return;
+  if(!ensureLog()){
+    pendingLogs.push({msg,level});
+    return
+  }
+  logSeen.add(key);
+  if(logSeen.size>160){const first=logSeen.values().next().value;logSeen.delete(first)}
+  writeLog(msg,level)
 }
 window.__capitanLog=log;
 
@@ -140,7 +156,7 @@ function scanStatuses(){
   })
 }
 function placeLog(){
-  ensureLog()
+  ensureLog();flushPending()
 }
 function apply(){
   panel=document.getElementById(PANEL_ID);if(!panel)return false;
