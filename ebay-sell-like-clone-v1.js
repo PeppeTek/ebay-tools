@@ -12,6 +12,7 @@ function shippingCacheRead(){
   try{const x=JSON.parse(localStorage.getItem(SHIPPING_CACHE_KEY)||'{}');return x&&typeof x==='object'?x:{}}catch(_){return{}}
 }
 function shippingCacheWrite(x){try{localStorage.setItem(SHIPPING_CACHE_KEY,JSON.stringify(x||{}))}catch(_){}}
+const shippingInflight={};
 function formatShippingAmount(v,currency){
   const n=Number(String(v??'').replace(',','.'));if(!isFinite(n)||n<0)return'';
   const sym=/^USD$/i.test(String(currency||'USD'))?'$ ':String(currency||'USD').trim()+' ';
@@ -64,15 +65,19 @@ async function readSourceShippingLabel(sourceItemId){
   if(!/^\d{9,12}$/.test(sourceItemId))throw Error('Item ID sorgente non valido per la spedizione');
   const cache=shippingCacheRead(),hit=cache[sourceItemId];
   if(hit&&hit.label&&Date.now()-Number(hit.at||0)<12*60*60*1000)return hit.label;
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),7000);
-  try{
-    const r=await fetch('https://www.ebay.com/itm/'+encodeURIComponent(sourceItemId),{credentials:'include',cache:'no-store',signal:controller.signal});
-    if(!r.ok)throw Error('eBay HTTP '+r.status);
-    const label=parseSourceShippingLabel(await r.text());
-    if(!label)throw Error('Spedizione non riconosciuta nella listing sorgente');
-    cache[sourceItemId]={label,at:Date.now()};shippingCacheWrite(cache);
-    return label
-  }finally{clearTimeout(timer)}
+  if(shippingInflight[sourceItemId])return shippingInflight[sourceItemId];
+  shippingInflight[sourceItemId]=(async()=>{
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),7000);
+    try{
+      const r=await fetch('https://www.ebay.com/itm/'+encodeURIComponent(sourceItemId),{credentials:'include',cache:'no-store',signal:controller.signal});
+      if(!r.ok)throw Error('eBay HTTP '+r.status);
+      const label=parseSourceShippingLabel(await r.text());
+      if(!label)throw Error('Spedizione non riconosciuta nella listing sorgente');
+      const latest=shippingCacheRead();latest[sourceItemId]={label,at:Date.now()};shippingCacheWrite(latest);
+      return label
+    }finally{clearTimeout(timer)}
+  })();
+  try{return await shippingInflight[sourceItemId]}finally{delete shippingInflight[sourceItemId]}
 }
 window.__capitanReadSourceShippingLabel=readSourceShippingLabel;
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
