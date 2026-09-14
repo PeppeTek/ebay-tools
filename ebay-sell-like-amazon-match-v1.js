@@ -13,7 +13,7 @@ const sourceText=clean(panel.innerText||'');
 const itemId=(sourceText.match(/Source Item ID:\s*(\d{9,12})/i)||[])[1]||'';
 if(!itemId)return;
 const priceMatch=sourceText.match(/Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:\s*([0-9]+(?:[.,][0-9]+)?)/i);
-const currentSalePrice=priceMatch?Number(String(priceMatch[1]).replace(',','.')):(isFinite(Number(window.__capitanSellLikeSalePrice))?Number(window.__capitanSellLikeSalePrice):null);
+let currentSalePrice=priceMatch?Number(String(priceMatch[1]).replace(',','.')):(isFinite(Number(window.__capitanSellLikeSalePrice))?Number(window.__capitanSellLikeSalePrice):null);
 const actions=panel.querySelector('[data-ebay-actions]');
 const wrap=document.createElement('div');wrap.id=EXT_ID;wrap.style.cssText='padding:0 14px 10px;background:#fff';wrap.innerHTML='<div id="capitan-amazon-status" style="padding:7px 0 0;font-size:12px"></div><div id="capitan-amazon-results"></div>';
 if(actions)panel.insertBefore(wrap,actions);else (panel.querySelector('.b')||panel).appendChild(wrap);
@@ -115,6 +115,36 @@ function openPricingModal(){
 async function loadPricing(){try{const data=await jsonpAction('sell_like_pricing_get');if(data&&data.ok&&data.rates)pricingRates=data.rates}catch(e){console.warn('Pricing config',e)}recalcBreakEven()}
 
 insertBtn.addEventListener('click',()=>{const asins=selectedAsins();if(!asins.length){status.innerHTML='<span style="color:#b42318;font-weight:700">Seleziona almeno un ASIN.</span>';return}const field=findSkuField();if(!field){status.innerHTML='<span style="color:#b42318;font-weight:700">Campo Custom label (SKU) non trovato.</span>';return}const value=asins.join(' - ');if(setNativeValue(field,value))status.innerHTML='<span style="color:#137333;font-weight:700">ASIN inseriti:</span> '+esc(value)});
-findBtn.addEventListener('click',async()=>{const ep=AMAZON_MATCH_ENDPOINT;if(!ep){status.innerHTML='<span style="color:#b42318;font-weight:700">Endpoint Apps Script non configurato.</span>';return}findBtn.disabled=true;status.textContent='Analisi titolo, prezzo e ricerca Amazon in corso…';results.innerHTML='';try{const breakEven=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);const data=await jsonpAction('amazon_match',{itemId,breakEven:breakEven==null?'':String(breakEven),maxLoss:String(AMAZON_MAX_NEGATIVE_MARGIN)});if(!data||!data.ok)throw Error(data?.error||'Risposta Amazon non valida');render(data.matches||[]);const shown=lastMatches.length;status.innerHTML=shown?'<span style="color:#137333;font-weight:700">Match completato.</span> Mostrati solo candidati compatibili e profittevoli.':'<span style="color:#a15c00;font-weight:700">Ricerca completata.</span> Nessun candidato compatibile con margine accettabile.'}catch(e){console.error(e);status.innerHTML='<span style="color:#b42318;font-weight:700">Errore:</span> '+esc(e.message||e)}finally{findBtn.disabled=false}});
+function currentEbayTitle(){
+  for(const l of document.querySelectorAll('label')){
+    const t=clean(l.innerText||l.textContent);
+    if(!/^(item title|title)$/i.test(t))continue;
+    let el=l.htmlFor?document.getElementById(l.htmlFor):l.querySelector('input,textarea');
+    if(el&&clean(el.value))return clean(el.value);
+    let p=l.parentElement;
+    for(let i=0;i<4&&p;i++,p=p.parentElement){
+      el=p.querySelector('input,textarea');
+      if(el&&clean(el.value))return clean(el.value)
+    }
+  }
+  const candidate=[...document.querySelectorAll('input,textarea')].find(el=>/(^|\b)(title|itemtitle)(\b|$)/i.test(clean([el.name,el.id,el.getAttribute('aria-label'),el.placeholder].join(' ')))&&clean(el.value));
+  if(candidate)return clean(candidate.value);
+  return clean(window.__capitanSellLikeCloneData?.title||'')
+}
+findBtn.addEventListener('click',()=>{
+  const title=currentEbayTitle();
+  if(!title){status.innerHTML='<span style="color:#b42318;font-weight:700">Titolo eBay non trovato.</span>';return}
+  const url='https://www.amazon.com/s?k='+encodeURIComponent(title);
+  window.open(url,'_blank','noopener');
+  status.innerHTML='<span style="color:#137333;font-weight:700">Ricerca Amazon aperta.</span> Titolo eBay inviato direttamente alla SERP.'
+});
+window.addEventListener('capitan-sale-price-updated',e=>{
+  const v=Number(e&&e.detail&&e.detail.value);
+  if(isFinite(v)&&v>0){
+    currentSalePrice=v;
+    recalcBreakEven();
+    try{window.dispatchEvent(new CustomEvent('capitan-break-even-updated',{detail:{value:calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates)}}))}catch(_){}
+  }
+});
 ensureBreakEvenRow();loadPricing();
 })();
