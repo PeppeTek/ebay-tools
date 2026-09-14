@@ -87,24 +87,36 @@ function sourcePriceCacheWrite(x){try{localStorage.setItem(SOURCE_PRICE_CACHE_KE
 function parseSourcePrice(html){
   const raw=String(html||'').replace(/\\u0024/gi,'$').replace(/&dollar;|&#36;/gi,'$');
   if(!raw)return null;
-  const regs=[
-    /["']price["']\s*:\s*["']([0-9]+(?:[.,][0-9]{1,2})?)["']/i,
-    /["']value["']\s*:\s*["']([0-9]+(?:[.,][0-9]{1,2})?)["'][^{}]{0,180}["']currency["']\s*:\s*["']USD["']/i,
-    /["']convertedFromValue["']\s*:\s*["']?([0-9]+(?:[.,][0-9]{1,2})?)/i
-  ];
-  for(const re of regs){const m=raw.match(re);if(m){const n=Number(String(m[1]).replace(',','.'));if(isFinite(n)&&n>0)return n}}
   try{
     const doc=new DOMParser().parseFromString(raw,'text/html');
+    for(const script of doc.querySelectorAll('script[type="application/ld+json"]')){
+      try{
+        const json=JSON.parse(script.textContent||'null');
+        const stack=Array.isArray(json)?json.slice():[json];
+        while(stack.length){
+          const x=stack.shift();if(!x||typeof x!=='object')continue;
+          const type=String(x['@type']||'').toLowerCase();
+          if(type==='product'||x.offers){
+            const offers=Array.isArray(x.offers)?x.offers:[x.offers];
+            for(const o of offers){const n=Number(o&&o.price);if(isFinite(n)&&n>0)return n}
+          }
+          for(const v of Object.values(x))if(v&&typeof v==='object')Array.isArray(v)?stack.push(...v):stack.push(v)
+        }
+      }catch(_){}
+    }
     const sels=['meta[itemprop="price"]','meta[property="product:price:amount"]','meta[property="og:price:amount"]','[itemprop="price"]'];
     for(const sel of sels){
       const el=doc.querySelector(sel);if(!el)continue;
       const v=el.getAttribute('content')||el.getAttribute('value')||el.textContent||'';
       const n=Number(String(v).replace(/[^0-9.,]/g,'').replace(',','.'));if(isFinite(n)&&n>0)return n
     }
-    const txt=String(doc.body?.innerText||'').replace(/\s+/g,' ');
-    const m=txt.match(/(?:US\s*)?\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
-    if(m){const n=Number(String(m[1]).replace(',','.'));if(isFinite(n)&&n>0)return n}
   }catch(_){}
+  const regs=[
+    /["']price["']\s*:\s*\{[^{}]{0,180}["']value["']\s*:\s*["']?([0-9]+(?:[.,][0-9]{1,2})?)/i,
+    /["']price["']\s*:\s*["']([0-9]+(?:[.,][0-9]{1,2})?)["']/i,
+    /["']convertedFromValue["']\s*:\s*["']?([0-9]+(?:[.,][0-9]{1,2})?)/i
+  ];
+  for(const re of regs){const m=raw.match(re);if(m){const n=Number(String(m[1]).replace(',','.'));if(isFinite(n)&&n>0)return n}}
   return null
 }
 async function readSourcePrice(sourceItemId){
