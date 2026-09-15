@@ -250,10 +250,11 @@ insertBtn.addEventListener('click',async e=>{
   try{
     const before=new Set(lastMatches.map(amazonKey));
     const breakEven=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);
-    let collected=[],attemptsUsed=0;
-    for(let attempt=0;attempt<6;attempt++){
-      const page=nextPage+attempt;attemptsUsed=attempt+1;
-      const data=await jsonpAction('amazon_match',{
+    let collected=[],attemptsUsed=0,cursor=0;
+    while(cursor<6){
+      const batchSize=(cursor===0&&nextPage===0)?1:Math.min(2,6-cursor);
+      const pages=Array.from({length:batchSize},(_,i)=>nextPage+cursor+i);
+      const settled=await Promise.allSettled(pages.map(page=>jsonpAction('amazon_match',{
         itemId,
         query:queryVariant(title,page),
         page:String(page+1),
@@ -263,8 +264,9 @@ insertBtn.addEventListener('click',async e=>{
         breakEven:breakEven==null?'':String(breakEven),
         maxLoss:String(AMAZON_MAX_NEGATIVE_MARGIN),
         includeImages:'1',includeShipping:'1',includeDetails:'1'
-      });
-      if(data&&data.ok)collected=collected.concat(data.matches||[]);
+      })));
+      cursor+=batchSize;attemptsUsed=cursor;
+      settled.forEach(r=>{if(r.status==='fulfilled'&&r.value&&r.value.ok)collected=collected.concat(r.value.matches||[])});
       const uniq=new Map();
       collected.filter(amazonEconomicsAllowed).forEach(x=>{const k=amazonKey(x);if(k&&!before.has(k)&&!uniq.has(k))uniq.set(k,x)});
       if(uniq.size>=10)break
