@@ -54,7 +54,7 @@ function cleanup(){
     discountRow.id='capitan-discount-row';
     discountRow.className='row';
     discountRow.style.cssText='display:grid;grid-template-columns:minmax(0,1fr) 82px 104px;align-items:center;gap:8px;min-height:38px';
-    discountRow.innerHTML='<b>Riduzione prezzo rispetto alla concorrenza:</b><input id="capitan-discount-manual" type="text" inputmode="decimal" aria-label="Riduzione prezzo percentuale" placeholder="%" style="width:82px;height:28px;box-sizing:border-box;border:1px solid #111;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111"><span id="capitan-competitor-price" style="justify-self:end;text-align:right;white-space:nowrap;color:#7a1f2b;font-weight:700">—</span>';
+    discountRow.innerHTML='<b>Riduzione prezzo rispetto alla concorrenza:</b><input id="capitan-discount-manual" type="text" inputmode="decimal" aria-label="Riduzione prezzo percentuale" placeholder="%" style="width:82px;height:28px;box-sizing:border-box;border:1px solid #c5c9cf;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111"><span id="capitan-competitor-price" style="justify-self:end;text-align:right;white-space:nowrap;color:#7a1f2b;font-weight:700">—</span>';
     sourceRow.insertAdjacentElement('afterend',discountRow);
     const input=discountRow.querySelector('#capitan-discount-manual');
     input.value=formatDiscountField();
