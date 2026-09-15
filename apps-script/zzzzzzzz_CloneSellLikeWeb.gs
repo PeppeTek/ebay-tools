@@ -19,10 +19,23 @@ const SELL_LIKE_CLONE = Object.freeze({
   callbackPattern: /^[A-Za-z_$][A-Za-z0-9_$\.]{0,120}$/
 });
 
+const SELL_LIKE_ALI_AUTH = Object.freeze({
+  authorizeUrl: 'https://api-sg.aliexpress.com/oauth/authorize',
+  apiBase: 'https://api-sg.aliexpress.com/rest',
+  stateProp: 'SELL_LIKE_ALI_OAUTH_STATE',
+  stateExpiresProp: 'SELL_LIKE_ALI_OAUTH_STATE_EXPIRES_AT',
+  updatedAtProp: 'SELL_LIKE_ALI_TOKEN_UPDATED_AT',
+  accessExpiresProp: 'SELL_LIKE_ALI_ACCESS_EXPIRES_IN',
+  refreshExpiresProp: 'SELL_LIKE_ALI_REFRESH_EXPIRES_IN',
+  accountProp: 'SELL_LIKE_ALI_TOKEN_ACCOUNT'
+});
+
 // Override web-app GET while preserving the existing status page.
 function doGet(e) {
   const action = String(e && e.parameter && e.parameter.action || '').trim();
   if (action === SELL_LIKE_CLONE.action) return sellLikeCloneJsonp_(e);
+  if (/^sell_like_aliexpress_auth_/.test(action)) return sellLikeAliAuthJsonp_(e);
+  if (String(e && e.parameter && e.parameter.code || '').trim()) return sellLikeAliOAuthCallbackHtml_(e);
 
   try {
     const ss = SpreadsheetApp.openById(BOOKMARKLET_EBAY_IMPORT_CONFIG.spreadsheetId);
@@ -68,6 +81,257 @@ function sellLikeCloneJsonp_(e) {
   return ContentService
     .createTextOutput(callback + '(' + JSON.stringify(payload).replace(/<\//g, '<\\/') + ');')
     .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+
+function sellLikeAliAuthJsonp_(e) {
+  const callback = String(e && e.parameter && e.parameter.callback || 'capitanAliAuthCallback').trim();
+  if (!SELL_LIKE_CLONE.callbackPattern.test(callback)) {
+    return ContentService.createTextOutput('/* callback non valido */').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+
+  let payload;
+  try {
+    const action = String(e && e.parameter && e.parameter.action || '').trim();
+    if (action === 'sell_like_aliexpress_auth_status') {
+      payload = sellLikeAliAuthStatus_();
+    } else if (action === 'sell_like_aliexpress_auth_url') {
+      payload = sellLikeAliAuthUrl_();
+    } else if (action === 'sell_like_aliexpress_auth_refresh') {
+      payload = sellLikeAliRefreshToken_();
+    } else if (action === 'sell_like_aliexpress_auth_code') {
+      payload = sellLikeAliCreateTokenFromCode_(String(e && e.parameter && (e.parameter.code || e.parameter.callbackUrl) || ''));
+    } else {
+      throw new Error('Azione AliExpress Token non riconosciuta.');
+    }
+  } catch (err) {
+    payload = {ok:false, error:String(err && err.message || err)};
+  }
+
+  return ContentService
+    .createTextOutput(callback + '(' + JSON.stringify(payload).replace(/<\//g, '<\\/') + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function sellLikeAliOAuthCallbackHtml_(e) {
+  try {
+    const code = sellLikeAliExtractCode_(String(e && e.parameter && e.parameter.code || ''));
+    const state = String(e && e.parameter && e.parameter.state || '').trim();
+    const props = PropertiesService.getScriptProperties();
+    const expected = String(props.getProperty(SELL_LIKE_ALI_AUTH.stateProp) || '');
+    const expires = Number(props.getProperty(SELL_LIKE_ALI_AUTH.stateExpiresProp) || 0);
+    if (!code) throw new Error('Authorization code AliExpress mancante.');
+    if (!state || !expected || state !== expected || !expires || Date.now() > expires) {
+      throw new Error('Sessione di autorizzazione non valida o scaduta. Riapri Impostazioni > AliExpress Token.');
+    }
+    const token = sellLikeAliCreateTokenFromCode_(code);
+    props.deleteProperty(SELL_LIKE_ALI_AUTH.stateProp);
+    props.deleteProperty(SELL_LIKE_ALI_AUTH.stateExpiresProp);
+    return HtmlService.createHtmlOutput(
+      '<!doctype html><html><head><meta charset="utf-8"><title>AliExpress Token</title></head>' +
+      '<body style="font-family:Arial,sans-serif;padding:32px;line-height:1.5">' +
+      '<h2 style="color:#137333">Token AliExpress rigenerato</h2>' +
+      '<p>Nuovo access token e refresh token salvati nel backend.</p>' +
+      '<p>Puoi chiudere questa finestra e tornare a Sell Like This.</p>' +
+      '<script>setTimeout(function(){try{window.close()}catch(e){}},1800)<\/script></body></html>'
+    );
+  } catch (err) {
+    return HtmlService.createHtmlOutput(
+      '<!doctype html><html><head><meta charset="utf-8"><title>AliExpress Token</title></head>' +
+      '<body style="font-family:Arial,sans-serif;padding:32px;line-height:1.5">' +
+      '<h2 style="color:#b42318">Rigenerazione token non riuscita</h2><p>' +
+      sellLikeCloneEscapeHtml_(String(err && err.message || err)) +
+      '</p><p>Torna in Sell Like This > Impostazioni > AliExpress Token e riprova.</p></body></html>'
+    );
+  }
+}
+
+function sellLikeAliPropInfo_() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+
+  function pick(exact, re) {
+    for (let i = 0; i < exact.length; i++) {
+      const k = exact[i];
+      const v = String(all[k] || '').trim();
+      if (v) return {key:k, value:v};
+    }
+    const keys = Object.keys(all);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (!re.test(k)) continue;
+      const v = String(all[k] || '').trim();
+      if (v) return {key:k, value:v};
+    }
+    return {key:'', value:''};
+  }
+
+  return {
+    props: props,
+    all: all,
+    appKey: pick(['ALI_APP_KEY','ALIEXPRESS_APP_KEY','ALI_CLIENT_ID','ALIEXPRESS_CLIENT_ID'], /^(?!.*GROQ)(?:ALI|ALIEXPRESS).*?(?:APP|CLIENT).*?(?:KEY|ID)$/i),
+    appSecret: pick(['ALI_APP_SECRET','ALIEXPRESS_APP_SECRET','ALI_CLIENT_SECRET','ALIEXPRESS_CLIENT_SECRET'], /^(?!.*GROQ)(?:ALI|ALIEXPRESS).*?(?:APP|CLIENT)?.*SECRET$/i),
+    access: pick(['ALI_ACCESS_TOKEN','ALIEXPRESS_ACCESS_TOKEN','ALI_DS_ACCESS_TOKEN','ALIEXPRESS_TOKEN'], /^(?:ALI|ALIEXPRESS).*ACCESS.*TOKEN$/i),
+    refresh: pick(['ALI_REFRESH_TOKEN','ALIEXPRESS_REFRESH_TOKEN','ALI_DS_REFRESH_TOKEN'], /^(?:ALI|ALIEXPRESS).*REFRESH.*TOKEN$/i),
+    redirect: pick(['ALI_REDIRECT_URI','ALIEXPRESS_REDIRECT_URI','ALI_CALLBACK_URL','ALIEXPRESS_CALLBACK_URL'], /^(?:ALI|ALIEXPRESS).*(?:REDIRECT|CALLBACK).*(?:URI|URL)?$/i)
+  };
+}
+
+function sellLikeAliSetTokenAliases_(info, data) {
+  const props = info.props;
+  const all = info.all;
+
+  function setAll(exact, re, fallback, value) {
+    value = String(value || '').trim();
+    if (!value) return;
+    let wrote = false;
+    exact.forEach(function(k) {
+      if (Object.prototype.hasOwnProperty.call(all, k)) {
+        props.setProperty(k, value);
+        wrote = true;
+      }
+    });
+    Object.keys(all).forEach(function(k) {
+      if (re.test(k)) {
+        props.setProperty(k, value);
+        wrote = true;
+      }
+    });
+    if (!wrote) props.setProperty(fallback, value);
+  }
+
+  setAll(['ALI_ACCESS_TOKEN','ALIEXPRESS_ACCESS_TOKEN','ALI_DS_ACCESS_TOKEN','ALIEXPRESS_TOKEN'], /^(?:ALI|ALIEXPRESS).*ACCESS.*TOKEN$/i, 'ALI_ACCESS_TOKEN', data.access_token);
+  setAll(['ALI_REFRESH_TOKEN','ALIEXPRESS_REFRESH_TOKEN','ALI_DS_REFRESH_TOKEN'], /^(?:ALI|ALIEXPRESS).*REFRESH.*TOKEN$/i, 'ALI_REFRESH_TOKEN', data.refresh_token);
+
+  props.setProperty(SELL_LIKE_ALI_AUTH.updatedAtProp, new Date().toISOString());
+  if (data.expires_in != null) props.setProperty(SELL_LIKE_ALI_AUTH.accessExpiresProp, String(data.expires_in));
+  if (data.refresh_expires_in != null) props.setProperty(SELL_LIKE_ALI_AUTH.refreshExpiresProp, String(data.refresh_expires_in));
+  if (data.account || data.seller_id || data.user_id) props.setProperty(SELL_LIKE_ALI_AUTH.accountProp, String(data.account || data.seller_id || data.user_id));
+}
+
+function sellLikeAliAuthStatus_() {
+  const info = sellLikeAliPropInfo_();
+  const redirectUri = info.redirect.value || ScriptApp.getService().getUrl() || '';
+  return {
+    ok: true,
+    appConfigured: !!info.appKey.value,
+    secretConfigured: !!info.appSecret.value,
+    accessConfigured: !!info.access.value,
+    refreshConfigured: !!info.refresh.value,
+    redirectUri: redirectUri,
+    updatedAt: String(info.props.getProperty(SELL_LIKE_ALI_AUTH.updatedAtProp) || ''),
+    accessExpiresIn: Number(info.props.getProperty(SELL_LIKE_ALI_AUTH.accessExpiresProp) || 0),
+    refreshExpiresIn: Number(info.props.getProperty(SELL_LIKE_ALI_AUTH.refreshExpiresProp) || 0),
+    account: String(info.props.getProperty(SELL_LIKE_ALI_AUTH.accountProp) || '')
+  };
+}
+
+function sellLikeAliAuthUrl_() {
+  const info = sellLikeAliPropInfo_();
+  if (!info.appKey.value) throw new Error('AliExpress App Key non trovato nelle Script Properties.');
+  if (!info.appSecret.value) throw new Error('AliExpress App Secret non trovato nelle Script Properties.');
+
+  const redirectUri = info.redirect.value || ScriptApp.getService().getUrl();
+  if (!redirectUri) throw new Error('AliExpress redirect URI non disponibile.');
+
+  const state = Utilities.getUuid().replace(/-/g, '') + String(Date.now());
+  info.props.setProperty(SELL_LIKE_ALI_AUTH.stateProp, state);
+  info.props.setProperty(SELL_LIKE_ALI_AUTH.stateExpiresProp, String(Date.now() + 15 * 60 * 1000));
+
+  const url = SELL_LIKE_ALI_AUTH.authorizeUrl +
+    '?response_type=code' +
+    '&force_auth=true' +
+    '&redirect_uri=' + encodeURIComponent(redirectUri) +
+    '&client_id=' + encodeURIComponent(info.appKey.value) +
+    '&state=' + encodeURIComponent(state);
+
+  return {ok:true, url:url, redirectUri:redirectUri};
+}
+
+function sellLikeAliExtractCode_(value) {
+  value = String(value || '').trim();
+  if (!value) return '';
+  const m = value.match(/[?&]code=([^&#]+)/i);
+  if (m) {
+    try { return decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (ignored) { return m[1]; }
+  }
+  return value;
+}
+
+function sellLikeAliOpSign_(path, params, secret) {
+  const keys = Object.keys(params).sort();
+  let base = path;
+  keys.forEach(function(k) { base += k + String(params[k]); });
+  const bytes = Utilities.computeHmacSha256Signature(base, secret, Utilities.Charset.UTF_8);
+  return bytes.map(function(b) {
+    const n = b < 0 ? b + 256 : b;
+    return ('0' + n.toString(16)).slice(-2);
+  }).join('').toUpperCase();
+}
+
+function sellLikeAliTokenRequest_(path, businessParams) {
+  const info = sellLikeAliPropInfo_();
+  if (!info.appKey.value) throw new Error('AliExpress App Key non configurato.');
+  if (!info.appSecret.value) throw new Error('AliExpress App Secret non configurato.');
+
+  const params = {
+    app_key: info.appKey.value,
+    timestamp: String(Date.now()),
+    sign_method: 'sha256'
+  };
+  Object.keys(businessParams || {}).forEach(function(k) {
+    if (businessParams[k] != null && String(businessParams[k]) !== '') params[k] = String(businessParams[k]);
+  });
+  params.sign = sellLikeAliOpSign_(path, params, info.appSecret.value);
+
+  const query = Object.keys(params).map(function(k) {
+    return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+  }).join('&');
+
+  const response = UrlFetchApp.fetch(SELL_LIKE_ALI_AUTH.apiBase + path + '?' + query, {
+    method: 'get',
+    muteHttpExceptions: true
+  });
+  const http = response.getResponseCode();
+  const raw = response.getContentText();
+  let data;
+  try { data = JSON.parse(raw); } catch (ignored) { data = null; }
+
+  if (http < 200 || http >= 300 || !data) {
+    throw new Error('AliExpress token HTTP ' + http + ': ' + raw.slice(0, 500));
+  }
+  if (!data.access_token) {
+    throw new Error('AliExpress token: ' + raw.slice(0, 700));
+  }
+
+  sellLikeAliSetTokenAliases_(info, data);
+  return {
+    ok: true,
+    updatedAt: String(info.props.getProperty(SELL_LIKE_ALI_AUTH.updatedAtProp) || ''),
+    account: String(data.account || data.seller_id || data.user_id || ''),
+    expiresIn: Number(data.expires_in || 0),
+    refreshExpiresIn: Number(data.refresh_expires_in || 0)
+  };
+}
+
+function sellLikeAliCreateTokenFromCode_(value) {
+  const code = sellLikeAliExtractCode_(value);
+  if (!code) throw new Error('Incolla il code AliExpress oppure l’URL di callback completo.');
+  return sellLikeAliTokenRequest_('/auth/token/create', {code:code});
+}
+
+function sellLikeAliRefreshToken_() {
+  const info = sellLikeAliPropInfo_();
+  if (!info.refresh.value) throw new Error('Refresh token AliExpress non configurato. Usa "Rigenera token" per una nuova autorizzazione.');
+  try {
+    return sellLikeAliTokenRequest_('/auth/token/refresh', {refresh_token:info.refresh.value});
+  } catch (err) {
+    const msg = String(err && err.message || err);
+    if (/IllegalRefreshToken|invalid or expired|refresh token/i.test(msg)) {
+      throw new Error('Refresh token AliExpress scaduto o non valido. Usa "Rigenera token" per autorizzare nuovamente AliExpress.');
+    }
+    throw err;
+  }
 }
 
 function sellLikeClonePrepare_(itemId) {
