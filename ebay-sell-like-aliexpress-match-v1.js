@@ -144,8 +144,8 @@ function cleanImage(v){
 }
 function productImage(x){
   x=x||{};
-  // Historical working path first.
-  for(const k of ['image','main_image','mainImage','imageUrl','imageURL','thumbnail','thumbnailUrl']){
+  // Historical working path first, then exact ALI_RESULTS / ALI_IMPORT fields.
+  for(const k of ['image','main_image','sku_image','mainImage','skuImage','imageUrl','imageURL','thumbnail','thumbnailUrl']){
     const direct=cleanImage(x[k]);if(direct)return direct
   }
   const raw=parseMaybeJson(x.product_raw||x.productRaw||x.rawProduct||x.raw);
@@ -157,9 +157,12 @@ function productImage(x){
     const props=sku?.ae_sku_property_dtos?.ae_sku_property_d_t_o||sku?.aeSkuPropertyDtos?.aeSkuPropertyDto||[];
     for(const p of (Array.isArray(props)?props:[props])){const u=cleanImage(p?.sku_image||p?.skuImage);if(u)return u}
   }
+  const multimedia=raw?.ae_multimedia_info_dto||raw?.aeMultimediaInfoDto||{};
+  const rawImages=multimedia?.image_urls||multimedia?.imageUrls||'';
+  if(typeof rawImages==='string'){for(const v of rawImages.split(/[;|,\n]/)){const u=cleanImage(v);if(u)return u}}
   const images=x.images||x.all_images||x.allImages;
   if(Array.isArray(images)){for(const v of images){const u=cleanImage(v);if(u)return u}}
-  if(typeof images==='string'){for(const v of images.split(/[|,\n]/)){const u=cleanImage(v);if(u)return u}}
+  if(typeof images==='string'){for(const v of images.split(/[;|,\n]/)){const u=cleanImage(v);if(u)return u}}
   return''
 }
 function aliKey(x){return clean(x&&x.productId||x?.product_id||'')}
@@ -247,6 +250,43 @@ function aliFreight(x,price){
   const total=isFinite(price)&&price>0?price+(isFinite(cost)?cost:0):null;
   return {cost,total,threshold,label,delivery}
 }
+function aliHasRichData(x){
+  const price=aliProductPrice(x),freight=aliFreight(x,price);
+  return !!productImage(x)&&isFinite(price)&&price>0&&(isFinite(freight.cost)||!!freight.label)&&!!freight.delivery
+}
+async function enrichAliOne(x){
+  const pid=aliKey(x);if(!pid||aliHasRichData(x))return x;
+  try{
+    const d=await jsonp({
+      itemId:'',
+      productId:pid,
+      product_id:pid,
+      query:pid,
+      searchMode:'product',
+      exactProduct:'1',
+      limit:'5',
+      includeImages:'1',includeShipping:'1',includeDelivery:'1',includeDetails:'1',
+      includeFreightRaw:'1',includeProductRaw:'1',shipTo:'US',currency:'USD'
+    });
+    const pools=[d?.matches,d?.results,d?.items,d?.products].filter(Array.isArray).flat();
+    for(const obj of [d?.product,d?.item,d?.detail])if(obj&&typeof obj==='object')pools.push(obj);
+    const exact=pools.find(y=>aliKey(y)===pid);
+    return exact?{...x,...exact}:x
+  }catch(_){return x}
+}
+async function enrichAliVisible(){
+  const selected=new Set([...results.querySelectorAll('input.capitan-aliexpress-choice:checked')].map(x=>x.value));
+  const source=lastMatches.slice(0,20);
+  const out=[];
+  for(let i=0;i<source.length;i+=4){
+    const settled=await Promise.allSettled(source.slice(i,i+4).map(enrichAliOne));
+    settled.forEach((r,j)=>out.push(r.status==='fulfilled'?r.value:source[i+j]))
+  }
+  let changed=false;
+  const map=new Map(lastMatches.map(x=>[aliKey(x),x]));
+  out.forEach(x=>{const k=aliKey(x);if(!k)return;const old=map.get(k);if(old&&JSON.stringify(old)!==JSON.stringify(x)){map.set(k,x);changed=true}});
+  if(changed){lastMatches=[...map.values()];render(lastMatches,selected);window.__capitanTestLog?.('AliExpress: dettagli prodotto arricchiti','ok')}
+}
 function queryVariant(title,page){
   const t=clean(title),parts=t.split(' ').filter(Boolean);
   if(!parts.length)return t;
@@ -295,7 +335,7 @@ function render(list,selectedIds){
     const preview=img?'<img src="'+esc(img)+'" alt="AliExpress product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
     const brand='<span aria-label="AliExpress" style="margin-left:auto;font-weight:800;font-size:16px;color:#ff4747;opacity:.86;white-space:nowrap;text-align:right">AliExpress</span>';
     r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(pid)+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#ff4747">'+preview+
-      '<div style="min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 5px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:800;font-size:13px;line-height:1">'+esc(pid)+'</a>'+brand+'</div>'+
+      '<div style="min-width:0;align-self:start;margin-top:-1px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 5px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:800;font-size:13px;line-height:1">'+esc(pid)+'</a>'+brand+'</div>'+
       '<div style="color:#444;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
       '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px"><span data-card-shipping style="color:#555">'+(shippingLabel||'—')+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:800;color:#111">'+priceText+'</span></div></div>';
     box.appendChild(r)
@@ -342,7 +382,7 @@ insertBtn.addEventListener('click',async e=>{
     const before=new Set(lastMatches.map(aliKey));
     let collected=[],attemptsUsed=0,successfulQueries=0,cursor=0;
     while(cursor<8){
-      const batchSize=(cursor===0&&nextPage===0)?1:Math.min(2,8-cursor);
+      const batchSize=(cursor===0&&nextPage===0)?1:Math.min(3,8-cursor);
       const attempts=Array.from({length:batchSize},(_,i)=>cursor+i);
       const settled=await Promise.allSettled(attempts.map(attempt=>{
         const page=nextPage+attempt;
@@ -370,6 +410,7 @@ insertBtn.addEventListener('click',async e=>{
     const freshMap=new Map();
     collected.forEach(x=>{const k=aliKey(x);if(k&&!before.has(k)&&!freshMap.has(k))freshMap.set(k,x)});
     mergeMatches([...freshMap.values()].slice(0,10));
+    setTimeout(()=>enrichAliVisible(),0);
     const added=lastMatches.filter(x=>!before.has(aliKey(x))).length;
     matchPage=nextPage+Math.max(1,attemptsUsed);
     status.textContent='';
