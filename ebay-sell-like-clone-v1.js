@@ -140,7 +140,7 @@ const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
 function readDiscountLocal(){try{const n=Number(localStorage.getItem(DISCOUNT_KEY));return isFinite(n)&&n>-10&&n<1?n:.02}catch(_){return .02}}
 let currentDiscountRate=readDiscountLocal();
 function setDiscountLocal(v){v=Number(v);if(!isFinite(v)||v<=-10||v>=1)return false;currentDiscountRate=v;try{localStorage.setItem(DISCOUNT_KEY,String(v))}catch(_){}return true}
-function targetFromSource(source){source=Number(source);return isFinite(source)&&source>0?Math.round(source*(1-currentDiscountRate)*100)/100:null}
+function targetFromSource(source){source=Number(source);return isFinite(source)&&source>0?Math.round(source*(1+currentDiscountRate)*100)/100:null}
 function discountLabel(){const n=Math.round(currentDiscountRate*10000)/100;return Number.isInteger(n)?String(n):String(n).replace('.',',')}
 function operationalLog(message,state='ok'){if(typeof window.__capitanTestLog==='function')window.__capitanTestLog(message,state);else{window.__capitanPendingTestLogs=window.__capitanPendingTestLogs||[];window.__capitanPendingTestLogs.push({message:String(message||''),state})}}
 function idFromTrustedText(v){const s=String(v||'');for(const re of[/[?&](?:itemId|itemid|sourceItemId|originalItemId)=(\d{9,12})/i,/\/itm\/(?:[^/?#]+\/)?(\d{9,12})(?:[/?#]|$)/i]){const m=s.match(re);if(m)return m[1]}return''}
