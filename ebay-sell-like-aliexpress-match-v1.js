@@ -274,21 +274,22 @@ async function enrichAliOne(x){
     return exact?{...x,...exact}:x
   }catch(_){return x}
 }
-async function ensureAliImages(list){
+async function enrichAliList(list){
   const source=(Array.isArray(list)?list:[]).slice(0,30);
   const out=[];
   for(let i=0;i<source.length;i+=4){
     const settled=await Promise.allSettled(source.slice(i,i+4).map(enrichAliOne));
     settled.forEach((r,j)=>out.push(r.status==='fulfilled'?r.value:source[i+j]))
   }
-  return out.filter(x=>!!productImage(x))
+  return out
 }
 async function enrichAliVisible(){
   const selected=new Set([...results.querySelectorAll('input.capitan-aliexpress-choice:checked')].map(x=>x.value));
-  const ready=await ensureAliImages(lastMatches);
-  lastMatches=ready;
+  const enriched=await enrichAliList(lastMatches);
+  lastMatches=enriched;
   render(lastMatches,selected);
-  window.__capitanTestLog?.('AliExpress: preview immagini verificate '+ready.length+'/'+ready.length,'ok')
+  const withImage=enriched.filter(x=>!!productImage(x)).length;
+  window.__capitanTestLog?.('AliExpress: immagini recuperate '+withImage+'/'+enriched.length,withImage?'ok':'warn')
 }
 function queryVariant(title,page){
   const t=clean(title),parts=t.split(' ').filter(Boolean);
@@ -316,7 +317,7 @@ function mergeMatches(list){
   render(lastMatches,selected)
 }
 function render(list,selectedIds){
-  lastMatches=(Array.isArray(list)?list:[]).filter(x=>!!productImage(x)).slice(0,100);
+  lastMatches=(Array.isArray(list)?list:[]).slice(0,100);
   results.innerHTML='';
   if(!lastMatches.length){wrap.style.display='none';return}
   wrap.style.display='block';
@@ -335,7 +336,7 @@ function render(list,selectedIds){
     const shippingLabel=esc((freight.delivery?freight.delivery+' | ':'')+(freight.label||''));
     const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
     const checked=selected.has(pid)||(selected.size===0&&i===0);
-    const preview='<img src="'+esc(img)+'" alt="AliExpress product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff">';
+    const preview=img?'<img src="'+esc(img)+'" alt="AliExpress product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
     const brand='<span aria-label="AliExpress" style="grid-column:2;grid-row:1;justify-self:end;align-self:start;font-weight:800;font-size:14px;line-height:18px;color:#ff4747;opacity:.86;white-space:nowrap;text-align:right">AliExpress</span>';
     r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(pid)+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#ff4747">'+preview+
       '<div data-product-body style="min-width:0;height:76px;max-height:76px;align-self:start;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr) 84px;grid-template-rows:18px 32px 18px;column-gap:8px;row-gap:4px;overflow:hidden">'+
@@ -406,9 +407,8 @@ insertBtn.addEventListener('click',async e=>{
     const freshMap=new Map();
     (Array.isArray(data.matches)?data.matches:[]).forEach(x=>{const k=aliKey(x);if(k&&!before.has(k)&&!freshMap.has(k))freshMap.set(k,x)});
     const candidates=[...freshMap.values()].slice(0,10);
-    const imageReady=await ensureAliImages(candidates);
-    mergeMatches(imageReady);
-    if(candidates.length>imageReady.length)window.__capitanTestLog?.('AliExpress: esclusi '+(candidates.length-imageReady.length)+' risultati senza immagine verificabile','warn');
+    mergeMatches(candidates);
+    setTimeout(()=>enrichAliVisible(),0);
     const added=lastMatches.filter(x=>!before.has(aliKey(x))).length;
     matchPage=nextPage+1;
     status.textContent='';
