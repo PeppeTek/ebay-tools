@@ -340,24 +340,29 @@ insertBtn.addEventListener('click',async e=>{
   status.textContent='';window.__capitanTestLog?.(nextPage===0?'Best Match AliExpress in corso…':'Ricerca di altri Best Match AliExpress…','warn');
   try{
     const before=new Set(lastMatches.map(aliKey));
-    let collected=[],attemptsUsed=0,successfulQueries=0;
-    for(let attempt=0;attempt<8;attempt++){
-      const page=nextPage+attempt;attemptsUsed=attempt+1;
-      const exploratory=nextPage>0||attempt>=2;
-      const params={
-        query:queryVariant(title,page),
-        page:String(page+1),
-        offset:String(page*10),
-        limit:'10',
-        exclude:[...before].join(','),
-        searchMode:exploratory?'query':'match',
-        forceRefresh:exploratory?'1':'0',
-        seed:String(page),
-        includeImages:'1',includeShipping:'1',includeDelivery:'1',includeDetails:'1',includeFreightRaw:'1',includeProductRaw:'1',shipTo:'US',currency:'USD'
-      };
-      if(exploratory&&attempt%2===1)params.itemId='';
-      const data=await jsonp(params);
-      if(data&&data.ok){successfulQueries++;collected=collected.concat(data.matches||[])}
+    let collected=[],attemptsUsed=0,successfulQueries=0,cursor=0;
+    while(cursor<8){
+      const batchSize=(cursor===0&&nextPage===0)?1:Math.min(2,8-cursor);
+      const attempts=Array.from({length:batchSize},(_,i)=>cursor+i);
+      const settled=await Promise.allSettled(attempts.map(attempt=>{
+        const page=nextPage+attempt;
+        const exploratory=nextPage>0||attempt>=2;
+        const params={
+          query:queryVariant(title,page),
+          page:String(page+1),
+          offset:String(page*10),
+          limit:'10',
+          exclude:[...before].join(','),
+          searchMode:exploratory?'query':'match',
+          forceRefresh:exploratory?'1':'0',
+          seed:String(page),
+          includeImages:'1',includeShipping:'1',includeDelivery:'1',includeDetails:'1',includeFreightRaw:'1',includeProductRaw:'1',shipTo:'US',currency:'USD'
+        };
+        if(exploratory&&attempt%2===1)params.itemId='';
+        return jsonp(params)
+      }));
+      cursor+=batchSize;attemptsUsed=cursor;
+      settled.forEach(r=>{if(r.status==='fulfilled'&&r.value&&r.value.ok){successfulQueries++;collected=collected.concat(r.value.matches||[])}});
       const uniq=new Map();
       collected.forEach(x=>{const k=aliKey(x);if(k&&!before.has(k)&&!uniq.has(k))uniq.set(k,x)});
       if(uniq.size>=10)break
