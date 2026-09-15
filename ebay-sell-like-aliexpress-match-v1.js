@@ -274,18 +274,21 @@ async function enrichAliOne(x){
     return exact?{...x,...exact}:x
   }catch(_){return x}
 }
-async function enrichAliVisible(){
-  const selected=new Set([...results.querySelectorAll('input.capitan-aliexpress-choice:checked')].map(x=>x.value));
-  const source=lastMatches.slice(0,20);
+async function ensureAliImages(list){
+  const source=(Array.isArray(list)?list:[]).slice(0,30);
   const out=[];
   for(let i=0;i<source.length;i+=4){
     const settled=await Promise.allSettled(source.slice(i,i+4).map(enrichAliOne));
     settled.forEach((r,j)=>out.push(r.status==='fulfilled'?r.value:source[i+j]))
   }
-  let changed=false;
-  const map=new Map(lastMatches.map(x=>[aliKey(x),x]));
-  out.forEach(x=>{const k=aliKey(x);if(!k)return;const old=map.get(k);if(old&&JSON.stringify(old)!==JSON.stringify(x)){map.set(k,x);changed=true}});
-  if(changed){lastMatches=[...map.values()];render(lastMatches,selected);window.__capitanTestLog?.('AliExpress: dettagli prodotto arricchiti','ok')}
+  return out.filter(x=>!!productImage(x))
+}
+async function enrichAliVisible(){
+  const selected=new Set([...results.querySelectorAll('input.capitan-aliexpress-choice:checked')].map(x=>x.value));
+  const ready=await ensureAliImages(lastMatches);
+  lastMatches=ready;
+  render(lastMatches,selected);
+  window.__capitanTestLog?.('AliExpress: preview immagini verificate '+ready.length+'/'+ready.length,'ok')
 }
 function queryVariant(title,page){
   const t=clean(title),parts=t.split(' ').filter(Boolean);
@@ -313,7 +316,7 @@ function mergeMatches(list){
   render(lastMatches,selected)
 }
 function render(list,selectedIds){
-  lastMatches=(Array.isArray(list)?list:[]).slice(0,100);
+  lastMatches=(Array.isArray(list)?list:[]).filter(x=>!!productImage(x)).slice(0,100);
   results.innerHTML='';
   if(!lastMatches.length){wrap.style.display='none';return}
   wrap.style.display='block';
@@ -332,12 +335,14 @@ function render(list,selectedIds){
     const shippingLabel=esc((freight.delivery?freight.delivery+' | ':'')+(freight.label||''));
     const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
     const checked=selected.has(pid)||(selected.size===0&&i===0);
-    const preview=img?'<img src="'+esc(img)+'" alt="AliExpress product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
-    const brand='<span aria-label="AliExpress" style="margin-left:auto;font-weight:800;font-size:16px;color:#ff4747;opacity:.86;white-space:nowrap;text-align:right">AliExpress</span>';
+    const preview='<img src="'+esc(img)+'" alt="AliExpress product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff">';
+    const brand='<span aria-label="AliExpress" style="grid-column:2;grid-row:1;justify-self:end;align-self:start;font-weight:800;font-size:14px;line-height:18px;color:#ff4747;opacity:.86;white-space:nowrap;text-align:right">AliExpress</span>';
     r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(pid)+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#ff4747">'+preview+
-      '<div data-product-body style="min-width:0;align-self:start;margin:0;padding:0;position:relative;top:-1px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 5px;line-height:16px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:800;font-size:13px;line-height:16px">'+esc(pid)+'</a>'+brand+'</div>'+
-      '<div style="color:#444;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
-      '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px"><span data-card-shipping style="color:#555">'+(shippingLabel||'—')+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:800;color:#111">'+priceText+'</span></div></div>';
+      '<div data-product-body style="min-width:0;height:76px;max-height:76px;align-self:start;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr) 84px;grid-template-rows:18px 32px 18px;column-gap:8px;row-gap:4px;overflow:hidden">'+
+      '<a href="'+url+'" target="_blank" rel="noopener" style="grid-column:1;grid-row:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#111;text-decoration:none;font-weight:800;font-size:12.5px;line-height:18px">'+esc(pid)+'</a>'+brand+
+      '<div data-card-title style="grid-column:1;grid-row:2;min-width:0;color:#444;font-size:12px;line-height:15px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-height:30px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
+      '<span data-card-shipping style="grid-column:1;grid-row:3;align-self:end;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;font-size:11.5px;line-height:16px">'+(shippingLabel||'—')+'</span>'+
+      '<span data-card-price style="grid-column:2;grid-row:3;align-self:end;justify-self:end;white-space:nowrap;font-size:12px;line-height:16px;font-weight:800;color:#111">'+priceText+'</span></div>';
     box.appendChild(r)
   });
   results.appendChild(box);
@@ -380,41 +385,34 @@ insertBtn.addEventListener('click',async e=>{
   status.textContent='';window.__capitanTestLog?.(nextPage===0?'Best Match AliExpress in corso…':'Ricerca di altri Best Match AliExpress…','warn');
   try{
     const before=new Set(lastMatches.map(aliKey));
-    let collected=[],attemptsUsed=0,successfulQueries=0,cursor=0;
-    while(cursor<8){
-      const batchSize=(cursor===0&&nextPage===0)?1:Math.min(3,8-cursor);
-      const attempts=Array.from({length:batchSize},(_,i)=>cursor+i);
-      const settled=await Promise.allSettled(attempts.map(attempt=>{
-        const page=nextPage+attempt;
-        const exploratory=nextPage>0||attempt>=2;
-        const params={
-          query:queryVariant(title,page),
-          page:String(page+1),
-          offset:String(page*10),
-          limit:'10',
-          exclude:[...before].join(','),
-          searchMode:exploratory?'query':'match',
-          forceRefresh:exploratory?'1':'0',
-          seed:String(page),
-          includeImages:'1',includeShipping:'1',includeDelivery:'1',includeDetails:'1',includeFreightRaw:'1',includeProductRaw:'1',shipTo:'US',currency:'USD'
-        };
-        if(exploratory&&attempt%2===1)params.itemId='';
-        return jsonp(params)
-      }));
-      cursor+=batchSize;attemptsUsed=cursor;
-      settled.forEach(r=>{if(r.status==='fulfilled'&&r.value&&r.value.ok){successfulQueries++;collected=collected.concat(r.value.matches||[])}});
-      const uniq=new Map();
-      collected.forEach(x=>{const k=aliKey(x);if(k&&!before.has(k)&&!uniq.has(k))uniq.set(k,x)});
-      if(uniq.size>=10)break
+    let data;
+    if(nextPage===0){
+      data=await jsonp({});
+      if(!data||!data.ok||!Array.isArray(data.matches)||!data.matches.length){
+        data=await jsonp({query:title,limit:'10',includeImages:'1',includeShipping:'1',includeDelivery:'1',includeDetails:'1',includeFreightRaw:'1',includeProductRaw:'1',shipTo:'US',currency:'USD'})
+      }
+    }else{
+      data=await jsonp({
+        query:title,
+        page:String(nextPage+1),
+        offset:String(nextPage*10),
+        limit:'10',
+        exclude:[...before].join(','),
+        includeImages:'1',includeShipping:'1',includeDelivery:'1',includeDetails:'1',
+        includeFreightRaw:'1',includeProductRaw:'1',shipTo:'US',currency:'USD'
+      })
     }
+    if(!data||!data.ok)throw Error(data?.error||'Risposta AliExpress non valida');
     const freshMap=new Map();
-    collected.forEach(x=>{const k=aliKey(x);if(k&&!before.has(k)&&!freshMap.has(k))freshMap.set(k,x)});
-    mergeMatches([...freshMap.values()].slice(0,10));
-    setTimeout(()=>enrichAliVisible(),0);
+    (Array.isArray(data.matches)?data.matches:[]).forEach(x=>{const k=aliKey(x);if(k&&!before.has(k)&&!freshMap.has(k))freshMap.set(k,x)});
+    const candidates=[...freshMap.values()].slice(0,10);
+    const imageReady=await ensureAliImages(candidates);
+    mergeMatches(imageReady);
+    if(candidates.length>imageReady.length)window.__capitanTestLog?.('AliExpress: esclusi '+(candidates.length-imageReady.length)+' risultati senza immagine verificabile','warn');
     const added=lastMatches.filter(x=>!before.has(aliKey(x))).length;
-    matchPage=nextPage+Math.max(1,attemptsUsed);
+    matchPage=nextPage+1;
     status.textContent='';
-    window.__capitanTestLog?.(added?('Best Match AliExpress: +'+added+' · totale '+lastMatches.length):('Best Match AliExpress: nessun nuovo prodotto dopo '+successfulQueries+' ricerche alternative'),added?'ok':'warn')
+    window.__capitanTestLog?.(added?('Best Match AliExpress: +'+added+' · totale '+lastMatches.length):'Best Match AliExpress: nessun nuovo prodotto',added?'ok':'warn')
   }catch(err){
     console.error(err);status.textContent='';window.__capitanTestLog?.('Errore Best Match AliExpress: '+String(err.message||err),'bad')
   }finally{insertBtn.disabled=false}
