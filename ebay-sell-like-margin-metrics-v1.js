@@ -6,6 +6,7 @@ if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const money=n=>isFinite(n)?`${n.toFixed(2)} USD`:'—';
+let manualPurchaseCost=null;
 
 function panel(){return document.getElementById(PANEL_ID)}
 function rows(){const p=panel();return p?[...p.querySelectorAll('#steps .row')]:[]}
@@ -13,6 +14,7 @@ function parseNumber(text,re){const m=clean(text).match(re);return m?Number(Stri
 function salePrice(){const r=rows().find(x=>/^Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:/i.test(clean(x.innerText||x.textContent)));const dom=r?parseNumber(r.innerText||r.textContent,/Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:\s*([0-9]+(?:[.,][0-9]+)?)/i):null;const global=Number(window.__capitanSellLikeSalePrice);return isFinite(dom)&&dom>0?dom:(isFinite(global)&&global>0?global:null)}
 function breakEven(){const p=panel();const el=p?.querySelector('#capitan-break-even-value');if(!el)return null;return parseNumber(el.textContent||'',/([0-9]+(?:[.,][0-9]+)?)/)}
 function selectedSourcingCost(){
+  if(isFinite(manualPurchaseCost)&&manualPurchaseCost>0)return manualPurchaseCost;
   const p=panel();if(!p)return null;
   const checked=[...p.querySelectorAll('input.capitan-amazon-choice:checked,input.capitan-aliexpress-choice:checked')];
   const totals=checked.map(ch=>{
@@ -67,7 +69,7 @@ function applyManualSalePrice(value,row,span,input){
   const source=Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice);
   let reverseDiscount=null;
   if(isFinite(source)&&source>0){
-    const dr=1-(rounded/source);
+    const dr=(rounded/source)-1;
     if(isFinite(dr)&&dr>-10&&dr<1)reverseDiscount=dr
   }
   try{window.dispatchEvent(new CustomEvent('capitan-sale-price-updated',{detail:{value:rounded,sourcePrice:source,discountRate:reverseDiscount,origin:'manual'}}))}catch(_){}
@@ -134,7 +136,22 @@ function ensureRows(){
   if(fee.nextElementSibling!==be)fee.insertAdjacentElement('afterend',be);
 
   let purchase=p.querySelector('#capitan-margin-source');
-  if(!purchase){purchase=document.createElement('div');purchase.id='capitan-margin-source';purchase.className='row';purchase.innerHTML='<b>Costo totale d\'acquisto:</b> <span data-value>—</span>'}
+  if(!purchase){
+    purchase=document.createElement('div');purchase.id='capitan-margin-source';purchase.className='row';
+    purchase.innerHTML='<b>Costo totale d\'acquisto:</b><input id="capitan-purchase-cost-manual" type="text" inputmode="decimal" placeholder="manuale" title="Costo totale d\'acquisto manuale"><span data-value>—</span>';
+    const input=purchase.querySelector('#capitan-purchase-cost-manual');
+    input.style.cssText='grid-column:2;width:82px;height:28px;box-sizing:border-box;border:1px solid #ff4747;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111';
+    const commit=()=>{
+      const raw=String(input.value||'').trim();
+      if(!raw){manualPurchaseCost=null;input.dataset.manual='0';refresh();return}
+      const n=Number(raw.replace(',','.'));
+      if(!isFinite(n)||n<=0){input.value='';manualPurchaseCost=null;input.dataset.manual='0';refresh();return}
+      manualPurchaseCost=Math.round(n*100)/100;input.dataset.manual='1';input.value=manualPurchaseCost.toFixed(2);refresh()
+    };
+    input.addEventListener('change',commit);input.addEventListener('blur',commit);
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();input.blur()}});
+    input.addEventListener('click',e=>e.stopPropagation())
+  }
   if(be.nextElementSibling!==purchase)be.insertAdjacentElement('afterend',purchase);
 
   let profit=p.querySelector('#capitan-margin-delta');
@@ -147,7 +164,16 @@ function ensureRows(){
   [fee,be,purchase,profit].forEach(styleMetricRow);
   return p
 }
-function setMetric(p,id,val){const el=p.querySelector('#'+id+' [data-value]');if(!el)return;el.textContent=money(val);el.style.justifySelf='end';el.style.textAlign='right';colorValue(el,val)}
+function setMetric(p,id,val){
+  const row=p.querySelector('#'+id),el=row?.querySelector('[data-value]');if(!el)return;
+  el.textContent=money(val);el.style.justifySelf='end';el.style.textAlign='right';el.style.fontWeight=isFinite(val)?'700':'400';
+  if(id==='capitan-margin-break'||id==='capitan-margin-source')el.style.color=isFinite(val)?'#ff4747':'';
+  else colorValue(el,val);
+  if(id==='capitan-margin-source'){
+    const input=row.querySelector('#capitan-purchase-cost-manual');
+    if(input&&input.dataset.manual!=='1'&&document.activeElement!==input)input.value=isFinite(val)&&val>0?Number(val).toFixed(2):''
+  }
+}
 function refresh(){
   const p=ensureRows();if(!p)return false;
   const sale=salePrice(),be=breakEven(),cost=selectedSourcingCost();
