@@ -121,15 +121,24 @@ function normalizeImageUrl(v){
   if(/^\/\//.test(direct))direct='https:'+direct;
   return /^https?:\/\//i.test(direct)?direct:''
 }
-function productImage(x){
-  x=x||{};
-  for(const k of ['image','main_image','mainImage','imageUrl','imageURL','thumbnail','thumbnailUrl','primaryImage','picture','pictureUrl']){
-    const got=normalizeImageUrl(x[k]);if(got)return got
+function deepAmazonImage(v,depth){
+  depth=Number(depth||0);if(depth>4||v==null)return'';
+  const direct=normalizeImageUrl(v);if(direct)return direct;
+  if(typeof v==='string'){
+    const s=v.trim();
+    if(/^[\[{]/.test(s)){try{return deepAmazonImage(JSON.parse(s),depth+1)}catch(_){}}
+    return''
   }
-  const images=x.images||x.all_images||x.allImages;
-  if(Array.isArray(images)){for(const v of images){const got=normalizeImageUrl(v);if(got)return got}}
-  if(typeof images==='string'){for(const v of images.split(/[;|,\n]/)){const got=normalizeImageUrl(v);if(got)return got}}
+  if(Array.isArray(v)){for(const x of v){const got=deepAmazonImage(x,depth+1);if(got)return got}return''}
+  if(typeof v==='object'){
+    const preferred=['mainImage','main_image','image','imageUrl','imageURL','primaryImage','thumbnail','thumbnailUrl','hiRes','large','medium','landingImage','imageBlock','images'];
+    for(const k of preferred){if(k in v){const got=deepAmazonImage(v[k],depth+1);if(got)return got}}
+    for(const k of Object.keys(v)){if(/image|img|picture|photo/i.test(k)){const got=deepAmazonImage(v[k],depth+1);if(got)return got}}
+  }
   return''
+}
+function productImage(x){
+  return deepAmazonImage(x,0)
 }
 function amazonKey(x){return clean(x&&x.asin||'').toUpperCase()}
 async function enrichAmazonOne(x){
@@ -150,21 +159,22 @@ async function enrichAmazonOne(x){
     return exact?{...x,...exact}:x
   }catch(_){return x}
 }
-async function ensureAmazonImages(list){
+async function enrichAmazonList(list){
   const source=(Array.isArray(list)?list:[]).slice(0,30);
   const out=[];
   for(let i=0;i<source.length;i+=4){
     const settled=await Promise.allSettled(source.slice(i,i+4).map(enrichAmazonOne));
     settled.forEach((r,j)=>out.push(r.status==='fulfilled'?r.value:source[i+j]))
   }
-  return out.filter(x=>!!productImage(x))
+  return out
 }
 async function enrichAmazonVisible(){
   const selected=new Set([...results.querySelectorAll('input.capitan-amazon-choice:checked')].map(x=>x.value));
-  const ready=await ensureAmazonImages(lastMatches);
-  lastMatches=ready;
+  const enriched=await enrichAmazonList(lastMatches);
+  lastMatches=enriched;
   render(lastMatches,selected);
-  window.__capitanTestLog?.('Amazon: preview immagini verificate '+ready.length+'/'+ready.length,'ok')
+  const withImage=enriched.filter(x=>!!productImage(x)).length;
+  window.__capitanTestLog?.('Amazon: immagini recuperate '+withImage+'/'+enriched.length,withImage?'ok':'warn')
 }
 function queryVariant(title,page){
   const t=clean(title),parts=t.split(' ').filter(Boolean);
@@ -218,7 +228,7 @@ function amazonEconomicsAllowed(x){
   return net>=-AMAZON_MAX_NEGATIVE_MARGIN&&verySimilar;
 }
 function render(list,selectedIds){
-  lastMatches=(Array.isArray(list)?list:[]).filter(x=>!!productImage(x)).slice(0,100);results.innerHTML='';
+  lastMatches=(Array.isArray(list)?list:[]).slice(0,100);results.innerHTML='';
   if(!lastMatches.length){wrap.style.display='none';return}
   wrap.style.display='block';
   const selected=selectedIds instanceof Set?selectedIds:new Set();
@@ -236,7 +246,8 @@ function render(list,selectedIds){
     const shipping=ship.label?'<span style="color:#555">'+esc(ship.label)+'</span>':'<span style="color:#999">—</span>';
     const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
     const checked=selected.has(String(x.asin||''))||(selected.size===0&&i===0);
-    const preview='<img src="'+esc(img)+'" alt="Amazon product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff">';
+    const adFallback=asin?'https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN='+encodeURIComponent(asin)+'&Format=_SL500_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822':'';
+    const preview=img?'<img src="'+esc(img)+'" data-fallback="'+esc(adFallback)+'" alt="Amazon product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="if(this.dataset.fallback&&this.src!==this.dataset.fallback){const f=this.dataset.fallback;this.dataset.fallback=\'\';this.src=f}else{this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'}"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
     const brand='<span aria-label="Amazon" style="grid-column:2;grid-row:1;justify-self:end;align-self:start;display:inline-flex;flex-direction:column;align-items:flex-end;opacity:.84;line-height:1;text-align:right"><span style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:600;letter-spacing:-.25px;color:#111;line-height:14px">amazon</span><svg viewBox="0 0 52 8" width="46" height="6" preserveAspectRatio="xMidYMid meet" style="display:block;margin-top:0"><path d="M2 1.5 C15 7,34 7,47 2" fill="none" stroke="#f59b23" stroke-width="1.6" stroke-linecap="round"/><path d="M43.5 1 L49 1.4 L46.4 5.5" fill="none" stroke="#f59b23" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
     r.innerHTML='<input type="checkbox" class="capitan-amazon-choice" value="'+esc(x.asin||'')+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#111">'+preview+
       '<div data-product-body style="min-width:0;height:76px;max-height:76px;align-self:start;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr) 84px;grid-template-rows:18px 32px 18px;column-gap:8px;row-gap:4px;overflow:hidden">'+
@@ -314,9 +325,8 @@ insertBtn.addEventListener('click',async e=>{
     const freshMap=new Map();
     collected.filter(amazonEconomicsAllowed).forEach(x=>{const k=amazonKey(x);if(k&&!before.has(k)&&!freshMap.has(k))freshMap.set(k,x)});
     const candidates=[...freshMap.values()].slice(0,10);
-    const imageReady=await ensureAmazonImages(candidates);
-    mergeMatches(imageReady);
-    if(candidates.length>imageReady.length)window.__capitanTestLog?.('Amazon: esclusi '+(candidates.length-imageReady.length)+' risultati senza immagine verificabile','warn');
+    mergeMatches(candidates);
+    setTimeout(()=>enrichAmazonVisible(),0);
     const added=lastMatches.filter(x=>!before.has(amazonKey(x))).length;
     matchPage=nextPage+Math.max(1,attemptsUsed);
     status.textContent='';
