@@ -104,7 +104,7 @@ function updateSalePriceLabel(){
     input.id='capitan-sale-price-manual';
     input.type='text';input.inputMode='decimal';
     input.title='Modifica manualmente il prezzo di vendita';
-    input.style.cssText='grid-column:2;width:82px;height:28px;box-sizing:border-box;border:1px solid #111;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111';
+    input.style.cssText='grid-column:2;width:82px;height:28px;box-sizing:border-box;border:1px solid #c5c9cf;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111';
     if(isFinite(current))input.value=Number(current).toFixed(2);
     input.addEventListener('focus',()=>input.select());
     input.addEventListener('change',()=>{if(applyManualSalePrice(input.value,r,span,input))input.value=Number(String(input.value).replace(',','.')).toFixed(2)});
@@ -140,7 +140,7 @@ function ensureRows(){
     purchase=document.createElement('div');purchase.id='capitan-margin-source';purchase.className='row';
     purchase.innerHTML='<b>Costo totale d\'acquisto:</b><input id="capitan-purchase-cost-manual" type="text" inputmode="decimal" placeholder="" title="Costo totale d\'acquisto"><span data-value>—</span>';
     const input=purchase.querySelector('#capitan-purchase-cost-manual');
-    input.style.cssText='grid-column:2;width:82px;height:28px;box-sizing:border-box;border:1px solid #111;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111';
+    input.style.cssText='grid-column:2;width:82px;height:28px;box-sizing:border-box;border:1px solid #c5c9cf;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111';
     const commit=()=>{
       const raw=String(input.value||'').trim();
       if(!raw){manualPurchaseCost=null;input.dataset.manual='0';refresh();return}
