@@ -131,50 +131,122 @@ function selectedRows(){
 }
 function selectedProductIds(){return selectedRows().map(x=>x.productId).filter(Boolean)}
 
-function normalizeImageUrl(v){
-  if(v&&typeof v==='object'){
-    for(const k of ['url','src','image','imageUrl','imageURL','mainImage','mainImageUrl','thumbnail','thumbnailUrl','large','medium']){
-      const got=normalizeImageUrl(v[k]);if(got)return got
-    }
-    return''
-  }
-  let s=String(v||'').trim();
-  if(!s)return'';
-  s=s.replace(/\\u002F/gi,'/').replace(/\\\//g,'/').replace(/&amp;/g,'&').replace(/&quot;/g,'"');
-  let direct=s;
-  if(/^\/\//.test(direct))direct='https:'+direct;
-  if(/^https?:\/\//i.test(direct))return direct;
-  let m=s.match(/(?:src|url|imageUrl|mainImage)["'=: \\]+((?:https?:)?\/\/[^"'<>\\s]+)/i);
-  if(!m)m=s.match(/((?:https?:)?\/\/[^"'<>\\s]*(?:alicdn\\.com|ae01\\.alicdn)[^"'<>\\s]*)/i);
-  if(!m)m=s.match(/((?:https?:)?\/\/[^"'<>\\s]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'<>\\s]*)?)/i);
-  if(!m)return'';
-  direct=String(m[1]||'').replace(/\\\//g,'/');
-  if(/^\/\//.test(direct))direct='https:'+direct;
-  return /^https?:\/\//i.test(direct)?direct:''
+function parseMaybeJson(v){
+  if(!v)return null;if(typeof v==='object')return v;
+  const s=String(v).trim();if(!s||!(/^[\[{]/.test(s)))return null;
+  try{return JSON.parse(s)}catch(_){try{return JSON.parse(s.replace(/""/g,'"'))}catch(__){return null}}
+}
+function cleanImage(v){
+  let s=clean(v||'');if(!s)return'';
+  s=s.replace(/\\u002F/gi,'/').replace(/\\\//g,'/').replace(/&amp;/g,'&');
+  if(/^\/\//.test(s))s='https:'+s;
+  return /^https?:\/\//i.test(s)?s:''
 }
 function productImage(x){
   x=x||{};
-  for(const k of ['image','imageUrl','imageURL','mainImage','mainImageUrl','main_image','thumbnail','thumbnailUrl','picture','pictureUrl','primaryImage']){
-    const got=normalizeImageUrl(x[k]);if(got)return got
+  // Historical working path first.
+  for(const k of ['image','main_image','mainImage','imageUrl','imageURL','thumbnail','thumbnailUrl']){
+    const direct=cleanImage(x[k]);if(direct)return direct
   }
-  const seen=new Set();
-  function walk(v,depth,key){
-    if(depth>5||v==null)return'';
-    if(typeof v==='string'){
-      const u=normalizeImageUrl(v);
-      if(!u)return'';
-      if(/image|img|thumb|picture|photo|media/i.test(String(key||''))||/alicdn\.com|ae01\.alicdn|\.(?:jpg|jpeg|png|webp)(?:\?|$)/i.test(u))return u;
-      return''
-    }
-    if(typeof v!=='object'||seen.has(v))return'';seen.add(v);
-    if(Array.isArray(v)){for(const y of v){const got=walk(y,depth+1,key);if(got)return got}return''}
-    const priority=Object.keys(v).sort((a,b)=>(/image|img|thumb|picture|photo|media/i.test(b)?1:0)-(/image|img|thumb|picture|photo|media/i.test(a)?1:0));
-    for(const k of priority){const got=walk(v[k],depth+1,k);if(got)return got}
-    return''
+  const raw=parseMaybeJson(x.product_raw||x.productRaw||x.rawProduct||x.raw);
+  const skuList=raw?.ae_item_sku_info_dtos?.ae_item_sku_info_d_t_o||raw?.aeItemSkuInfoDtos?.aeItemSkuInfoDto||[];
+  const arr=Array.isArray(skuList)?skuList:[skuList].filter(Boolean);
+  const wanted=clean(x.skuId||x.sku_id||'');
+  const ordered=wanted?[...arr.filter(s=>clean(s?.sku_id||s?.skuId)===wanted),...arr.filter(s=>clean(s?.sku_id||s?.skuId)!==wanted)]:arr;
+  for(const sku of ordered){
+    const props=sku?.ae_sku_property_dtos?.ae_sku_property_d_t_o||sku?.aeSkuPropertyDtos?.aeSkuPropertyDto||[];
+    for(const p of (Array.isArray(props)?props:[props])){const u=cleanImage(p?.sku_image||p?.skuImage);if(u)return u}
   }
-  return walk(x,0,'')
+  const images=x.images||x.all_images||x.allImages;
+  if(Array.isArray(images)){for(const v of images){const u=cleanImage(v);if(u)return u}}
+  if(typeof images==='string'){for(const v of images.split(/[|,\n]/)){const u=cleanImage(v);if(u)return u}}
+  return''
 }
-function aliKey(x){return clean(x&&x.productId||'')}
+function aliKey(x){return clean(x&&x.productId||x?.product_id||'')}
+function num(v){
+  if(v==null||v==='')return NaN;
+  if(typeof v==='number')return v;
+  const s=String(v).trim().replace(/\s/g,'').replace(/[^0-9,.\-]/g,'');
+  if(!s)return NaN;
+  let normalized=s;
+  if(s.includes(',')&&!s.includes('.'))normalized=s.replace(',','.');
+  else if(s.includes(',')&&s.includes('.'))normalized=s.lastIndexOf(',')>s.lastIndexOf('.')?s.replace(/\./g,'').replace(',','.'):s.replace(/,/g,'');
+  const n=Number(normalized);return isFinite(n)?n:NaN
+}
+function productRaw(x){return parseMaybeJson(x?.product_raw||x?.productRaw||x?.rawProduct||x?.raw)||{}}
+function freightRaw(x){return parseMaybeJson(x?.freight_raw||x?.freightRaw||x?.shippingRaw||x?.freight)||{}}
+function skuRows(x){
+  const raw=productRaw(x);
+  const v=raw?.ae_item_sku_info_dtos?.ae_item_sku_info_d_t_o||raw?.aeItemSkuInfoDtos?.aeItemSkuInfoDto||[];
+  return Array.isArray(v)?v:[v].filter(Boolean)
+}
+function aliProductPrice(x){
+  x=x||{};
+  for(const k of ['sale_price','salePrice','offer_sale_price','offerSalePrice','discountedPrice','discountPrice','currentPrice']){
+    const n=num(x[k]);if(isFinite(n)&&n>0)return n
+  }
+  const wanted=clean(x.skuId||x.sku_id||'');
+  const rows=skuRows(x);
+  const ordered=wanted?[...rows.filter(s=>clean(s?.sku_id||s?.skuId)===wanted),...rows.filter(s=>clean(s?.sku_id||s?.skuId)!==wanted)]:rows;
+  for(const s of ordered){
+    for(const k of ['offer_sale_price','offerSalePrice','offer_bulk_sale_price']){
+      const n=num(s?.[k]);if(isFinite(n)&&n>0)return n
+    }
+  }
+  for(const k of ['price','sku_price','skuPrice','minPrice']){const n=num(x[k]);if(isFinite(n)&&n>0)return n}
+  return NaN
+}
+function freightOptions(x){
+  const raw=freightRaw(x);
+  let v=raw?.delivery_option_d_t_o||raw?.deliveryOptionDto||raw?.delivery_options||raw?.deliveryOptions||[];
+  if(v&&v.delivery_option_d_t_o)v=v.delivery_option_d_t_o;
+  return Array.isArray(v)?v:[v].filter(Boolean)
+}
+function aliFreight(x,price){
+  x=x||{};price=Number(price);
+  let cost=num(x.shipping_cost??x.shippingCost??x.shipping_fee_cent??x.shippingFee);
+  let min=num(x.delivery_days_min??x.deliveryDaysMin??x.minDeliveryDays);
+  let max=num(x.delivery_days_max??x.deliveryDaysMax??x.maxDeliveryDays);
+  let threshold=num(x.free_shipping_threshold??x.freeShippingThreshold);
+  let free=x.free_shipping??x.freeShipping;
+  let option=null;
+  const options=freightOptions(x);
+  if(options.length){
+    option=options.find(o=>{
+      const fee=num(o?.shipping_fee_cent??o?.shippingFeeCent??o?.shipping_fee);
+      return isFinite(fee)
+    })||options[0];
+    const fee=num(option?.shipping_fee_cent??option?.shippingFeeCent??option?.shipping_fee);
+    if(isFinite(fee))cost=fee;
+    const omin=num(option?.min_delivery_days??option?.minDeliveryDays);
+    const omax=num(option?.max_delivery_days??option?.maxDeliveryDays);
+    if(isFinite(omin)&&omin>0)min=omin;if(isFinite(omax)&&omax>0)max=omax;
+    const oth=num(option?.free_shipping_threshold??option?.freeShippingThreshold);
+    if(isFinite(oth)&&oth>0)threshold=oth;
+    if(option?.free_shipping!=null)free=option.free_shipping;
+    if(option?.freeShipping!=null)free=option.freeShipping
+  }
+  const rawText=clean([x.shippingLabel,x.shippingText,x.shipping,x.deliveryText,option&&JSON.stringify(option)].filter(Boolean).join(' | '));
+  if(!(isFinite(threshold)&&threshold>0)){
+    const m=rawText.match(/free\s+shipping(?:\s+on\s+orders)?\s+(?:over|above)\s*(?:US\s*)?\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
+    if(m)threshold=num(m[1])
+  }
+  const freeBool=free===true||String(free).toLowerCase()==='true'||String(free).toUpperCase()==='YES';
+  let label='';
+  if(isFinite(threshold)&&threshold>0){
+    if(isFinite(price)&&price>=threshold){cost=0;label='Free Shipping'}
+    else{if(!(isFinite(cost)&&cost>0))cost=1.99;label='Shipping fee: $'+cost.toFixed(2)}
+  }else if(isFinite(cost)&&cost>0){
+    label='Shipping fee: $'+cost.toFixed(2)
+  }else if((isFinite(cost)&&cost===0)||freeBool){
+    cost=0;label='Free Shipping'
+  }else{
+    cost=null;label=''
+  }
+  const delivery=(isFinite(min)&&min>0&&isFinite(max)&&max>0)?(Math.round(min)===Math.round(max)?Math.round(min)+'gg':Math.round(min)+'-'+Math.round(max)+'gg'):(isFinite(max)&&max>0?Math.round(max)+'gg':(isFinite(min)&&min>0?Math.round(min)+'gg':''));
+  const total=isFinite(price)&&price>0?price+(isFinite(cost)?cost:0):null;
+  return {cost,total,threshold,label,delivery}
+}
 function queryVariant(title,page){
   const t=clean(title),parts=t.split(' ').filter(Boolean);
   if(!parts.length)return t;
@@ -193,85 +265,6 @@ function queryVariant(title,page){
   ].map(clean).filter(Boolean);
   return variants[Math.abs(Number(page)||0)%variants.length]||t
 }
-function collectAliValues(root,keyRe){
-  const out=[],seen=new Set();
-  function walk(v,depth,key){
-    if(depth>5||v==null)return;
-    if(typeof v!=='object'){if(keyRe.test(String(key||'')))out.push(v);return}
-    if(seen.has(v))return;seen.add(v);
-    if(Array.isArray(v)){v.forEach(y=>walk(y,depth+1,key));return}
-    Object.keys(v).forEach(k=>walk(v[k],depth+1,k))
-  }
-  walk(root,0,'');
-  return out
-}
-function numberFromAny(v){
-  if(v&&typeof v==='object'){
-    for(const k of ['value','amount','price','min','max']){
-      const n=numberFromAny(v[k]);if(isFinite(n))return n
-    }
-    return NaN
-  }
-  const m=String(v??'').replace(',','.').match(/-?\d+(?:\.\d+)?/);
-  return m?Number(m[0]):NaN
-}
-function aliProductPrice(x){
-  x=x||{};
-  const keys=['salePrice','sale_price','currentPrice','discountedPrice','discountPrice','offerPrice','skuPrice','minPrice','price','priceValue'];
-  for(const k of keys){const n=numberFromAny(x[k]);if(isFinite(n)&&n>0)return n}
-  const vals=collectAliValues(x,/^(?:sale|current|discount|offer|sku|min)?price(?:value)?$/i);
-  for(const v of vals){const n=numberFromAny(v);if(isFinite(n)&&n>0)return n}
-  return NaN
-}
-function aliShippingMetaV2(x,price){
-  x=x||{};price=Number(price);
-  const vals=collectAliValues(x,/shipping|freight|delivery/i);
-  const raw=vals.map(v=>clean(typeof v==='object'?JSON.stringify(v):v)).filter(Boolean).join(' | ');
-  let threshold=null;
-  for(const v of collectAliValues(x,/free.*shipping.*(?:threshold|min|over)|shipping.*(?:threshold|min).*free/i)){
-    const n=numberFromAny(v);if(isFinite(n)&&n>0){threshold=n;break}
-  }
-  let m=raw.match(/free\s+shipping(?:\s+on\s+orders)?\s+(?:over|above)\s*(?:US\s*)?\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
-  if(m)threshold=Number(String(m[1]).replace(',','.'));
-  let cost=null;
-  for(const v of collectAliValues(x,/shipping(?:Cost|Price|Fee)|delivery(?:Cost|Fee)|freight(?:Cost|Fee)?/i)){
-    const n=numberFromAny(v);if(isFinite(n)&&n>=0){cost=n;break}
-  }
-  if(cost==null){
-    m=raw.match(/(?:shipping\s*fee|shipping|delivery|freight)[^$0-9]{0,18}\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
-    if(m)cost=Number(String(m[1]).replace(',','.'))
-  }
-  const explicitFree=/\bfree\s+shipping\b/i.test(raw)||x.freeShipping===true||String(x.freeShipping).toLowerCase()==='true';
-  let label='';
-  if(isFinite(threshold)&&threshold>0){
-    if(isFinite(price)&&price>=threshold){cost=0;label='Free Shipping'}
-    else{if(!(isFinite(cost)&&cost>0))cost=1.99;label='Shipping fee: $'+Number(cost).toFixed(2)}
-  }else if(isFinite(cost)&&cost>0){
-    label='Shipping fee: $'+Number(cost).toFixed(2)
-  }else if(explicitFree){
-    cost=0;label='Free Shipping'
-  }else{
-    cost=null;label='Shipping da verificare'
-  }
-  const total=isFinite(price)&&price>0?price+(isFinite(cost)?cost:0):null;
-  return {label,cost,total,threshold,raw}
-}
-function aliDeliveryLabel(x){
-  x=x||{};
-  const vals=collectAliValues(x,/delivery|arrival|arrive|shipping.*day|estimated|days?/i);
-  const direct=[];
-  vals.forEach(v=>{
-    const s=clean(typeof v==='object'?JSON.stringify(v):v);
-    let m=s.match(/(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*(?:business\s*)?days?/i);
-    if(m){direct.push(Number(m[1]),Number(m[2]));return}
-    m=s.match(/(?:delivery|arrives?|estimated)?[^0-9]{0,20}(\d{1,2})\s*(?:business\s*)?days?/i);
-    if(m)direct.push(Number(m[1]))
-  });
-  if(!direct.length)return'';
-  const min=Math.min(...direct.filter(n=>isFinite(n)&&n>0)),max=Math.max(...direct.filter(n=>isFinite(n)&&n>0));
-  if(!isFinite(min)||!isFinite(max))return'';
-  return min===max?Math.round(min)+'gg':Math.round(min)+'-'+Math.round(max)+'gg'
-}
 function mergeMatches(list){
   const selected=new Set([...results.querySelectorAll('input.capitan-aliexpress-choice:checked')].map(x=>x.value));
   const map=new Map(lastMatches.map(x=>[aliKey(x),x]));
@@ -279,31 +272,6 @@ function mergeMatches(list){
   lastMatches=[...map.values()].slice(0,100);
   render(lastMatches,selected)
 }
-function aliShippingMeta(x){
-  x=x||{};
-  const price=Number(x.price);
-  const raw=clean(x.shippingLabel||x.shippingText||x.shipping||x.delivery||x.deliveryText||x.shippingInfo||'');
-  let cost=Number(x.shippingCost??x.shippingPrice??x.deliveryCost);
-  if(!isFinite(cost)||cost<0)cost=null;
-  let label='',threshold=null,m=raw.match(/free\s+shipping(?:\s+on\s+orders)?\s+(?:over|above)\s*(?:US\s*)?\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
-  if(m){
-    threshold=Number(String(m[1]).replace(',','.'));
-    label='Free shipping over $ '+threshold.toFixed(2);
-    if(isFinite(price)&&price>=threshold)cost=0;
-    else if(cost==null||cost===0)cost=1.99;
-  }else if(/\bfree\s+shipping\b/i.test(raw)||x.freeShipping===true||Number(cost)===0){
-    label='Free shipping';cost=0;
-  }else{
-    if(cost==null){
-      m=raw.match(/(?:US\s*)?\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
-      if(m)cost=Number(String(m[1]).replace(',','.'))
-    }
-    if(cost!=null&&isFinite(cost)&&cost>0)label='$ '+cost.toFixed(2)
-  }
-  const total=isFinite(price)&&price>0?price+(isFinite(cost)?cost:0):null;
-  return {label,cost,total,threshold}
-}
-
 function render(list,selectedIds){
   lastMatches=(Array.isArray(list)?list:[]).slice(0,100);
   results.innerHTML='';
@@ -313,15 +281,15 @@ function render(list,selectedIds){
   const box=document.createElement('div');
   box.style.cssText='margin-top:0;display:grid;gap:7px';
   lastMatches.forEach((x,i)=>{
-    const price=aliProductPrice(x),ship=aliShippingMetaV2(x,price),delivery=aliDeliveryLabel(x);
+    const price=aliProductPrice(x),freight=aliFreight(x,price);
     const r=document.createElement('label');
     r.dataset.sourcePrice=isFinite(price)?String(price):'';
-    r.dataset.shippingCost=isFinite(ship.cost)?String(ship.cost):'';
-    r.dataset.totalCost=isFinite(ship.total)?String(ship.total):'';
+    r.dataset.shippingCost=isFinite(freight.cost)?String(freight.cost):'';
+    r.dataset.totalCost=isFinite(freight.total)?String(freight.total):'';
     r.style.cssText='display:grid;grid-template-columns:24px 76px minmax(0,1fr);gap:9px;align-items:start;padding:9px 10px;border:1px solid #e1e4e8;border-radius:10px;background:#fff;cursor:pointer;font-size:12.5px;line-height:1.28';
     const url=esc(x.url||('https://www.aliexpress.us/item/'+(x.productId||'')+'.html'));
     const img=productImage(x);
-    const shippingLabel=esc((delivery?delivery+' | ':'')+ship.label);
+    const shippingLabel=esc((freight.delivery?freight.delivery+' | ':'')+(freight.label||''));
     const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
     const checked=selected.has(String(x.productId||''))||(selected.size===0&&i===0);
     const preview=img?'<img src="'+esc(img)+'" alt="AliExpress product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
@@ -329,7 +297,7 @@ function render(list,selectedIds){
     r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#ff4747">'+preview+
       '<div style="min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 5px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:800;font-size:13px;line-height:1">'+esc(x.productId||'')+'</a>'+brand+'</div>'+
       '<div style="color:#444;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
-      '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px"><span data-card-shipping style="color:#555">'+shippingLabel+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:800;color:#111">'+priceText+'</span></div></div>';
+      '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px"><span data-card-shipping style="color:#555">'+(shippingLabel||'—')+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:800;color:#111">'+priceText+'</span></div></div>';
     box.appendChild(r)
   });
   results.appendChild(box);
@@ -385,7 +353,7 @@ insertBtn.addEventListener('click',async e=>{
         searchMode:exploratory?'query':'match',
         forceRefresh:exploratory?'1':'0',
         seed:String(page),
-        includeImages:'1',includeShipping:'1',includeDelivery:'1',includeDetails:'1'
+        includeImages:'1',includeShipping:'1',includeDelivery:'1',includeDetails:'1',includeFreightRaw:'1',includeProductRaw:'1',shipTo:'US',currency:'USD'
       };
       if(exploratory&&attempt%2===1)params.itemId='';
       const data=await jsonp(params);
