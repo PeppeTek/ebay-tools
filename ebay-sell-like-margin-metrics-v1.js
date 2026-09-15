@@ -138,7 +138,7 @@ function ensureRows(){
   let purchase=p.querySelector('#capitan-margin-source');
   if(!purchase){
     purchase=document.createElement('div');purchase.id='capitan-margin-source';purchase.className='row';
-    purchase.innerHTML='<b>Costo totale d\'acquisto:</b><input id="capitan-purchase-cost-manual" type="text" inputmode="decimal" placeholder="manuale" title="Costo totale d\'acquisto manuale"><span data-value>—</span>';
+    purchase.innerHTML='<b>Costo totale d\'acquisto:</b><input id="capitan-purchase-cost-manual" type="text" inputmode="decimal" placeholder="" title="Costo totale d\'acquisto"><span data-value>—</span>';
     const input=purchase.querySelector('#capitan-purchase-cost-manual');
     input.style.cssText='grid-column:2;width:82px;height:28px;box-sizing:border-box;border:1px solid #111;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111';
     const commit=()=>{
