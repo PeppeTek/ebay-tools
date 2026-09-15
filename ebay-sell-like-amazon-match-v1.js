@@ -126,11 +126,42 @@ function productImage(x){
   for(const k of ['image','main_image','mainImage','imageUrl','imageURL','thumbnail','thumbnailUrl','primaryImage','picture','pictureUrl']){
     const got=normalizeImageUrl(x[k]);if(got)return got
   }
-  if(Array.isArray(x.images)){for(const v of x.images){const got=normalizeImageUrl(v);if(got)return got}}
-  if(typeof x.images==='string'){for(const v of x.images.split(/[|,\n]/)){const got=normalizeImageUrl(v);if(got)return got}}
+  const images=x.images||x.all_images||x.allImages;
+  if(Array.isArray(images)){for(const v of images){const got=normalizeImageUrl(v);if(got)return got}}
+  if(typeof images==='string'){for(const v of images.split(/[;|,\n]/)){const got=normalizeImageUrl(v);if(got)return got}}
   return''
 }
 function amazonKey(x){return clean(x&&x.asin||'').toUpperCase()}
+async function enrichAmazonOne(x){
+  const asin=amazonKey(x);if(!asin||productImage(x))return x;
+  try{
+    const d=await jsonpAction('amazon_match',{
+      itemId,
+      query:asin,
+      asin,
+      exactAsin:'1',
+      searchMode:'product',
+      limit:'5',
+      includeImages:'1',includeShipping:'1',includeDetails:'1'
+    });
+    const pools=[d?.matches,d?.results,d?.items,d?.products].filter(Array.isArray).flat();
+    for(const obj of [d?.product,d?.item,d?.detail])if(obj&&typeof obj==='object')pools.push(obj);
+    const exact=pools.find(y=>amazonKey(y)===asin);
+    return exact?{...x,...exact}:x
+  }catch(_){return x}
+}
+async function enrichAmazonVisible(){
+  const selected=new Set([...results.querySelectorAll('input.capitan-amazon-choice:checked')].map(x=>x.value));
+  const source=lastMatches.slice(0,20);
+  const out=[];
+  for(let i=0;i<source.length;i+=4){
+    const settled=await Promise.allSettled(source.slice(i,i+4).map(enrichAmazonOne));
+    settled.forEach((r,j)=>out.push(r.status==='fulfilled'?r.value:source[i+j]))
+  }
+  let changed=false;const map=new Map(lastMatches.map(x=>[amazonKey(x),x]));
+  out.forEach(x=>{const k=amazonKey(x);if(!k)return;const old=map.get(k);if(old&&JSON.stringify(old)!==JSON.stringify(x)){map.set(k,x);changed=true}});
+  if(changed){lastMatches=[...map.values()];render(lastMatches,selected);window.__capitanTestLog?.('Amazon: immagini/dettagli arricchiti','ok')}
+}
 function queryVariant(title,page){
   const t=clean(title),parts=t.split(' ').filter(Boolean);
   if(page<=0||parts.length<5)return t;
@@ -189,7 +220,10 @@ function render(list,selectedIds){
   const selected=selectedIds instanceof Set?selectedIds:new Set();
   const box=document.createElement('div');box.style.cssText='margin-top:0;display:grid;gap:7px';
   lastMatches.forEach((x,i)=>{
-    const price=Number(x.price),ship=amazonShippingMeta(x),url=esc(x.url||('https://www.amazon.com/dp/'+(x.asin||''))),img=productImage(x);
+    const price=Number(x.price),ship=amazonShippingMeta(x),url=esc(x.url||('https://www.amazon.com/dp/'+(x.asin||''))),detected=productImage(x);
+    const asin=clean(x.asin||'');
+    const legacy=asin?'https://images-na.ssl-images-amazon.com/images/P/'+encodeURIComponent(asin)+'.01.LZZZZZZZ.jpg':'';
+    const img=detected||legacy;
     const r=document.createElement('label');
     r.dataset.sourcePrice=isFinite(price)?String(price):'';
     r.dataset.shippingCost=isFinite(ship.cost)?String(ship.cost):'';
@@ -198,10 +232,10 @@ function render(list,selectedIds){
     const shipping=ship.label?'<span style="color:#555">'+esc(ship.label)+'</span>':'<span style="color:#999">—</span>';
     const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
     const checked=selected.has(String(x.asin||''))||(selected.size===0&&i===0);
-    const preview=img?'<img src="'+esc(img)+'" alt="Amazon product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
+    const preview=img?'<img src="'+esc(img)+'" data-fallback="'+esc(legacy)+'" alt="Amazon product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="if(this.dataset.fallback&&this.src!==this.dataset.fallback){const f=this.dataset.fallback;this.dataset.fallback=\'\';this.src=f}else{this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'}"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
     const brand='<span aria-label="Amazon" style="display:inline-flex;flex-direction:column;align-items:flex-end;justify-content:center;flex:0 0 auto;margin-left:auto;opacity:.84;line-height:1;text-align:right;transform:translateY(-1px)"><span style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:600;letter-spacing:-.25px;color:#111;line-height:16px">amazon</span><svg viewBox="0 0 52 8" width="46" height="6" preserveAspectRatio="xMidYMid meet" style="display:block;margin-top:1px"><path d="M2 1.5 C15 7,34 7,47 2" fill="none" stroke="#f59b23" stroke-width="1.6" stroke-linecap="round"/><path d="M43.5 1 L49 1.4 L46.4 5.5" fill="none" stroke="#f59b23" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
     r.innerHTML='<input type="checkbox" class="capitan-amazon-choice" value="'+esc(x.asin||'')+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#111">'+preview+
-      '<div style="min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-height:23px;margin:0 0 4px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:600;font-size:12.5px;line-height:20px">'+esc(x.asin||'')+'</a>'+brand+'</div>'+
+      '<div style="min-width:0;align-self:start;margin-top:-1px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-height:23px;margin:0 0 4px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:600;font-size:12.5px;line-height:20px">'+esc(x.asin||'')+'</a>'+brand+'</div>'+
       '<div style="color:#444;font-size:12.5px;line-height:16px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:32px;margin-bottom:7px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
       '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px"><span data-card-shipping>'+shipping+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:600;color:#111">'+priceText+'</span></div></div>';
     box.appendChild(r)
@@ -252,7 +286,7 @@ insertBtn.addEventListener('click',async e=>{
     const breakEven=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);
     let collected=[],attemptsUsed=0,cursor=0;
     while(cursor<6){
-      const batchSize=(cursor===0&&nextPage===0)?1:Math.min(2,6-cursor);
+      const batchSize=(cursor===0&&nextPage===0)?1:Math.min(3,6-cursor);
       const pages=Array.from({length:batchSize},(_,i)=>nextPage+cursor+i);
       const settled=await Promise.allSettled(pages.map(page=>jsonpAction('amazon_match',{
         itemId,
@@ -274,6 +308,7 @@ insertBtn.addEventListener('click',async e=>{
     const freshMap=new Map();
     collected.filter(amazonEconomicsAllowed).forEach(x=>{const k=amazonKey(x);if(k&&!before.has(k)&&!freshMap.has(k))freshMap.set(k,x)});
     mergeMatches([...freshMap.values()].slice(0,10));
+    setTimeout(()=>enrichAmazonVisible(),0);
     const added=lastMatches.filter(x=>!before.has(amazonKey(x))).length;
     matchPage=nextPage+Math.max(1,attemptsUsed);
     status.textContent='';
