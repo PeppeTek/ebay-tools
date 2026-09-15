@@ -14,7 +14,7 @@ const style=document.createElement('style');
 style.id='capitan-test-ui-style';
 style.textContent=`
 #${PANEL_ID}{width:500px!important;min-width:500px!important;max-width:none!important;overflow:hidden!important}
-#${PANEL_ID} #capitan-sourcing-scroll{display:none;grid-template-columns:1fr;gap:12px;max-height:330px;overflow-y:auto;overflow-x:hidden;padding:0 0 8px;scrollbar-gutter:stable}
+#${PANEL_ID} #capitan-sourcing-scroll{display:none;grid-template-columns:1fr;gap:12px;max-height:min(330px,calc(100vh - 470px));overflow-y:auto;overflow-x:hidden;padding:0 0 8px;scrollbar-gutter:stable}
 #${PANEL_ID} #capitan-sourcing-scroll>#capitan-aliexpress-match-ext,#${PANEL_ID} #capitan-sourcing-scroll>#capitan-amazon-match-ext{margin:0!important;padding:0 14px!important}
 #${PANEL_ID} .h{padding:6px 72px 5px 12px!important;min-height:36px!important;gap:7px!important;font-size:13px!important}
 #${PANEL_ID} #capitan-discount-row,#${PANEL_ID} #capitan-sale-price-row,#${PANEL_ID} #capitan-margin-break,#${PANEL_ID} #capitan-break-even-row,#${PANEL_ID} #capitan-margin-source,#${PANEL_ID} #capitan-margin-delta{min-height:38px!important;padding:5px 0!important}
