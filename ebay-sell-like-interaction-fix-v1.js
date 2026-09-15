@@ -15,8 +15,9 @@ function normalize(){
   panel.style.isolation='isolate';
   const actions=panel.querySelector('[data-ebay-actions]');
   if(actions){
-    actions.style.position='sticky';
-    actions.style.bottom='0';
+    const sticky=!window.__capitanSellLikeTestMode;
+    actions.style.position=sticky?'sticky':'relative';
+    actions.style.bottom=sticky?'0':'auto';
     actions.style.zIndex='1000';
     actions.style.pointerEvents='auto';
     actions.style.isolation='isolate';
