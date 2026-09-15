@@ -123,25 +123,12 @@ function normalizeImageUrl(v){
 }
 function productImage(x){
   x=x||{};
-  for(const k of ['image','imageUrl','imageURL','mainImage','mainImageUrl','main_image','thumbnail','thumbnailUrl','picture','pictureUrl','primaryImage']){
+  for(const k of ['image','main_image','mainImage','imageUrl','imageURL','thumbnail','thumbnailUrl','primaryImage','picture','pictureUrl']){
     const got=normalizeImageUrl(x[k]);if(got)return got
   }
-  const seen=new Set();
-  function walk(v,depth,key){
-    if(depth>5||v==null)return'';
-    if(typeof v==='string'){
-      const u=normalizeImageUrl(v);
-      if(!u)return'';
-      if(/image|img|thumb|picture|photo|media/i.test(String(key||''))||/m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|amazon.*\.(?:jpg|jpeg|png|webp)|\.(?:jpg|jpeg|png|webp)(?:\?|$)/i.test(u))return u;
-      return''
-    }
-    if(typeof v!=='object'||seen.has(v))return'';seen.add(v);
-    if(Array.isArray(v)){for(const y of v){const got=walk(y,depth+1,key);if(got)return got}return''}
-    const priority=Object.keys(v).sort((a,b)=>(/image|img|thumb|picture|photo|media/i.test(b)?1:0)-(/image|img|thumb|picture|photo|media/i.test(a)?1:0));
-    for(const k of priority){const got=walk(v[k],depth+1,k);if(got)return got}
-    return''
-  }
-  return walk(x,0,'')
+  if(Array.isArray(x.images)){for(const v of x.images){const got=normalizeImageUrl(v);if(got)return got}}
+  if(typeof x.images==='string'){for(const v of x.images.split(/[|,\n]/)){const got=normalizeImageUrl(v);if(got)return got}}
+  return''
 }
 function amazonKey(x){return clean(x&&x.asin||'').toUpperCase()}
 function queryVariant(title,page){
@@ -202,24 +189,21 @@ function render(list,selectedIds){
   const selected=selectedIds instanceof Set?selectedIds:new Set();
   const box=document.createElement('div');box.style.cssText='margin-top:0;display:grid;gap:7px';
   lastMatches.forEach((x,i)=>{
-    const price=Number(x.price),ship=amazonShippingMeta(x),url=esc(x.url||('https://www.amazon.com/dp/'+(x.asin||'')));
-    const detected=productImage(x);
-    const fallback=x.asin?'https://images-na.ssl-images-amazon.com/images/P/'+encodeURIComponent(x.asin)+'.01.LZZZZZZZ.jpg':'';
-    const img=detected||fallback;
+    const price=Number(x.price),ship=amazonShippingMeta(x),url=esc(x.url||('https://www.amazon.com/dp/'+(x.asin||''))),img=productImage(x);
     const r=document.createElement('label');
     r.dataset.sourcePrice=isFinite(price)?String(price):'';
     r.dataset.shippingCost=isFinite(ship.cost)?String(ship.cost):'';
     r.dataset.totalCost=isFinite(ship.total)?String(ship.total):'';
     r.style.cssText='display:grid;grid-template-columns:24px 76px minmax(0,1fr);gap:9px;align-items:start;padding:9px 10px;border:1px solid #e1e4e8;border-radius:10px;background:#fff;cursor:pointer;font-size:12.5px;line-height:1.28';
-    const shipping=ship.label?'<span style="color:#555">'+esc(ship.label)+'</span>':'<span style="color:#999">Shipping da verificare</span>';
+    const shipping=ship.label?'<span style="color:#555">'+esc(ship.label)+'</span>':'<span style="color:#999">—</span>';
     const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
     const checked=selected.has(String(x.asin||''))||(selected.size===0&&i===0);
     const preview=img?'<img src="'+esc(img)+'" alt="Amazon product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
-    const brand='<span aria-label="Amazon" style="display:inline-flex;flex-direction:column;align-items:flex-end;justify-content:center;flex:0 0 auto;margin-left:auto;opacity:.84;line-height:1;text-align:right"><span style="font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;letter-spacing:-.4px;color:#111">amazon</span><svg viewBox="0 0 52 8" width="48" height="7" preserveAspectRatio="xMidYMid meet" style="display:block;margin-top:1px"><path d="M2 1.5 C15 7,34 7,47 2" fill="none" stroke="#f59b23" stroke-width="1.8" stroke-linecap="round" vector-effect="non-scaling-stroke"/><path d="M43.5 1 L49 1.4 L46.4 5.5" fill="none" stroke="#f59b23" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg></span>';
+    const brand='<span aria-label="Amazon" style="display:inline-flex;flex-direction:column;align-items:flex-end;justify-content:center;flex:0 0 auto;margin-left:auto;opacity:.84;line-height:1;text-align:right;transform:translateY(-1px)"><span style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:600;letter-spacing:-.25px;color:#111;line-height:16px">amazon</span><svg viewBox="0 0 52 8" width="46" height="6" preserveAspectRatio="xMidYMid meet" style="display:block;margin-top:1px"><path d="M2 1.5 C15 7,34 7,47 2" fill="none" stroke="#f59b23" stroke-width="1.6" stroke-linecap="round"/><path d="M43.5 1 L49 1.4 L46.4 5.5" fill="none" stroke="#f59b23" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
     r.innerHTML='<input type="checkbox" class="capitan-amazon-choice" value="'+esc(x.asin||'')+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#111">'+preview+
-      '<div style="min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 5px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:800;font-size:13px;line-height:1">'+esc(x.asin||'')+'</a>'+brand+'</div>'+
-      '<div style="color:#444;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
-      '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px"><span data-card-shipping>'+shipping+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:800;color:#111">'+priceText+'</span></div></div>';
+      '<div style="min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-height:23px;margin:0 0 4px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:600;font-size:12.5px;line-height:20px">'+esc(x.asin||'')+'</a>'+brand+'</div>'+
+      '<div style="color:#444;font-size:12.5px;line-height:16px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:32px;margin-bottom:7px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
+      '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px"><span data-card-shipping>'+shipping+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:600;color:#111">'+priceText+'</span></div></div>';
     box.appendChild(r)
   });
   results.appendChild(box);
