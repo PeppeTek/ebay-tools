@@ -13,7 +13,9 @@ let lastStatus='',seenClicks=new WeakSet(),shippingFallbackPromise=null;
 const style=document.createElement('style');
 style.id='capitan-test-ui-style';
 style.textContent=`
-#${PANEL_ID}{width:500px!important;min-width:500px!important;max-width:none!important}
+#${PANEL_ID}{width:500px!important;min-width:500px!important;max-width:none!important;overflow:hidden!important}
+#${PANEL_ID} #capitan-sourcing-scroll{display:none;grid-template-columns:1fr;gap:12px;max-height:330px;overflow-y:auto;overflow-x:hidden;padding:0 0 8px;scrollbar-gutter:stable}
+#${PANEL_ID} #capitan-sourcing-scroll>#capitan-aliexpress-match-ext,#${PANEL_ID} #capitan-sourcing-scroll>#capitan-amazon-match-ext{margin:0!important;padding:0 14px!important}
 #${PANEL_ID} .h{padding:6px 72px 5px 12px!important;min-height:36px!important;gap:7px!important;font-size:13px!important}
 #${PANEL_ID} #capitan-discount-row,#${PANEL_ID} #capitan-sale-price-row,#${PANEL_ID} #capitan-margin-break,#${PANEL_ID} #capitan-break-even-row,#${PANEL_ID} #capitan-margin-source,#${PANEL_ID} #capitan-margin-delta{min-height:38px!important;padding:5px 0!important}
 #${PANEL_ID} .h .title{font-size:13px!important}
@@ -76,6 +78,8 @@ function hideOkRows(){
 function ensureUi(){
   const p=panel();if(!p)return false;
   p.style.width='500px';p.style.minWidth='500px';p.style.maxWidth='none';
+  const sourceRow=[...p.querySelectorAll('.b > .row,.row')].find(r=>/^Source Item ID:/i.test(clean(r.innerText||r.textContent||'')));
+  if(sourceRow){sourceRow.style.minHeight='38px';sourceRow.style.display='flex';sourceRow.style.alignItems='center';sourceRow.style.padding='5px 0'}
   const header=p.querySelector('.h');
   const title=header?.querySelector('.title')||header?.querySelector('span');
   if(title&&!p.querySelector('#capitan-test-badge')){
@@ -91,6 +95,16 @@ function ensureUi(){
     wrap.innerHTML='<div id="capitan-test-log-title"><span>Operational log</span><span>TEST</span></div><div id="capitan-test-log-body"></div>';
     actions.appendChild(wrap);
     log('Ambiente TEST inizializzato','warn')
+  }
+  const ali=p.querySelector('#capitan-aliexpress-match-ext'),amz=p.querySelector('#capitan-amazon-match-ext');
+  if((ali||amz)&&actions){
+    let sc=p.querySelector('#capitan-sourcing-scroll');
+    if(!sc){sc=document.createElement('div');sc.id='capitan-sourcing-scroll';actions.parentNode.insertBefore(sc,actions)}
+    if(ali&&ali.parentElement!==sc)sc.appendChild(ali);
+    if(amz&&amz.parentElement!==sc)sc.appendChild(amz);
+    const hasAli=!!ali?.querySelector('.capitan-aliexpress-choice');
+    const hasAmz=!!amz?.querySelector('.capitan-amazon-choice');
+    sc.style.display=(hasAli||hasAmz)?'grid':'none'
   }
   hideOkRows();
   return true
