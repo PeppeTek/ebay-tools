@@ -33,7 +33,7 @@ function applyDiscountPct(v,persist){
   if(!isFinite(pct)||pct<=-1000||pct>=100)return false;
   discountRate=pct/100;emitDiscount();cleanup();if(persist)persistDiscount();return true
 }
-function formatDiscountField(){return String(discountNumber()).replace('.',',')+'%'}
+function formatDiscountField(){const n=discountNumber();const s=String(Math.abs(n)).replace('.',',');return (n>0?'+':n<0?'-':'')+s+'%'}
 function cleanup(){
   const p=document.getElementById(PANEL_ID);if(!p)return false;
   const rows=[...p.querySelectorAll('#steps .row')];
