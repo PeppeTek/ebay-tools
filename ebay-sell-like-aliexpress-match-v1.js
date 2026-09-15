@@ -126,10 +126,10 @@ function jsonp(params){
 
 function selectedRows(){
   return [...results.querySelectorAll('input.capitan-aliexpress-choice:checked')]
-    .map(el=>lastMatches.find(x=>x.productId===el.value))
+    .map(el=>lastMatches.find(x=>aliKey(x)===el.value))
     .filter(Boolean)
 }
-function selectedProductIds(){return selectedRows().map(x=>x.productId).filter(Boolean)}
+function selectedProductIds(){return selectedRows().map(x=>aliKey(x)).filter(Boolean)}
 
 function parseMaybeJson(v){
   if(!v)return null;if(typeof v==='object')return v;
@@ -281,21 +281,21 @@ function render(list,selectedIds){
   const box=document.createElement('div');
   box.style.cssText='margin-top:0;display:grid;gap:7px';
   lastMatches.forEach((x,i)=>{
-    const price=aliProductPrice(x),freight=aliFreight(x,price);
+    const pid=aliKey(x),price=aliProductPrice(x),freight=aliFreight(x,price);
     const r=document.createElement('label');
     r.dataset.sourcePrice=isFinite(price)?String(price):'';
     r.dataset.shippingCost=isFinite(freight.cost)?String(freight.cost):'';
     r.dataset.totalCost=isFinite(freight.total)?String(freight.total):'';
     r.style.cssText='display:grid;grid-template-columns:24px 76px minmax(0,1fr);gap:9px;align-items:start;padding:9px 10px;border:1px solid #e1e4e8;border-radius:10px;background:#fff;cursor:pointer;font-size:12.5px;line-height:1.28';
-    const url=esc(x.url||('https://www.aliexpress.us/item/'+(x.productId||'')+'.html'));
+    const url=esc(x.url||x.product_url||('https://www.aliexpress.us/item/'+pid+'.html'));
     const img=productImage(x);
     const shippingLabel=esc((freight.delivery?freight.delivery+' | ':'')+(freight.label||''));
     const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
-    const checked=selected.has(String(x.productId||''))||(selected.size===0&&i===0);
+    const checked=selected.has(pid)||(selected.size===0&&i===0);
     const preview=img?'<img src="'+esc(img)+'" alt="AliExpress product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
     const brand='<span aria-label="AliExpress" style="margin-left:auto;font-weight:800;font-size:16px;color:#ff4747;opacity:.86;white-space:nowrap;text-align:right">AliExpress</span>';
-    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#ff4747">'+preview+
-      '<div style="min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 5px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:800;font-size:13px;line-height:1">'+esc(x.productId||'')+'</a>'+brand+'</div>'+
+    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(pid)+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#ff4747">'+preview+
+      '<div style="min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 5px"><a href="'+url+'" target="_blank" rel="noopener" style="color:#111;text-decoration:none;font-weight:800;font-size:13px;line-height:1">'+esc(pid)+'</a>'+brand+'</div>'+
       '<div style="color:#444;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
       '<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px"><span data-card-shipping style="color:#555">'+(shippingLabel||'—')+'</span><span data-card-price style="margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:800;color:#111">'+priceText+'</span></div></div>';
     box.appendChild(r)
