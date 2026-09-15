@@ -14,7 +14,7 @@ const style=document.createElement('style');
 style.id='capitan-test-ui-style';
 style.textContent=`
 #${PANEL_ID}{width:500px!important;min-width:500px!important;max-width:none!important;overflow:hidden!important}
-#${PANEL_ID} #capitan-sourcing-scroll{display:none;grid-template-columns:1fr;gap:7px;max-height:min(330px,calc(100vh - 470px));overflow-y:auto;overflow-x:hidden;padding:0 0 8px;scrollbar-gutter:stable}
+#${PANEL_ID} #capitan-sourcing-scroll{display:none;grid-template-columns:1fr;gap:7px;max-height:min(330px,calc(100vh - 470px));overflow-y:auto;overflow-x:hidden;padding:0 0 10px;margin:0 0 8px;scrollbar-gutter:stable;scroll-padding-bottom:12px}
 #${PANEL_ID} #capitan-sourcing-scroll>#capitan-aliexpress-match-ext,#${PANEL_ID} #capitan-sourcing-scroll>#capitan-amazon-match-ext{margin:0!important;padding:0 14px!important}
 #${PANEL_ID} #capitan-aliexpress-results>div,#${PANEL_ID} #capitan-amazon-results>div{gap:7px!important}
 #${PANEL_ID} #capitan-aliexpress-results label>div:last-child,#${PANEL_ID} #capitan-amazon-results label>div:last-child{align-self:start!important;margin:0!important;padding-top:0!important;position:relative!important;top:-1px!important}
@@ -26,6 +26,11 @@ style.textContent=`
 #${PANEL_ID} .brand img{height:38px!important;width:auto!important;max-width:180px!important;max-height:38px!important;object-fit:contain!important;animation:none!important;transition:none!important;opacity:.94}
 #${PANEL_ID} #capitan-test-badge{display:inline-flex;align-items:center;height:19px;padding:0 7px;border-radius:999px;background:#fff3cd;color:#7a5200;border:1px solid #f1d27a;font:700 10px/19px Arial,sans-serif;letter-spacing:.5px}
 #${PANEL_ID} #capitan-process-timer{border:0!important;border-radius:0!important;background:transparent!important;min-width:0!important;width:auto!important;height:auto!important;line-height:20px!important;padding:0!important;color:#555!important;box-shadow:none!important}
+${PANEL_ID} [data-ebay-actions]{position:relative!important;bottom:auto!important}
+${PANEL_ID} #capitan-discount-manual,${PANEL_ID} #capitan-sale-price-manual,${PANEL_ID} #capitan-purchase-cost-manual{border-color:#c5c9cf!important;box-shadow:none!important}
+${PANEL_ID} #capitan-amazon-results [data-product-body],${PANEL_ID} #capitan-aliexpress-results [data-product-body]{height:76px!important;max-height:76px!important;overflow:hidden!important}
+${PANEL_ID} #capitan-amazon-results [data-card-title],${PANEL_ID} #capitan-aliexpress-results [data-card-title]{overflow:hidden!important}
+${PANEL_ID} #capitan-amazon-results [data-card-shipping],${PANEL_ID} #capitan-aliexpress-results [data-card-shipping]{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
 #${PANEL_ID} #capitan-test-log{margin-top:2px;border-top:1px solid #e7e7e7;padding-top:7px}
 #${PANEL_ID} #capitan-test-log-title{display:flex;align-items:center;justify-content:space-between;font-size:10px;font-weight:700;color:#666;margin-bottom:5px}
 #${PANEL_ID} #capitan-test-log-body{max-height:115px;overflow:auto;border:1px solid #e5e7eb;border-radius:7px;background:#fafafa;padding:5px 7px;font:10px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace}
