@@ -33,7 +33,7 @@ if(!/\/fdbk\/feedback_profile\//i.test(location.pathname)){
 
 document.getElementById(ID)?.remove();
 document.getElementById(FB)?.remove();
-for(const x of document.querySelectorAll(\`[id^="\${PF}"]\`))x.remove();
+for(const x of document.querySelectorAll(`[id^="${PF}"]`))x.remove();
 
 let stop=0;
 let pages=0;
@@ -125,7 +125,7 @@ function positive(r){
 
 function mk(r,id,source){
   let t=C((r.querySelector(".card__item")||r).innerText);
-  const m=t.match(new RegExp(\`(.+?)\\\\s*\\\\(#\\\\s*\${id}\\\\s*\\\\)\`,"i"));
+  const m=t.match(new RegExp(`(.+?)\\\\s*\\\\(#\\\\s*${id}\\\\s*\\\\)`,"i"));
   if(m)t=C(m[1]);
 
   t=t
@@ -136,8 +136,8 @@ function mk(r,id,source){
 
   return{
     id,
-    title:C(t)||\`Item \${id}\`,
-    url:\`\${OR}/itm/\${id}\`,
+    title:C(t)||`Item ${id}`,
+    url:`${OR}/itm/${id}`,
     source
   };
 }
@@ -198,8 +198,8 @@ function periodTotals(){
 }
 
 const st=document.createElement("style");
-st.textContent=\`
-#\${ID}{
+st.textContent=`
+#${ID}{
   position:fixed;top:10px;right:10px;z-index:2147483647;
   width:min(1240px,calc(100vw - 20px));
   max-height:calc(100vh - 20px);
@@ -209,107 +209,107 @@ st.textContent=\`
   font:13px Arial,Helvetica,sans-serif;
   overflow:hidden
 }
-#\${ID} *{box-sizing:border-box}
-#\${ID} .h{
+#${ID} *{box-sizing:border-box}
+#${ID} .h{
   display:flex;justify-content:space-between;align-items:center;gap:12px;
   padding:13px 15px;border-bottom:1px solid #e4e8ef;
   background:#f8fafc
 }
-#\${ID} .title{font-size:18px;font-weight:700;color:#172033}
-#\${ID} .sub{margin-top:3px;font-size:11px;color:#697386;font-weight:400}
-#\${ID} .close{
+#${ID} .title{font-size:18px;font-weight:700;color:#172033}
+#${ID} .sub{margin-top:3px;font-size:11px;color:#697386;font-weight:400}
+#${ID} .close{
   width:30px;height:30px;padding:0;border:1px solid #cfd6e0;border-radius:8px;
   background:#fff;color:#344054;font-size:18px;cursor:pointer
 }
-#\${ID} .b{
+#${ID} .b{
   padding:12px 14px 14px;overflow:auto;max-height:calc(100vh - 63px)
 }
-#\${ID} .seller{
+#${ID} .seller{
   display:flex;flex-wrap:wrap;gap:8px 18px;
   margin-bottom:9px;color:#344054
 }
-#\${ID} .status{
+#${ID} .status{
   padding:9px 11px;margin-bottom:10px;
   border:1px solid #dbe3ef;border-radius:9px;
   background:#f7f9fc;color:#344054
 }
-#\${ID} .official{
+#${ID} .official{
   display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px
 }
-#\${ID} .chip{
+#${ID} .chip{
   padding:5px 9px;border:1px solid #dce3ec;border-radius:999px;
   background:#fff;color:#475467;font-size:11px
 }
-#\${ID} .chip b{color:#172033}
-#\${ID} .stats{
+#${ID} .chip b{color:#172033}
+#${ID} .stats{
   display:grid;grid-template-columns:repeat(7,minmax(0,1fr));
   gap:7px;margin:0 0 11px
 }
-#\${ID} .s{
+#${ID} .s{
   min-height:70px;padding:9px 10px;
   border:1px solid #dfe4ea;border-radius:10px;background:#fbfcfd
 }
-#\${ID} .s span{
+#${ID} .s span{
   display:block;min-height:29px;font-size:11px;line-height:1.25;color:#667085
 }
-#\${ID} .s b{
+#${ID} .s b{
   display:block;margin-top:3px;font-size:22px;line-height:1;color:#101828
 }
-#\${ID} .tw{
+#${ID} .tw{
   max-height:350px;overflow:auto;border:1px solid #dfe4ea;border-radius:10px
 }
-#\${ID} table{width:100%;border-collapse:collapse;font-size:11px}
-#\${ID} th,#\${ID} td{
+#${ID} table{width:100%;border-collapse:collapse;font-size:11px}
+#${ID} th,#${ID} td{
   padding:7px 8px;border-bottom:1px solid #edf0f4;text-align:left;vertical-align:middle
 }
-#\${ID} th{
+#${ID} th{
   position:sticky;top:0;z-index:2;background:#f5f7fa;color:#475467;font-weight:700
 }
-#\${ID} td.num,#\${ID} th.num{text-align:center;white-space:nowrap}
-#\${ID} tbody tr:hover{background:#fafbfc}
-#\${ID} .loading{color:#777;font-style:italic}
-#\${ID} .ok{font-weight:700;color:#137333}
-#\${ID} .bad{color:#b3261e}
-#\${ID} textarea{
+#${ID} td.num,#${ID} th.num{text-align:center;white-space:nowrap}
+#${ID} tbody tr:hover{background:#fafbfc}
+#${ID} .loading{color:#777;font-style:italic}
+#${ID} .ok{font-weight:700;color:#137333}
+#${ID} .bad{color:#b3261e}
+#${ID} textarea{
   width:100%;height:88px;margin-top:10px;padding:8px 9px;
   border:1px solid #dfe4ea;border-radius:9px;background:#fbfcfd;
   font:11px Consolas,monospace;color:#475467
 }
-#\${ID} .a{
+#${ID} .a{
   display:flex;justify-content:flex-end;gap:8px;margin-top:10px;flex-wrap:wrap
 }
-#\${ID} button{
+#${ID} button{
   padding:8px 11px;border:1px solid #c9d1dc;border-radius:8px;
   background:#fff;color:#344054;cursor:pointer
 }
-#\${ID} button:disabled{opacity:.5;cursor:not-allowed}
-#\${ID} .p{background:#3665f3;color:#fff;border-color:#3665f3}
+#${ID} button:disabled{opacity:.5;cursor:not-allowed}
+#${ID} .p{background:#3665f3;color:#fff;border-color:#3665f3}
 @media(max-width:1100px){
-  #\${ID} .stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+  #${ID} .stats{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
-\`;
+`;
 document.head.appendChild(st);
 
 const p=document.createElement("div");
 p.id=ID;
-p.innerHTML=\`
+p.innerHTML=`
 <div class="h">
   <div>
     <div class="title">eBay Best Sellers — Positive Feedback</div>
-    <div class="sub">Analisi 1 / 6 / 12 mesi · \${V}</div>
+    <div class="sub">Analisi 1 / 6 / 12 mesi · ${V}</div>
   </div>
   <button class="close" id="x">×</button>
 </div>
 <div class="b">
   <div class="seller">
-    <div><b>Venditore:</b> \${E(seller)}</div>
-    <div><b>Marketplace:</b> \${E(location.hostname)}</div>
+    <div><b>Venditore:</b> ${E(seller)}</div>
+    <div><b>Marketplace:</b> ${E(location.hostname)}</div>
   </div>
 
   <div class="official">
-    <span class="chip">Positive 1 month: <b>\${Number.isFinite(official.month)?official.month:"—"}</b></span>
-    <span class="chip">Positive 6 months: <b>\${Number.isFinite(official.six)?official.six:"—"}</b></span>
-    <span class="chip">Positive 12 months: <b>\${Number.isFinite(official.year)?official.year:"—"}</b></span>
+    <span class="chip">Positive 1 month: <b>${Number.isFinite(official.month)?official.month:"—"}</b></span>
+    <span class="chip">Positive 6 months: <b>${Number.isFinite(official.six)?official.six:"—"}</b></span>
+    <span class="chip">Positive 12 months: <b>${Number.isFinite(official.year)?official.year:"—"}</b></span>
   </div>
 
   <div id="status" class="status">
@@ -353,14 +353,14 @@ p.innerHTML=\`
     <button id="csv" class="p" disabled>Esporta XLS</button>
   </div>
 </div>
-\`;
+`;
 
 document.body.appendChild(p);
 
 const $=s=>p.querySelector(s);
 
 const log=m=>{
-  $("#log").value+=\`[\${new Date().toLocaleTimeString()}] \${m}\\n\`;
+  $("#log").value+=`[${new Date().toLocaleTimeString()}] ${m}\\n`;
   $("#log").scrollTop=1e9;
 };
 
@@ -374,7 +374,7 @@ const sorted=()=>[...products.values()].sort((x,y)=>
 
 function soldCell(x){
   if(x.soldState==="loading")return'<span class="loading">Lettura…</span>';
-  if(Number.isFinite(x.sold))return\`<span class="ok">\${x.sold}</span>\`;
+  if(Number.isFinite(x.sold))return`<span class="ok">${x.sold}</span>`;
   if(x.soldState==="error")return'<span class="bad">Errore</span>';
   return"—";
 }
@@ -394,19 +394,19 @@ function render(){
   $("#google").disabled=!a.length;
 
   $("#tb").innerHTML=a.length
-    ? a.map((x,i)=>\`
+    ? a.map((x,i)=>`
       <tr>
-        <td class="num">\${i+1}</td>
-        <td class="num">\${soldCell(x)}</td>
-        <td class="num"><b>\${x.monthCount}</b></td>
-        <td class="num">\${x.sixCount}</td>
-        <td class="num">\${x.yearCount}</td>
-        <td><a target="_blank" href="\${E(x.url)}">\${E(x.id)}</a></td>
-        <td>\${E(x.title)}</td>
-        <td><a target="_blank" href="\${E(x.url)}">Apri</a></td>
-        <td>\${E(x.source)}</td>
+        <td class="num">${i+1}</td>
+        <td class="num">${soldCell(x)}</td>
+        <td class="num"><b>${x.monthCount}</b></td>
+        <td class="num">${x.sixCount}</td>
+        <td class="num">${x.yearCount}</td>
+        <td><a target="_blank" href="${E(x.url)}">${E(x.id)}</a></td>
+        <td>${E(x.title)}</td>
+        <td><a target="_blank" href="${E(x.url)}">Apri</a></td>
+        <td>${E(x.source)}</td>
       </tr>
-    \`).join("")
+    `).join("")
     : '<tr><td colspan="9">Nessun prodotto rilevato.</td></tr>';
 }
 
@@ -552,7 +552,7 @@ async function set200(d){
       const nr=fbRows(d).length;
       if(nr!==old||sig(d)!==before){
         await S(600);
-        log(\`Items per page attivi: \${nr} righe visibili.\`);
+        log(`Items per page attivi: ${nr} righe visibili.`);
         return 1;
       }
     }
@@ -569,7 +569,7 @@ async function set200(d){
     }
   }
 
-  log(\`ATTENZIONE: non ho confermato 200; righe visibili \${fbRows(d).length}.\`);
+  log(`ATTENZIONE: non ho confermato 200; righe visibili ${fbRows(d).length}.`);
   return 0;
 }
 
@@ -674,15 +674,15 @@ async function soldOne(x,f){
 
     if(Number.isFinite(n)){
       soldFound++;
-      log(\`\${x.id}: \${n} sold\`);
+      log(`${x.id}: ${n} sold`);
     }else{
-      log(\`\${x.id}: Item sold non visibile\`);
+      log(`${x.id}: Item sold non visibile`);
     }
   }catch(e){
     x.sold=null;
     x.soldState="error";
     soldErrors++;
-    log(\`\${x.id}: \${e.message}\`);
+    log(`${x.id}: ${e.message}`);
     if(e.message==="CAPTCHA")stop=1;
   }finally{
     soldDone++;
@@ -705,7 +705,7 @@ async function enrich(){
 
       const x=a[i];
       $("#status").textContent=
-        \`Fase 2 · Item sold \${Math.min(soldDone+1,a.length)}/\${a.length} · \${x.id}\`;
+        `Fase 2 · Item sold ${Math.min(soldDone+1,a.length)}/${a.length} · ${x.id}`;
 
       await soldOne(x,f);
       await S(120);
@@ -715,7 +715,7 @@ async function enrich(){
   }
 
   await Promise.all([worker(1),worker(2)]);
-  log(\`Item sold completato: \${soldFound}/\${soldDone}, errori \${soldErrors}.\`);
+  log(`Item sold completato: ${soldFound}/${soldDone}, errori ${soldErrors}.`);
 }
 
 $("#x").onclick=()=>{
@@ -723,7 +723,7 @@ $("#x").onclick=()=>{
   p.remove();
   st.remove();
   document.getElementById(FB)?.remove();
-  for(const x of document.querySelectorAll(\`[id^="\${PF}"]\`))x.remove();
+  for(const x of document.querySelectorAll(`[id^="${PF}"]`))x.remove();
 };
 
 $("#stop").onclick=()=>{
@@ -787,27 +787,27 @@ $("#google").onclick=()=>{
   form.submit();
   form.remove();
 
-  log(\`Esportazione Google Sheet inviata: \${a.length} righe.\`);
+  log(`Esportazione Google Sheet inviata: ${a.length} righe.`);
 };
 
 $("#csv").onclick=()=>{
   const a=sorted();
 
-  const rows=a.map((x,i)=>\`
+  const rows=a.map((x,i)=>`
     <tr>
-      <td>\${i+1}</td>
-      <td>\${Number.isFinite(x.sold)?x.sold:""}</td>
-      <td>\${x.monthCount}</td>
-      <td>\${x.sixCount}</td>
-      <td>\${x.yearCount}</td>
-      <td style="mso-number-format:'\\\\@';"><a href="\${E(x.url)}">\${E(x.id)}</a></td>
-      <td>\${E(x.title)}</td>
-      <td><a href="\${E(x.url)}">Apri</a></td>
-      <td>\${E(x.source)}</td>
+      <td>${i+1}</td>
+      <td>${Number.isFinite(x.sold)?x.sold:""}</td>
+      <td>${x.monthCount}</td>
+      <td>${x.sixCount}</td>
+      <td>${x.yearCount}</td>
+      <td style="mso-number-format:'\\\\@';"><a href="${E(x.url)}">${E(x.id)}</a></td>
+      <td>${E(x.title)}</td>
+      <td><a href="${E(x.url)}">Apri</a></td>
+      <td>${E(x.source)}</td>
     </tr>
-  \`).join("");
+  `).join("");
 
-  const html=\`
+  const html=`
   <html xmlns:o="urn:schemas-microsoft-com:office:office"
         xmlns:x="urn:schemas-microsoft-com:office:excel"
         xmlns="http://www.w3.org/TR/REC-html40">
@@ -841,10 +841,10 @@ $("#csv").onclick=()=>{
           <th>Source</th>
         </tr>
       </thead>
-      <tbody>\${rows}</tbody>
+      <tbody>${rows}</tbody>
     </table>
   </body>
-  </html>\`;
+  </html>`;
 
   const u=URL.createObjectURL(
     new Blob(["\uFEFF"+html],{type:"application/vnd.ms-excel;charset=utf-8"})
@@ -852,7 +852,7 @@ $("#csv").onclick=()=>{
 
   const l=document.createElement("a");
   l.href=u;
-  l.download=\`ebay_\${seller}_best_sellers_\${location.hostname}.xls\`;
+  l.download=`ebay_${seller}_best_sellers_${location.hostname}.xls`;
   l.click();
 
   setTimeout(()=>URL.revokeObjectURL(u),1000);
@@ -880,14 +880,14 @@ try{
     }
 
     log(
-      \`Pagina \${i}: +\${r.posMonth} Positive 1m · +\${r.posSix} Positive 6m · +\${r.posYear} Positive 12m · \${products.size} prodotti.\`
+      `Pagina ${i}: +${r.posMonth} Positive 1m · +${r.posSix} Positive 6m · +${r.posYear} Positive 12m · ${products.size} prodotti.`
     );
 
     $("#status").textContent=
-      \`Fase 1 · pagina \${i} · prodotti \${products.size} · 1m \${periodTotals().month} · 6m \${periodTotals().six} · 12m \${periodTotals().year}\`;
+      `Fase 1 · pagina ${i} · prodotti ${products.size} · 1m ${periodTotals().month} · 6m ${periodTotals().six} · 12m ${periodTotals().year}`;
 
     if(trackedWindowSeen&&r.olderRows>0){
-      log(\`Superati i 12 mesi alla pagina \${i}. Stop feedback.\`);
+      log(`Superati i 12 mesi alla pagina ${i}. Stop feedback.`);
       break;
     }
 
@@ -912,7 +912,7 @@ try{
   if(stop)return;
 
   $("#status").textContent=
-    \`Fase 2 · lettura Item sold su \${products.size} prodotti…\`;
+    `Fase 2 · lettura Item sold su ${products.size} prodotti…`;
 
   await enrich();
   render();
@@ -921,12 +921,12 @@ try{
 
   $("#status").textContent=stop
     ? "Interrotto / verifica eBay"
-    : \`Completato · \${products.size} prodotti · 1m \${t.month} · 6m \${t.six} · 12m \${t.year} · Item sold \${soldFound}/\${soldDone} · totale \${totalItemSold()}\`;
+    : `Completato · ${products.size} prodotti · 1m ${t.month} · 6m ${t.six} · 12m ${t.year} · Item sold ${soldFound}/${soldDone} · totale ${totalItemSold()}`;
 
-  log(\`Completato. Source Text \${textIds}; Link \${mapped-textIds}.\`);
+  log(`Completato. Source Text ${textIds}; Link ${mapped-textIds}.`);
 }catch(e){
   f.remove();
-  $("#status").textContent=\`Interrotto: \${e.message}\`;
-  log(\`ERRORE: \${e.message}\`);
+  $("#status").textContent=`Interrotto: ${e.message}`;
+  log(`ERRORE: ${e.message}`);
 }
 })();
