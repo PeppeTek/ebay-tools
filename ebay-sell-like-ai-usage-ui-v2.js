@@ -32,7 +32,11 @@ async function render(body){
       '<div id="capitan-ai-usage-table-scroll" style="overflow:auto;border:1px solid #e5e7eb;border-radius:9px;flex:1 1 auto;min-height:90px;max-height:none;margin-bottom:16px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead style="position:sticky;top:0;background:#fafafa;z-index:1"><tr style="background:#fafafa"><th style="padding:7px 5px;text-align:left">Data</th><th style="padding:7px 5px;text-align:left">Funzione</th><th style="padding:7px 5px;text-align:left">Modello</th><th style="padding:7px 5px;text-align:right">Token</th><th style="padding:7px 5px;text-align:right">Costo</th></tr></thead><tbody>'+(recent||'<tr><td colspan="5" style="padding:14px;text-align:center;color:#777">Nessuna chiamata registrata.</td></tr>')+'</tbody></table></div>'+
       '<div style="font-size:11px;color:#666;line-height:1.4;margin:0 0 8px">Cambio USD/EUR usato: '+esc(Number(d.usdEurRate||0).toFixed(4))+'. Se il modello non ha un prezzo configurato il costo viene indicato come N/D.</div>'+
       '<div style="font-size:10px;color:#777;line-height:1.4">Il pannello registra solo le chiamate effettuate dopo la sua attivazione. Il saldo o la fattura Groq non sono disponibili tramite questo endpoint pubblico.</div>';
-  }catch(err){body.innerHTML='<div style="color:#b42318;font-weight:700;font-size:12px">'+esc(err.message||err)+'</div>'}
+  }catch(err){
+    const msg=String(err&&err.message||err||'');
+    const friendly=window.__capitanSellLikeTestMode?'AI Usage non disponibile nel backend corrente.':msg;
+    body.innerHTML='<div style="color:#b42318;font-weight:700;font-size:12px">'+esc(friendly)+'</div>'
+  }
 }
 function patch(){
   const modal=document.getElementById(MODAL_ID);if(!modal||modal.dataset.aiUsageV4==='1')return;
