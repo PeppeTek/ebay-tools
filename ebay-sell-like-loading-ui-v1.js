@@ -22,7 +22,7 @@ if(source)source.id='capitan-source-row';
 let row=document.getElementById('capitan-loading-row');
 if(!row){
   row=document.createElement('div');row.id='capitan-loading-row';row.className='row';
-  row.style.cssText='padding:10px 14px 12px;background:#fff';
+  row.style.cssText='padding:7px 0 10px;background:#fff';
   row.innerHTML='<div style="font-size:12px;color:#555;margin-bottom:7px">Preparazione inserzione in corso…</div><div style="height:7px;border-radius:999px;background:#eceff3;overflow:hidden"><div id="capitan-loading-bar" style="height:100%;width:8%;background:#1668e8;border-radius:999px;transition:width .35s ease"></div></div>';
   if(source)source.insertAdjacentElement('afterend',row);else (panel.querySelector('.b')||panel).prepend(row);
 }
