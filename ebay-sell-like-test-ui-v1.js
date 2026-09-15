@@ -17,13 +17,13 @@ style.textContent=`
 #${PANEL_ID} #capitan-sourcing-scroll{display:none;grid-template-columns:1fr;gap:7px;max-height:min(330px,calc(100vh - 470px));overflow-y:auto;overflow-x:hidden;padding:0 0 8px;scrollbar-gutter:stable}
 #${PANEL_ID} #capitan-sourcing-scroll>#capitan-aliexpress-match-ext,#${PANEL_ID} #capitan-sourcing-scroll>#capitan-amazon-match-ext{margin:0!important;padding:0 14px!important}
 #${PANEL_ID} #capitan-aliexpress-results>div,#${PANEL_ID} #capitan-amazon-results>div{gap:7px!important}
-#${PANEL_ID} #capitan-aliexpress-results label>div:last-child,#${PANEL_ID} #capitan-amazon-results label>div:last-child{align-self:start!important;margin-top:-1px!important;padding-top:0!important}
+#${PANEL_ID} #capitan-aliexpress-results label>div:last-child,#${PANEL_ID} #capitan-amazon-results label>div:last-child{align-self:start!important;margin:0!important;padding-top:0!important;position:relative!important;top:-1px!important}
 #${PANEL_ID} #capitan-aliexpress-match-ext+#capitan-amazon-match-ext{margin-top:0!important}
 #${PANEL_ID} .h{padding:6px 72px 5px 12px!important;min-height:36px!important;gap:7px!important;font-size:13px!important}
 #${PANEL_ID} #capitan-discount-row,#${PANEL_ID} #capitan-sale-price-row,#${PANEL_ID} #capitan-margin-break,#${PANEL_ID} #capitan-break-even-row,#${PANEL_ID} #capitan-margin-source,#${PANEL_ID} #capitan-margin-delta{min-height:38px!important;padding:5px 0!important}
 #${PANEL_ID} .h .title{font-size:13px!important}
 #${PANEL_ID} .brand{padding:7px 12px 0!important}
-#${PANEL_ID} .brand img{max-height:38px!important;opacity:.94}
+#${PANEL_ID} .brand img{height:38px!important;width:auto!important;max-width:180px!important;max-height:38px!important;object-fit:contain!important;animation:none!important;transition:none!important;opacity:.94}
 #${PANEL_ID} #capitan-test-badge{display:inline-flex;align-items:center;height:19px;padding:0 7px;border-radius:999px;background:#fff3cd;color:#7a5200;border:1px solid #f1d27a;font:700 10px/19px Arial,sans-serif;letter-spacing:.5px}
 #${PANEL_ID} #capitan-process-timer{border:0!important;border-radius:0!important;background:transparent!important;min-width:0!important;width:auto!important;height:auto!important;line-height:20px!important;padding:0!important;color:#555!important;box-shadow:none!important}
 #${PANEL_ID} #capitan-test-log{margin-top:2px;border-top:1px solid #e7e7e7;padding-top:7px}
