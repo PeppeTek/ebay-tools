@@ -324,8 +324,7 @@ insertBtn.addEventListener('click',async e=>{
     }
     const freshMap=new Map();
     collected.filter(amazonEconomicsAllowed).forEach(x=>{const k=amazonKey(x);if(k&&!before.has(k)&&!freshMap.has(k))freshMap.set(k,x)});
-    const candidates=[...freshMap.values()].slice(0,10);
-    mergeMatches(candidates);
+    mergeMatches([...freshMap.values()].slice(0,10));
     setTimeout(()=>enrichAmazonVisible(),0);
     const added=lastMatches.filter(x=>!before.has(amazonKey(x))).length;
     matchPage=nextPage+Math.max(1,attemptsUsed);
