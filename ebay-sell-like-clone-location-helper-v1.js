@@ -69,7 +69,7 @@ const US_STATES={'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','ca
 function stateAbbr(v){v=clean(v);return /^[A-Za-z]{2}$/.test(v)?v.toUpperCase():(US_STATES[v.toLowerCase()]||'');}
 async function resolveMaskedUsPostal(parts){
   const country=clean(parts.country);const needsZip=maskedPostal(parts.postalCode)||!clean(parts.postalCode);
-  if(!needsZip||!^(?:US|USA|United States|United States of America)$/i.test(country)||!parts.city||!parts.stateOrProvince)return'';
+  if(!needsZip||!/^(?:US|USA|United States|United States of America)$/i.test(country)||!parts.city||!parts.stateOrProvince)return'';
   const prefix=String(parts.postalCode||'').replace(/\D/g,'');
   const st=stateAbbr(parts.stateOrProvince);if(!st)return'';
   try{
