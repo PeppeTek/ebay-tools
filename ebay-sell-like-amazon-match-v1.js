@@ -16,21 +16,21 @@ if(!itemId)return;
 const priceMatch=sourceText.match(/Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:\s*([0-9]+(?:[.,][0-9]+)?)/i);
 let currentSalePrice=priceMatch?Number(String(priceMatch[1]).replace(',','.')):(isFinite(Number(window.__capitanSellLikeSalePrice))?Number(window.__capitanSellLikeSalePrice):null);
 const actions=panel.querySelector('[data-ebay-actions]');
-const wrap=document.createElement('div');wrap.id=EXT_ID;wrap.style.cssText='padding:0 14px 10px;background:#fff';wrap.innerHTML='<div id="capitan-amazon-status" style="padding:7px 0 0;font-size:12px"></div><div id="capitan-amazon-history"></div><div id="capitan-amazon-results"></div>';
+const wrap=document.createElement('div');wrap.id=EXT_ID;wrap.style.cssText='display:none;padding:0 14px 0;background:#fff';wrap.innerHTML='<div id="capitan-amazon-status" style="display:none"></div><div id="capitan-amazon-results"></div>';
 if(actions)panel.insertBefore(wrap,actions);else (panel.querySelector('.b')||panel).appendChild(wrap);
 let findBtn=null,insertBtn=null;
 if(actions){
-  insertBtn=document.createElement('button');insertBtn.id='capitan-amazon-insert';insertBtn.textContent='Inserisci ASIN';insertBtn.style.cssText='height:42px;border:1px solid #111;border-radius:0 22px 22px 0;background:#ffd814;color:#111;font-size:14px;cursor:pointer;width:100%';
+  insertBtn=document.createElement('button');insertBtn.id='capitan-amazon-best-match';insertBtn.textContent='Best Match Amazon';insertBtn.style.cssText='height:42px;border:1px solid #111;border-radius:0 22px 22px 0;background:#ffd814;color:#111;font-size:14px;cursor:pointer;width:100%';
   findBtn=document.createElement('button');findBtn.id='capitan-amazon-find';findBtn.textContent='Trova su Amazon';findBtn.style.cssText='height:42px;border:1px solid #111;border-radius:22px 0 0 22px;background:#ffa41c;color:#111;font-size:14px;cursor:pointer;width:100%';
   const slot=actions.querySelector('[data-amazon-actions-slot]');
   if(slot){slot.appendChild(findBtn);slot.appendChild(insertBtn)}else{actions.insertBefore(insertBtn,actions.firstChild);actions.insertBefore(findBtn,insertBtn)}
 }else{
-  insertBtn=document.createElement('button');insertBtn.id='capitan-amazon-insert';insertBtn.textContent='Inserisci ASIN';insertBtn.style.cssText='width:100%;height:42px;border:1px solid #d5a500;border-radius:22px;background:#ffd814;color:#111;font-size:14px;cursor:pointer;margin-top:8px';
+  insertBtn=document.createElement('button');insertBtn.id='capitan-amazon-best-match';insertBtn.textContent='Best Match Amazon';insertBtn.style.cssText='width:100%;height:42px;border:1px solid #d5a500;border-radius:22px;background:#ffd814;color:#111;font-size:14px;cursor:pointer;margin-top:8px';
   findBtn=document.createElement('button');findBtn.id='capitan-amazon-find';findBtn.textContent='Trova su Amazon';findBtn.style.cssText='width:100%;height:42px;border:1px solid #ff8f00;border-radius:22px;background:#ffa41c;color:#111;font-size:14px;cursor:pointer;margin-top:8px';
   wrap.insertBefore(findBtn,wrap.firstChild);wrap.insertBefore(insertBtn,findBtn);
 }
-const status=wrap.querySelector('#capitan-amazon-status'),historyBox=wrap.querySelector('#capitan-amazon-history'),results=wrap.querySelector('#capitan-amazon-results');
-let lastMatches=[];
+const status=wrap.querySelector('#capitan-amazon-status'),historyBox=null,results=wrap.querySelector('#capitan-amazon-results');
+let lastMatches=[],matchPage=0;
 let pricingRates={ebayFee:.136,internationalFee:.016,marketingFee:.02,vatOnFees:.22,salesTaxEstimate:.06,fixedFee:.40};
 
 function readSearchHistory(){try{const a=JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY)||'[]');return Array.isArray(a)?a:[]}catch(_){return[]}}
@@ -51,6 +51,7 @@ async function resolveSearchShipping(sourceItemId,title,url){
   }catch(e){console.warn('Amazon shipping history',e)}
 }
 function renderSearchHistory(list){
+  if(!historyBox)return;
   const a=Array.isArray(list)?list:readSearchHistory();
   historyBox.innerHTML='';
   if(!a.length)return;
@@ -70,13 +71,14 @@ function jsonpAction(action,params){const ep=action==='amazon_match'?AMAZON_MATC
 
 function ensureBreakEvenRow(){
   const steps=panel.querySelector('#steps');if(!steps)return null;
-  let row=panel.querySelector('#capitan-break-even-row');if(row){const pr=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo(?: di vendita)?:/i.test(clean(r.innerText||r.textContent)));if(pr&&row.previousElementSibling!==pr)pr.insertAdjacentElement('afterend',row);return row;}
-  const priceRow=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo:/i.test(clean(r.innerText||r.textContent)));
-  row=document.createElement('div');row.id='capitan-break-even-row';row.className='row';row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px';
-  row.innerHTML='<span><b>Break Even Price:</b> <span id="capitan-break-even-value">—</span></span><button type="button" id="capitan-pricing-open" title="Aggiorna tariffe" aria-label="Aggiorna tariffe" style="margin-left:auto;width:28px;height:28px;padding:0;border:0;background:transparent;color:#3665f3;font-size:18px;line-height:28px;cursor:pointer;border-radius:50%">⚙</button>';
-  if(priceRow)priceRow.insertAdjacentElement('afterend',row);else steps.prepend(row);
-  row.querySelector('#capitan-pricing-open').addEventListener('click',e=>{e.preventDefault();openPricingModal()});
-  return row;
+  let row=panel.querySelector('#capitan-break-even-row');if(row)return row;
+  const priceRow=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo(?: di vendita)?:/i.test(clean(r.innerText||r.textContent)));
+  const fee=panel.querySelector('#capitan-margin-break');
+  row=document.createElement('div');row.id='capitan-break-even-row';row.className='row';
+  row.innerHTML='<b>Break Even Price:</b> <span id="capitan-break-even-value">—</span>';
+  const anchor=fee||priceRow;
+  if(anchor)anchor.insertAdjacentElement('afterend',row);else steps.prepend(row);
+  return row
 }
 function breakEvenValueEl(){ensureBreakEvenRow();return panel.querySelector('#capitan-break-even-value')}
 function selectedRows(){return [...results.querySelectorAll('input.capitan-amazon-choice:checked')].map(el=>lastMatches.find(x=>x.asin===el.value)).filter(Boolean)}
@@ -98,6 +100,123 @@ function recalcBreakEven(){
   el.style.fontWeight=danger?'700':'';
 }
 
+function normalizeImageUrl(v){
+  if(v&&typeof v==='object'){
+    for(const k of ['url','src','image','imageUrl','imageURL','mainImage','mainImageUrl','thumbnail','thumbnailUrl','large','medium']){
+      const got=normalizeImageUrl(v[k]);if(got)return got
+    }
+    return''
+  }
+  let s=String(v||'').trim();
+  if(!s)return'';
+  s=s.replace(/\\u002F/gi,'/').replace(/\\\//g,'/').replace(/&amp;/g,'&').replace(/&quot;/g,'"');
+  let direct=s;
+  if(/^\/\//.test(direct))direct='https:'+direct;
+  if(/^https?:\/\//i.test(direct))return direct;
+  let m=s.match(/(?:src|url|imageUrl|mainImage)["'=: \\]+((?:https?:)?\/\/[^"'<>\\s]+)/i);
+  if(!m)m=s.match(/((?:https?:)?\/\/[^"'<>\\s]*(?:m\\.media-amazon\\.com|images-na\\.ssl-images-amazon\\.com)[^"'<>\\s]*)/i);
+  if(!m)m=s.match(/((?:https?:)?\/\/[^"'<>\\s]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'<>\\s]*)?)/i);
+  if(!m)return'';
+  direct=String(m[1]||'').replace(/\\\//g,'/');
+  if(/^\/\//.test(direct))direct='https:'+direct;
+  return /^https?:\/\//i.test(direct)?direct:''
+}
+function deepAmazonImage(v,depth){
+  depth=Number(depth||0);if(depth>4||v==null)return'';
+  const direct=normalizeImageUrl(v);if(direct)return direct;
+  if(typeof v==='string'){
+    const s=v.trim();
+    if(/^[\[{]/.test(s)){try{return deepAmazonImage(JSON.parse(s),depth+1)}catch(_){}}
+    return''
+  }
+  if(Array.isArray(v)){for(const x of v){const got=deepAmazonImage(x,depth+1);if(got)return got}return''}
+  if(typeof v==='object'){
+    const preferred=['mainImage','main_image','image','imageUrl','imageURL','primaryImage','thumbnail','thumbnailUrl','hiRes','large','medium','landingImage','imageBlock','images'];
+    for(const k of preferred){if(k in v){const got=deepAmazonImage(v[k],depth+1);if(got)return got}}
+    for(const k of Object.keys(v)){if(/image|img|picture|photo/i.test(k)){const got=deepAmazonImage(v[k],depth+1);if(got)return got}}
+  }
+  return''
+}
+function productImage(x){
+  return deepAmazonImage(x,0)
+}
+function amazonKey(x){return clean(x&&x.asin||'').toUpperCase()}
+async function enrichAmazonOne(x){
+  const asin=amazonKey(x);if(!asin||productImage(x))return x;
+  try{
+    const d=await jsonpAction('amazon_match',{
+      itemId,
+      query:asin,
+      asin,
+      exactAsin:'1',
+      searchMode:'product',
+      limit:'5',
+      includeImages:'1',includeShipping:'1',includeDetails:'1'
+    });
+    const pools=[d?.matches,d?.results,d?.items,d?.products].filter(Array.isArray).flat();
+    for(const obj of [d?.product,d?.item,d?.detail])if(obj&&typeof obj==='object')pools.push(obj);
+    const exact=pools.find(y=>amazonKey(y)===asin);
+    return exact?{...x,...exact}:x
+  }catch(_){return x}
+}
+async function enrichAmazonList(list){
+  const source=(Array.isArray(list)?list:[]).slice(0,30);
+  const out=[];
+  for(let i=0;i<source.length;i+=4){
+    const settled=await Promise.allSettled(source.slice(i,i+4).map(enrichAmazonOne));
+    settled.forEach((r,j)=>out.push(r.status==='fulfilled'?r.value:source[i+j]))
+  }
+  return out
+}
+async function enrichAmazonVisible(){
+  const selected=new Set([...results.querySelectorAll('input.capitan-amazon-choice:checked')].map(x=>x.value));
+  const enriched=await enrichAmazonList(lastMatches);
+  lastMatches=enriched;
+  render(lastMatches,selected);
+  const withImage=enriched.filter(x=>!!productImage(x)).length;
+  window.__capitanTestLog?.('Amazon: immagini recuperate '+withImage+'/'+enriched.length,withImage?'ok':'warn')
+}
+function queryVariant(title,page){
+  const t=clean(title),parts=t.split(' ').filter(Boolean);
+  if(page<=0||parts.length<5)return t;
+  const mode=page%4;
+  if(mode===1)return parts.slice(1).join(' ');
+  if(mode===2)return parts.slice(0,-1).join(' ');
+  if(mode===3)return parts.filter((_,i)=>i!==Math.min(parts.length-1,2)).join(' ');
+  return parts.slice(0,Math.min(parts.length,8)).join(' ')
+}
+function mergeMatches(list){
+  const selected=new Set([...results.querySelectorAll('input.capitan-amazon-choice:checked')].map(x=>x.value));
+  const map=new Map(lastMatches.map(x=>[amazonKey(x),x]));
+  (Array.isArray(list)?list:[]).filter(amazonEconomicsAllowed).forEach(x=>{const k=amazonKey(x);if(k&&!map.has(k))map.set(k,x)});
+  lastMatches=[...map.values()].slice(0,100);
+  render(lastMatches,selected)
+}
+function amazonShippingMeta(x){
+  x=x||{};
+  const price=Number(x.price);
+  const raw=clean(x.shippingLabel||x.shippingText||x.shipping||x.delivery||x.deliveryText||x.shippingInfo||'');
+  let cost=Number(x.shippingCost??x.shippingPrice??x.deliveryCost);
+  if(!isFinite(cost)||cost<0)cost=null;
+  let label='',threshold=null;
+  let m=raw.match(/free\s+shipping(?:\s+on\s+orders)?\s+(?:over|above)\s*(?:US\s*)?\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
+  if(m){
+    threshold=Number(String(m[1]).replace(',','.'));
+    label='Free shipping over $ '+threshold.toFixed(2);
+    if(isFinite(price)&&price>=threshold)cost=0;
+    else if(cost==null||cost===0)cost=1.99;
+  }else if(/\bfree\s+shipping\b/i.test(raw)||x.freeShipping===true||Number(cost)===0){
+    label='Free shipping';cost=0;
+  }else{
+    if(cost==null){
+      m=raw.match(/(?:US\s*)?\$\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
+      if(m)cost=Number(String(m[1]).replace(',','.'))
+    }
+    if(cost!=null&&isFinite(cost)&&cost>0)label='$ '+cost.toFixed(2)
+  }
+  const total=isFinite(price)&&price>0?price+(isFinite(cost)?cost:0):null;
+  return {label,cost,total,threshold}
+}
 function amazonEconomicsAllowed(x){
   const be=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);
   const price=Number(x&&x.price);
@@ -108,13 +227,38 @@ function amazonEconomicsAllowed(x){
   const verySimilar=!!(x&&x.verySimilar)||!!(x&&x.strongIdentifierMatch)||Number(x&&x.titleCoverage||0)>=.72||Number(x&&x.aiConfidence||0)>=85;
   return net>=-AMAZON_MAX_NEGATIVE_MARGIN&&verySimilar;
 }
-function render(list){
-  const filtered=(Array.isArray(list)?list:[]).filter(amazonEconomicsAllowed);
-  lastMatches=filtered.slice(0,10);results.innerHTML='';
-  if(!lastMatches.length){results.innerHTML='<div style="padding:6px 0;color:#a15c00;font-size:12px;font-weight:700">Nessun match Amazon compatibile e profittevole trovato.</div>';return}
-  const box=document.createElement('div');box.style.cssText='margin-top:8px;border:1px solid #ddd;border-radius:8px;overflow:hidden';
-  lastMatches.forEach((x,i)=>{const r=document.createElement('label');r.style.cssText='display:grid;grid-template-columns:24px 1fr auto;gap:8px;align-items:center;padding:8px 9px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px';const price=x.price==null||x.price===''?'—':`${Number(x.price).toFixed(2)} ${esc(x.currency||'USD')}`;r.innerHTML=`<input type="checkbox" class="capitan-amazon-choice" value="${esc(x.asin||'')}" ${i===0?'checked':''} style="width:16px;height:16px;border-radius:0;accent-color:#111"><a href="${esc(x.url||('https://www.amazon.com/dp/'+(x.asin||'')))}" target="_blank" rel="noopener" style="color:#111;text-decoration:none"><b>${esc(x.asin||'')}</b></a><span>${price}</span>`;box.appendChild(r)});
+function render(list,selectedIds){
+  lastMatches=(Array.isArray(list)?list:[]).slice(0,100);results.innerHTML='';
+  if(!lastMatches.length){wrap.style.display='none';return}
+  wrap.style.display='block';
+  const selected=selectedIds instanceof Set?selectedIds:new Set();
+  const box=document.createElement('div');box.style.cssText='margin-top:0;display:grid;gap:7px';
+  lastMatches.forEach((x,i)=>{
+    const price=Number(x.price),ship=amazonShippingMeta(x),url=esc(x.url||('https://www.amazon.com/dp/'+(x.asin||''))),detected=productImage(x);
+    const asin=clean(x.asin||'');
+    const legacy=asin?'https://images-na.ssl-images-amazon.com/images/P/'+encodeURIComponent(asin)+'.01.LZZZZZZZ.jpg':'';
+    const img=detected||legacy;
+    const r=document.createElement('label');
+    r.dataset.sourcePrice=isFinite(price)?String(price):'';
+    r.dataset.shippingCost=isFinite(ship.cost)?String(ship.cost):'';
+    r.dataset.totalCost=isFinite(ship.total)?String(ship.total):'';
+    r.style.cssText='display:grid;grid-template-columns:24px 76px minmax(0,1fr);gap:9px;align-items:start;padding:9px 10px;border:1px solid #e1e4e8;border-radius:10px;background:#fff;cursor:pointer;font-size:12.5px;line-height:1.28';
+    const shipping=ship.label?'<span style="color:#555">'+esc(ship.label)+'</span>':'<span style="color:#999">—</span>';
+    const priceText=isFinite(price)?price.toFixed(2)+' '+esc(x.currency||'USD'):'—';
+    const checked=selected.has(String(x.asin||''))||(selected.size===0&&i===0);
+    const adFallback=asin?'https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN='+encodeURIComponent(asin)+'&Format=_SL500_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822':'';
+    const preview=img?'<img src="'+esc(img)+'" data-fallback="'+esc(adFallback)+'" alt="Amazon product" loading="lazy" style="width:76px;height:76px;object-fit:contain;border:1px solid #e5e7eb;border-radius:7px;background:#fff" onerror="if(this.dataset.fallback&&this.src!==this.dataset.fallback){const f=this.dataset.fallback;this.dataset.fallback=\'\';this.src=f}else{this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'}"><div style="display:none;width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;place-items:center;color:#999;font-size:10px">No image</div>':'<div style="width:76px;height:76px;border:1px solid #e5e7eb;border-radius:7px;display:grid;place-items:center;color:#999;font-size:10px">No image</div>';
+    const brand='<span aria-label="Amazon" style="grid-column:2;grid-row:1;justify-self:end;align-self:start;display:inline-flex;flex-direction:column;align-items:flex-end;opacity:.84;line-height:1;text-align:right"><span style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:600;letter-spacing:-.25px;color:#111;line-height:14px">amazon</span><svg viewBox="0 0 52 8" width="46" height="6" preserveAspectRatio="xMidYMid meet" style="display:block;margin-top:0"><path d="M2 1.5 C15 7,34 7,47 2" fill="none" stroke="#f59b23" stroke-width="1.6" stroke-linecap="round"/><path d="M43.5 1 L49 1.4 L46.4 5.5" fill="none" stroke="#f59b23" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+    r.innerHTML='<input type="checkbox" class="capitan-amazon-choice" value="'+esc(x.asin||'')+'" '+(checked?'checked':'')+' style="width:16px;height:16px;margin-top:28px;border-radius:0;accent-color:#111">'+preview+
+      '<div data-product-body style="min-width:0;height:76px;max-height:76px;align-self:start;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr) 84px;grid-template-rows:18px 32px 18px;column-gap:8px;row-gap:4px;overflow:hidden">'+
+      '<a href="'+url+'" target="_blank" rel="noopener" style="grid-column:1;grid-row:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#111;text-decoration:none;font-weight:600;font-size:12.5px;line-height:18px">'+esc(x.asin||'')+'</a>'+brand+
+      '<div data-card-title style="grid-column:1;grid-row:2;min-width:0;color:#444;font-size:12px;line-height:15px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-height:30px" title="'+esc(x.title||'')+'">'+esc(x.title||'')+'</div>'+
+      '<span data-card-shipping style="grid-column:1;grid-row:3;align-self:end;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;font-size:11.5px;line-height:16px">'+shipping+'</span>'+
+      '<span data-card-price style="grid-column:2;grid-row:3;align-self:end;justify-self:end;white-space:nowrap;font-size:12px;line-height:16px;font-weight:700;color:#111">'+priceText+'</span></div>';
+    box.appendChild(r)
+  });
   results.appendChild(box);
+  window.__capitanTestLog?.('Amazon: '+lastMatches.length+' card visibili','ok')
 }
 
 function findSkuField(){
@@ -147,7 +291,49 @@ function openPricingModal(){
 
 async function loadPricing(){try{const data=await jsonpAction('sell_like_pricing_get');if(data&&data.ok&&data.rates)pricingRates=data.rates}catch(e){console.warn('Pricing config',e)}recalcBreakEven()}
 
-insertBtn.addEventListener('click',()=>{const asins=selectedAsins();if(!asins.length){status.innerHTML='<span style="color:#b42318;font-weight:700">Seleziona almeno un ASIN.</span>';return}const field=findSkuField();if(!field){status.innerHTML='<span style="color:#b42318;font-weight:700">Campo Custom label (SKU) non trovato.</span>';return}const value=asins.join(' - ');if(setNativeValue(field,value))status.innerHTML='<span style="color:#137333;font-weight:700">ASIN inseriti:</span> '+esc(value)});
+insertBtn.addEventListener('click',async e=>{
+  e.preventDefault();e.stopPropagation();
+  const title=currentEbayTitle();
+  if(!title){status.innerHTML='<span style="color:#b42318;font-weight:700">Titolo eBay non trovato.</span>';return}
+  insertBtn.disabled=true;
+  const nextPage=matchPage;
+  status.textContent='';window.__capitanTestLog?.(nextPage===0?'Best Match Amazon in corso…':'Ricerca di altri Best Match Amazon…','warn');
+  try{
+    const before=new Set(lastMatches.map(amazonKey));
+    const breakEven=calcMaxBreakEvenCostFromSalePrice(currentSalePrice,pricingRates);
+    let collected=[],attemptsUsed=0,cursor=0;
+    while(cursor<6){
+      const batchSize=(cursor===0&&nextPage===0)?1:Math.min(3,6-cursor);
+      const pages=Array.from({length:batchSize},(_,i)=>nextPage+cursor+i);
+      const settled=await Promise.allSettled(pages.map(page=>jsonpAction('amazon_match',{
+        itemId,
+        query:queryVariant(title,page),
+        page:String(page+1),
+        offset:String(page*10),
+        limit:'10',
+        exclude:[...before].join(','),
+        breakEven:breakEven==null?'':String(breakEven),
+        maxLoss:String(AMAZON_MAX_NEGATIVE_MARGIN),
+        includeImages:'1',includeShipping:'1',includeDetails:'1'
+      })));
+      cursor+=batchSize;attemptsUsed=cursor;
+      settled.forEach(r=>{if(r.status==='fulfilled'&&r.value&&r.value.ok)collected=collected.concat(r.value.matches||[])});
+      const uniq=new Map();
+      collected.filter(amazonEconomicsAllowed).forEach(x=>{const k=amazonKey(x);if(k&&!before.has(k)&&!uniq.has(k))uniq.set(k,x)});
+      if(uniq.size>=10)break
+    }
+    const freshMap=new Map();
+    collected.filter(amazonEconomicsAllowed).forEach(x=>{const k=amazonKey(x);if(k&&!before.has(k)&&!freshMap.has(k))freshMap.set(k,x)});
+    mergeMatches([...freshMap.values()].slice(0,10));
+    setTimeout(()=>enrichAmazonVisible(),0);
+    const added=lastMatches.filter(x=>!before.has(amazonKey(x))).length;
+    matchPage=nextPage+Math.max(1,attemptsUsed);
+    status.textContent='';
+    window.__capitanTestLog?.(added?('Best Match Amazon: +'+added+' · totale '+lastMatches.length):'Best Match Amazon: nessun nuovo prodotto',added?'ok':'warn')
+  }catch(err){
+    console.error(err);status.textContent='';window.__capitanTestLog?.('Errore Best Match Amazon: '+String(err.message||err),'bad')
+  }finally{insertBtn.disabled=false}
+});
 function currentEbayTitle(){
   for(const l of document.querySelectorAll('label')){
     const t=clean(l.innerText||l.textContent);
@@ -170,7 +356,8 @@ findBtn.addEventListener('click',()=>{
   const url='https://www.amazon.com/s?k='+encodeURIComponent(title);
   rememberSearch(title,url);
   window.open(url,'_blank','noopener');
-  status.innerHTML='<span style="color:#137333;font-weight:700">Ricerca Amazon aperta.</span> Titolo eBay inviato direttamente alla SERP.'
+  status.textContent='';
+  window.__capitanTestLog?.('SERP Amazon aperta per titolo','ok')
 });
 window.addEventListener('capitan-sale-price-updated',e=>{
   const v=Number(e&&e.detail&&e.detail.value);
