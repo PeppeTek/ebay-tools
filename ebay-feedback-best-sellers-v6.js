@@ -1,7 +1,7 @@
 javascript:(async()=>{
 "use strict";
 
-const V="v6.6-AU";
+const V="v6.7-AU";
 const ID="pep-ebay-bs-v6";
 const FB=ID+"-fb";
 const PF=ID+"-pf-";
@@ -44,11 +44,15 @@ let soldDone=0;
 let soldFound=0;
 let soldErrors=0;
 let trackedWindowSeen=0;
+let recoveredFromTitle=0;
+let recoveryAbort=0;
 let sortKey="sold";
 let sortDir="desc";
 
 const seen=new Set();
 const products=new Map();
+const recoveryRows=[];
+const titleSearchCache=new Map();
 
 function officialPositivePeriods(d=document){
   for(const tr of d.querySelectorAll("tr")){
@@ -154,6 +158,185 @@ function prod(r){
   return id?mk(r,id,"Text"):null;
 }
 
+function feedbackTitle(r){
+  let t=C((r.querySelector(".card__item")||r).innerText||"");
+
+  t=t
+    .replace(/\s*\(#\s*\d{9,15}\s*\)\s*/gi," ")
+    .replace(/\bPast\s+(?:month|6 months|year).*$/i,"")
+    .replace(/\bMore than a year.*$/i,"")
+    .replace(/\b(?:AU|US)\s*\$[\d,.]+.*$/i,"");
+
+  return C(t);
+}
+
+const TITLE_STOP=new Set(["a","an","and","the","of","for","to","in","on","with","by","from","new","brand","item","pcs","pc","pack","set"]);
+
+function titleTokens(v){
+  return N(v)
+    .replace(/[^a-z0-9]+/g," ")
+    .split(" ")
+    .filter(x=>x.length>1&&!TITLE_STOP.has(x));
+}
+
+function titleScore(a,b){
+  const aa=titleTokens(a),bb=titleTokens(b);
+  if(!aa.length||!bb.length)return 0;
+
+  const as=new Set(aa),bs=new Set(bb);
+  let common=0;
+  for(const x of as)if(bs.has(x))common++;
+
+  return (2*common)/(as.size+bs.size);
+}
+
+function bestSearchMatch(html,queryTitle){
+  if(/pardon our interruption|verify you are human|robot check|captcha|security measure/i.test(html)){
+    throw Error("CAPTCHA_SEARCH");
+  }
+
+  const d=new DOMParser().parseFromString(html,"text/html");
+  const candidates=[];
+  const ids=new Set();
+
+  for(const a of d.querySelectorAll('a[href*="/itm/"]')){
+    const id=xid(a.href);
+    if(!id||ids.has(id))continue;
+    ids.add(id);
+
+    const box=a.closest("li.s-item,div.s-item,[data-view]")||a.parentElement;
+    const title=C(
+      box?.querySelector(".s-item__title,[role=heading],h3")?.textContent ||
+      a.getAttribute("aria-label") ||
+      a.getAttribute("title") ||
+      a.textContent
+    );
+
+    if(!title||/shop on ebay/i.test(title))continue;
+
+    const score=titleScore(queryTitle,title);
+    const q=N(queryTitle).replace(/[^a-z0-9]+/g," ").trim();
+    const t=N(title).replace(/[^a-z0-9]+/g," ").trim();
+    const contains=q.length>12&&t.length>12&&(q.includes(t)||t.includes(q));
+
+    if(score>=0.68||(contains&&score>=0.56)){
+      candidates.push({
+        id,
+        title,
+        url:OR+"/itm/"+id,
+        source:"TitleSearch",
+        recovered:true,
+        recoveryScore:score
+      });
+    }
+  }
+
+  candidates.sort((a,b)=>b.recoveryScore-a.recoveryScore);
+  return candidates[0]||null;
+}
+
+async function searchSellerTitle(title,completed=false){
+  const u=new URL("/sch/i.html",OR);
+  u.searchParams.set("_nkw",title.slice(0,180));
+  u.searchParams.set("_ssn",seller);
+  u.searchParams.set("_sop","12");
+  if(completed)u.searchParams.set("LH_Complete","1");
+
+  const ac=new AbortController();
+  const timer=setTimeout(()=>ac.abort(),12000);
+
+  try{
+    const r=await fetch(u.toString(),{
+      credentials:"include",
+      cache:"no-store",
+      redirect:"follow",
+      signal:ac.signal
+    });
+
+    if(!r.ok)throw Error("HTTP "+r.status);
+    return bestSearchMatch(await r.text(),title);
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+async function findItemByTitle(title){
+  const key=N(title);
+  if(titleTokens(title).length<2)return null;
+  if(titleSearchCache.has(key))return titleSearchCache.get(key);
+
+  let q=null;
+
+  try{
+    q=await searchSellerTitle(title,false);
+    if(!q)q=await searchSellerTitle(title,true);
+  }catch(e){
+    if(e.message==="CAPTCHA_SEARCH"){
+      recoveryAbort=1;
+      log("Ricerca per titolo fermata: eBay ha richiesto una verifica.");
+    }else{
+      log("Ricerca titolo: "+e.message);
+    }
+  }
+
+  titleSearchCache.set(key,q);
+  return q;
+}
+
+async function recoverMissingByTitle(){
+  if(!recoveryRows.length)return;
+
+  const groups=new Map();
+
+  for(const row of recoveryRows){
+    const key=N(row.title);
+    if(!key)continue;
+
+    if(!groups.has(key))groups.set(key,{title:row.title,rows:[]});
+    groups.get(key).rows.push(row);
+  }
+
+  const jobs=[...groups.values()];
+  let ix=0;
+  let done=0;
+
+  $("#status").textContent="Fase 2 · recupero Item ID tramite titolo: 0/"+jobs.length;
+
+  async function worker(){
+    while(!stop&&!recoveryAbort){
+      const i=ix++;
+      if(i>=jobs.length)return;
+
+      const g=jobs[i];
+      const q=await findItemByTitle(g.title);
+
+      if(q){
+        const x=getOrCreateProduct(q);
+        x.recovered=true;
+        x.recoveryScore=Math.max(x.recoveryScore||0,q.recoveryScore||0);
+
+        for(const row of g.rows){
+          if(row.period==="month")x.monthCount++;
+          else if(row.period==="six")x.sixCount++;
+          else if(row.period==="year")x.yearCount++;
+
+          recoveredFromTitle++;
+          mapped++;
+          unmapped=Math.max(0,unmapped-1);
+        }
+      }
+
+      done++;
+      render();
+      $("#status").textContent="Fase 2 · recupero Item ID tramite titolo: "+done+"/"+jobs.length+" · recuperati "+recoveredFromTitle;
+      await S(220);
+    }
+  }
+
+  await Promise.all([worker(),worker(),worker()]);
+  log("Recupero da titolo completato: "+recoveredFromTitle+" feedback recuperati; "+unmapped+" ancora senza Item ID.");
+}
+
 function fbRows(d){
   return [...d.querySelectorAll(
     '#feedback-cards tbody tr[data-feedback-id],#feedback-cards tbody tr,[data-feedback-id]'
@@ -244,7 +427,7 @@ st.textContent=`
 }
 #${ID} .chip b{color:#172033}
 #${ID} .stats{
-  display:grid;grid-template-columns:repeat(7,minmax(0,1fr));
+  display:grid;grid-template-columns:repeat(8,minmax(0,1fr));
   gap:7px;margin:0 0 11px
 }
 #${ID} .s{
@@ -274,6 +457,9 @@ st.textContent=`
 #${ID} th[data-sort].active-sort .sort-arrow{color:#172033}
 #${ID} td.num,#${ID} th.num{text-align:center;white-space:nowrap}
 #${ID} tbody tr:hover{background:#fafbfc}
+#${ID} tr.recovered-row td{background:#eef6ff}
+#${ID} tr.recovered-row:hover td{background:#e3f0ff}
+#${ID} .recovered-badge{display:inline-block;margin-left:6px;padding:2px 5px;border-radius:999px;background:#d7eaff;color:#285b91;font-size:9px;font-weight:700;white-space:nowrap}
 #${ID} .loading{color:#777;font-style:italic}
 #${ID} .ok{font-weight:700;color:#137333}
 #${ID} .bad{color:#b3261e}
@@ -325,7 +511,8 @@ p.innerHTML=`
 
   <div class="stats">
     <div class="s"><span>Feedback associati a un prodotto</span><b id="mapped">0</b></div>
-    <div class="s"><span>Feedback senza Item ID</span><b id="unmapped">0</b></div>
+    <div class="s"><span>Feedback ancora senza Item ID</span><b id="unmapped">0</b></div>
+    <div class="s"><span>Feedback recuperati dal titolo</span><b id="recovered">0</b></div>
     <div class="s"><span>Prodotti unici trovati</span><b id="products">0</b></div>
     <div class="s"><span>Pagine feedback analizzate</span><b id="pages">0</b></div>
     <div class="s"><span>Inserzioni Item sold lette</span><b id="soldDone">0</b></div>
@@ -344,8 +531,6 @@ p.innerHTML=`
           <th class="num" data-sort="year" title="Ordina per 12 months">12 months <span class="sort-arrow"></span></th>
           <th data-sort="id" title="Ordina per Item ID">Item ID <span class="sort-arrow"></span></th>
           <th data-sort="title" title="Ordina Titolo A-Z / Z-A">Titolo <span class="sort-arrow"></span></th>
-          <th>Link</th>
-          <th data-sort="source" title="Ordina Source A-Z / Z-A">Source <span class="sort-arrow"></span></th>
         </tr>
       </thead>
       <tbody id="tb"></tbody>
@@ -392,8 +577,7 @@ const SORTERS={
   six:x=>Number(x.sixCount)||0,
   year:x=>Number(x.yearCount)||0,
   id:x=>Number(x.id)||0,
-  title:x=>N(x.title),
-  source:x=>N(x.source)
+  title:x=>N(x.title)
 };
 
 const sorted=()=>{
@@ -444,6 +628,7 @@ function render(){
 
   $("#mapped").textContent=mapped;
   $("#unmapped").textContent=unmapped;
+  $("#recovered").textContent=recoveredFromTitle;
   $("#products").textContent=a.length;
   $("#pages").textContent=pages;
   $("#soldDone").textContent=soldDone;
@@ -455,19 +640,17 @@ function render(){
 
   $("#tb").innerHTML=a.length
     ? a.map((x,i)=>`
-      <tr>
+      <tr class="${x.recovered?"recovered-row":""}">
         <td class="num">${i+1}</td>
         <td class="num">${soldCell(x)}</td>
         <td class="num"><b>${x.monthCount}</b></td>
         <td class="num">${x.sixCount}</td>
         <td class="num">${x.yearCount}</td>
-        <td><a target="_blank" href="${E(x.url)}">${E(x.id)}</a></td>
+        <td><a target="_blank" href="${E(x.url)}">${E(x.id)}</a>${x.recovered?'<span class="recovered-badge">recuperato da titolo</span>':""}</td>
         <td>${E(x.title)}</td>
-        <td><a target="_blank" href="${E(x.url)}">Apri</a></td>
-        <td>${E(x.source)}</td>
       </tr>
     `).join("")
-    : '<tr><td colspan="9">Nessun prodotto rilevato.</td></tr>';
+    : '<tr><td colspan="7">Nessun prodotto rilevato.</td></tr>';
 }
 
 function process(d){
@@ -496,6 +679,8 @@ function process(d){
     const q=prod(r);
     if(!q){
       unmapped++;
+      const title=feedbackTitle(r);
+      if(title)recoveryRows.push({feedbackId:fid,title,period:per});
       continue;
     }
 
@@ -765,7 +950,7 @@ async function enrich(){
 
       const x=a[i];
       $("#status").textContent=
-        `Fase 2 · Item sold ${Math.min(soldDone+1,a.length)}/${a.length} · ${x.id}`;
+        `Fase 3 · Item sold ${Math.min(soldDone+1,a.length)}/${a.length} · ${x.id}`;
 
       await soldOne(x,f);
       await S(120);
@@ -827,7 +1012,7 @@ $("#google").onclick=()=>{
       itemId:x.id,
       title:x.title,
       url:x.url,
-      source:x.source
+      recoveredFromTitle:!!x.recovered
     }))
   };
 
@@ -854,7 +1039,7 @@ $("#csv").onclick=()=>{
   const a=sorted();
 
   const rows=a.map((x,i)=>`
-    <tr>
+    <tr style="${x.recovered?"background:#eef6ff;":""}">
       <td>${i+1}</td>
       <td>${Number.isFinite(x.sold)?x.sold:""}</td>
       <td>${x.monthCount}</td>
@@ -862,8 +1047,6 @@ $("#csv").onclick=()=>{
       <td>${x.yearCount}</td>
       <td style="mso-number-format:'\\\\@';"><a href="${E(x.url)}">${E(x.id)}</a></td>
       <td>${E(x.title)}</td>
-      <td><a href="${E(x.url)}">Apri</a></td>
-      <td>${E(x.source)}</td>
     </tr>
   `).join("");
 
@@ -897,8 +1080,6 @@ $("#csv").onclick=()=>{
           <th>12 months</th>
           <th>Item ID</th>
           <th>Title</th>
-          <th>Link</th>
-          <th>Source</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -971,8 +1152,16 @@ try{
 
   if(stop)return;
 
+  if(recoveryRows.length){
+    $("#status").textContent="Fase 2 · provo a recuperare "+recoveryRows.length+" feedback senza Item ID tramite il titolo…";
+    await recoverMissingByTitle();
+    render();
+  }
+
+  if(stop)return;
+
   $("#status").textContent=
-    `Fase 2 · lettura Item sold su ${products.size} prodotti…`;
+    `Fase 3 · lettura Item sold su ${products.size} prodotti…`;
 
   await enrich();
   render();
@@ -981,9 +1170,9 @@ try{
 
   $("#status").textContent=stop
     ? "Interrotto / verifica eBay"
-    : `Completato · ${products.size} prodotti · 1m ${t.month} · 6m ${t.six} · 12m ${t.year} · Item sold ${soldFound}/${soldDone} · totale ${totalItemSold()}`;
+    : `Completato · ${products.size} prodotti · recuperati da titolo ${recoveredFromTitle} · ancora senza ID ${unmapped} · 1m ${t.month} · 6m ${t.six} · 12m ${t.year} · Item sold ${soldFound}/${soldDone} · totale ${totalItemSold()}`;
 
-  log(`Completato. Source Text ${textIds}; Link ${mapped-textIds}.`);
+  log("Completato. Feedback recuperati dal titolo: "+recoveredFromTitle+"; ancora senza Item ID: "+unmapped+".");
 }catch(e){
   f.remove();
   $("#status").textContent=`Interrotto: ${e.message}`;
