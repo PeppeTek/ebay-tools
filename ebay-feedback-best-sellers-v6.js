@@ -1,7 +1,7 @@
 javascript:(async()=>{
 "use strict";
 
-const V="v6.9-AU";
+const V="v7.0-AU";
 const ID="pep-ebay-bs-v6";
 const FB=ID+"-fb";
 const PF=ID+"-pf-";
@@ -508,8 +508,9 @@ st.textContent=`
 #${ID} .h{
   display:flex;justify-content:space-between;align-items:center;gap:12px;
   padding:13px 15px;border-bottom:1px solid #e4e8ef;
-  background:#f8fafc
+  background:#f8fafc;cursor:grab;user-select:none;touch-action:none
 }
+#${ID} .h.dragging{cursor:grabbing}
 #${ID} .title{font-size:18px;font-weight:700;color:#172033}
 #${ID} .sub{margin-top:3px;font-size:11px;color:#697386;font-weight:400}
 #${ID} .close{
@@ -668,6 +669,60 @@ p.innerHTML=`
 `;
 
 document.body.appendChild(p);
+
+const dragHandle=p.querySelector(".h");
+let dragState=null;
+
+function clamp(v,min,max){
+  return Math.max(min,Math.min(max,v));
+}
+
+dragHandle.addEventListener("pointerdown",e=>{
+  if(e.button!==0)return;
+  if(e.target.closest("button,a,input,textarea,select"))return;
+
+  const rect=p.getBoundingClientRect();
+  p.style.left=rect.left+"px";
+  p.style.top=rect.top+"px";
+  p.style.right="auto";
+  p.style.bottom="auto";
+
+  dragState={
+    pointerId:e.pointerId,
+    startX:e.clientX,
+    startY:e.clientY,
+    startLeft:rect.left,
+    startTop:rect.top
+  };
+
+  dragHandle.classList.add("dragging");
+  try{dragHandle.setPointerCapture(e.pointerId)}catch(_){}
+  e.preventDefault();
+});
+
+dragHandle.addEventListener("pointermove",e=>{
+  if(!dragState||e.pointerId!==dragState.pointerId)return;
+  const rect=p.getBoundingClientRect();
+  const maxLeft=Math.max(0,window.innerWidth-rect.width);
+  const maxTop=Math.max(0,window.innerHeight-60);
+
+  const left=clamp(dragState.startLeft+(e.clientX-dragState.startX),0,maxLeft);
+  const top=clamp(dragState.startTop+(e.clientY-dragState.startY),0,maxTop);
+
+  p.style.left=left+"px";
+  p.style.top=top+"px";
+});
+
+function endDrag(e){
+  if(!dragState)return;
+  if(e&&e.pointerId!==undefined&&e.pointerId!==dragState.pointerId)return;
+  try{dragHandle.releasePointerCapture(dragState.pointerId)}catch(_){}
+  dragState=null;
+  dragHandle.classList.remove("dragging");
+}
+
+dragHandle.addEventListener("pointerup",endDrag);
+dragHandle.addEventListener("pointercancel",endDrag);
 
 const $=s=>p.querySelector(s);
 
