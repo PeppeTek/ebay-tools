@@ -8,15 +8,16 @@ const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.disp
 const panel=document.getElementById(PANEL_ID);if(!panel)return;
 
 function actionButtons(){
-  return [...panel.querySelectorAll('[data-ebay-actions] button,#capitan-amazon-insert,#capitan-amazon-find')];
+  return [...panel.querySelectorAll('[data-ebay-actions] button,#capitan-amazon-best-match,#capitan-aliexpress-best-match,#capitan-amazon-find,#capitan-aliexpress-find')];
 }
 function normalize(){
   panel.style.pointerEvents='auto';
   panel.style.isolation='isolate';
   const actions=panel.querySelector('[data-ebay-actions]');
   if(actions){
-    actions.style.position='sticky';
-    actions.style.bottom='0';
+    const sticky=!window.__capitanSellLikeTestMode;
+    actions.style.position=sticky?'sticky':'relative';
+    actions.style.bottom=sticky?'0':'auto';
     actions.style.zIndex='1000';
     actions.style.pointerEvents='auto';
     actions.style.isolation='isolate';
