@@ -1,7 +1,7 @@
 javascript:(async()=>{
 "use strict";
 
-const V="v6.8-AU";
+const V="v6.9-AU";
 const ID="pep-ebay-bs-v6";
 const FB=ID+"-fb";
 const PF=ID+"-pf-";
@@ -46,6 +46,9 @@ let soldErrors=0;
 let trackedWindowSeen=0;
 let recoveredFromTitle=0;
 let recoveryAbort=0;
+let recoveryErrors=0;
+let blockedState=0;
+let manualStop=0;
 let sortKey="sold";
 let sortDir="desc";
 
@@ -376,9 +379,13 @@ async function findItemByTitle(title){
   }catch(e){
     if(e.message==="CAPTCHA_SEARCH"||e.message==="CAPTCHA_SELLER"){
       recoveryAbort=1;
+      blockedState=1;
       log("Ricerca per titolo fermata: eBay ha richiesto una verifica.");
+      setFinalSummary("blocked","BLOCCATO · eBay ha richiesto una verifica durante il recupero tramite titolo.");
     }else{
+      recoveryErrors++;
       log("Ricerca titolo: "+e.message);
+      setFinalSummary("warn","PROCESSO PARZIALE · errore durante il recupero tramite titolo. Il processo continua.");
     }
   }
 
@@ -574,6 +581,14 @@ st.textContent=`
 #${ID} .a{
   display:flex;justify-content:flex-end;gap:8px;margin-top:10px;flex-wrap:wrap
 }
+#${ID} .final-summary{
+  margin-top:10px;padding:10px 12px;border-radius:9px;border:1px solid #d7dee8;
+  background:#f8fafc;color:#475467;font-weight:700;line-height:1.35
+}
+#${ID} .final-summary.running{background:#f5f8fc;border-color:#d7dee8;color:#475467}
+#${ID} .final-summary.ok{background:#edf8f0;border-color:#b9dfc3;color:#176b35}
+#${ID} .final-summary.warn{background:#fff6e8;border-color:#f0c98a;color:#9a5a00}
+#${ID} .final-summary.blocked{background:#fdeeee;border-color:#e6a4a4;color:#b3261e}
 #${ID} button{
   padding:8px 11px;border:1px solid #c9d1dc;border-radius:8px;
   background:#fff;color:#344054;cursor:pointer
@@ -647,12 +662,22 @@ p.innerHTML=`
     <button id="google" disabled>Esporta Google Sheet</button>
     <button id="csv" class="p" disabled>Esporta XLS</button>
   </div>
+
+  <div id="finalSummary" class="final-summary running">Processo in corso…</div>
 </div>
 `;
 
 document.body.appendChild(p);
 
 const $=s=>p.querySelector(s);
+
+function setFinalSummary(level,text){
+  const el=$("#finalSummary");
+  if(!el)return;
+  el.className="final-summary "+level;
+  el.textContent=text;
+  try{el.scrollIntoView({block:"nearest"});}catch(_){}
+}
 
 for(const th of p.querySelectorAll("th[data-sort]")){
   th.onclick=()=>{
@@ -1031,7 +1056,13 @@ async function soldOne(x,f){
     x.soldState="error";
     soldErrors++;
     log(`${x.id}: ${e.message}`);
-    if(e.message==="CAPTCHA")stop=1;
+    if(e.message==="CAPTCHA"){
+      blockedState=1;
+      stop=1;
+      setFinalSummary("blocked","BLOCCATO · eBay ha richiesto una verifica durante la lettura degli Item sold.");
+    }else{
+      setFinalSummary("warn","PROCESSO PARZIALE · alcuni Item sold hanno restituito errori. Il processo continua.");
+    }
   }finally{
     soldDone++;
     render();
@@ -1075,8 +1106,10 @@ $("#x").onclick=()=>{
 };
 
 $("#stop").onclick=()=>{
+  manualStop=1;
   stop=1;
   $("#status").textContent="Interrotto";
+  setFinalSummary("warn","INTERROTTO MANUALMENTE · processo fermato dall\'utente.");
 };
 
 $("#google").onclick=()=>{
@@ -1207,6 +1240,7 @@ render();
 const f=frame(FB);
 
 try{
+  setFinalSummary("running","Processo in corso…");
   $("#status").textContent="Fase 1 · preparo 200 feedback per pagina…";
 
   await load(f,buildFeedback());
@@ -1253,7 +1287,10 @@ try{
 
   f.remove();
 
-  if(stop)return;
+  if(stop){
+    if(!blockedState&&!manualStop)setFinalSummary("warn","PROCESSO INTERROTTO · esecuzione terminata prima del completamento.");
+    return;
+  }
 
   if(recoveryRows.length){
     $("#status").textContent="Fase 2 · provo a recuperare "+recoveryRows.length+" feedback senza Item ID tramite il titolo…";
@@ -1261,7 +1298,10 @@ try{
     render();
   }
 
-  if(stop)return;
+  if(stop){
+    if(!blockedState&&!manualStop)setFinalSummary("warn","PROCESSO INTERROTTO · esecuzione terminata prima della lettura Item sold.");
+    return;
+  }
 
   $("#status").textContent=
     `Fase 3 · lettura Item sold su ${products.size} prodotti…`;
@@ -1275,10 +1315,22 @@ try{
     ? "Interrotto / verifica eBay"
     : `Completato · ${products.size} prodotti · recuperati da titolo ${recoveredFromTitle} · ancora senza ID ${unmapped} · 1m ${t.month} · 6m ${t.six} · 12m ${t.year} · Item sold ${soldFound}/${soldDone} · totale ${totalItemSold()}`;
 
+  const totalErrors=soldErrors+recoveryErrors;
+
+  if(blockedState){
+    setFinalSummary("blocked","BLOCCATO · processo non completato · recuperati dal titolo "+recoveredFromTitle+" · ancora senza Item ID "+unmapped+" · errori "+totalErrors+".");
+  }else if(totalErrors>0){
+    setFinalSummary("warn","COMPLETATO CON ERRORI · recuperati dal titolo "+recoveredFromTitle+" · ancora senza Item ID "+unmapped+" · Item sold "+soldFound+"/"+soldDone+" · errori "+totalErrors+".");
+  }else{
+    setFinalSummary("ok","COMPLETATO · recuperati dal titolo "+recoveredFromTitle+" · ancora senza Item ID "+unmapped+" · Item sold "+soldFound+"/"+soldDone+" · totale Item sold "+totalItemSold()+".");
+  }
+
   log("Completato. Feedback recuperati dal titolo: "+recoveredFromTitle+"; ancora senza Item ID: "+unmapped+".");
 }catch(e){
   f.remove();
+  blockedState=1;
   $("#status").textContent=`Interrotto: ${e.message}`;
   log(`ERRORE: ${e.message}`);
+  setFinalSummary("blocked","BLOCCATO · errore grave: "+e.message);
 }
 })();
