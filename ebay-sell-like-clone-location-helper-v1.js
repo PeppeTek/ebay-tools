@@ -11,12 +11,6 @@ function patchUi(){
   const title=p.querySelector('.h span'); if(title) title.textContent='Sell Like This v1.4';
   [...p.querySelectorAll('.row.muted')].forEach(x=>x.remove());
 
-  // Close button: fixed to the real top-right corner of the panel.
-  const closeBtn=p.querySelector('[data-close]');
-  if(closeBtn){
-    closeBtn.style.cssText='position:absolute;top:12px;right:12px;width:30px;height:30px;padding:0;border:1px solid #bbb;border-radius:8px;background:#fff;cursor:pointer;font-size:16px;line-height:28px;z-index:5';
-  }
-
   // Remove the redundant publication row from the summary.
   [...p.querySelectorAll('#steps .row')].forEach(r=>{
     if(/^Pubblicazione:/i.test(clean(r.innerText||r.textContent))) r.remove();
