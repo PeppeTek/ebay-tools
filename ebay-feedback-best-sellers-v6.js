@@ -1,7 +1,7 @@
 javascript:(async()=>{
 "use strict";
 
-const V="v6.5-AU";
+const V="v6.6-AU";
 const ID="pep-ebay-bs-v6";
 const FB=ID+"-fb";
 const PF=ID+"-pf-";
@@ -44,6 +44,8 @@ let soldDone=0;
 let soldFound=0;
 let soldErrors=0;
 let trackedWindowSeen=0;
+let sortKey="sold";
+let sortDir="desc";
 
 const seen=new Set();
 const products=new Map();
@@ -265,6 +267,11 @@ st.textContent=`
 #${ID} th{
   position:sticky;top:0;z-index:2;background:#f5f7fa;color:#475467;font-weight:700
 }
+#${ID} th[data-sort]{cursor:pointer;user-select:none;transition:background .15s,color .15s}
+#${ID} th[data-sort]:hover{background:#eaf0f7;color:#172033}
+#${ID} th[data-sort].active-sort{background:#e8eef8;color:#172033}
+#${ID} .sort-arrow{display:inline-block;min-width:12px;margin-left:4px;font-size:9px;vertical-align:1px;color:#667085}
+#${ID} th[data-sort].active-sort .sort-arrow{color:#172033}
 #${ID} td.num,#${ID} th.num{text-align:center;white-space:nowrap}
 #${ID} tbody tr:hover{background:#fafbfc}
 #${ID} .loading{color:#777;font-style:italic}
@@ -331,14 +338,14 @@ p.innerHTML=`
       <thead>
         <tr>
           <th class="num">#</th>
-          <th class="num">Item sold</th>
-          <th class="num">1 month</th>
-          <th class="num">6 months</th>
-          <th class="num">12 months</th>
-          <th>Item ID</th>
-          <th>Titolo</th>
+          <th class="num" data-sort="sold" title="Ordina per Item sold">Item sold <span class="sort-arrow"></span></th>
+          <th class="num" data-sort="month" title="Ordina per 1 month">1 month <span class="sort-arrow"></span></th>
+          <th class="num" data-sort="six" title="Ordina per 6 months">6 months <span class="sort-arrow"></span></th>
+          <th class="num" data-sort="year" title="Ordina per 12 months">12 months <span class="sort-arrow"></span></th>
+          <th data-sort="id" title="Ordina per Item ID">Item ID <span class="sort-arrow"></span></th>
+          <th data-sort="title" title="Ordina Titolo A-Z / Z-A">Titolo <span class="sort-arrow"></span></th>
           <th>Link</th>
-          <th>Source</th>
+          <th data-sort="source" title="Ordina Source A-Z / Z-A">Source <span class="sort-arrow"></span></th>
         </tr>
       </thead>
       <tbody id="tb"></tbody>
@@ -359,18 +366,70 @@ document.body.appendChild(p);
 
 const $=s=>p.querySelector(s);
 
+for(const th of p.querySelectorAll("th[data-sort]")){
+  th.onclick=()=>{
+    const key=th.dataset.sort;
+
+    if(sortKey===key){
+      sortDir=sortDir==="asc"?"desc":"asc";
+    }else{
+      sortKey=key;
+      sortDir=(key==="title"||key==="source")?"asc":"desc";
+    }
+
+    render();
+  };
+}
+
 const log=m=>{
   $("#log").value+=`[${new Date().toLocaleTimeString()}] ${m}\\n`;
   $("#log").scrollTop=1e9;
 };
 
-const sorted=()=>[...products.values()].sort((x,y)=>
-  ((y.sold??-1)-(x.sold??-1)) ||
-  (y.monthCount-x.monthCount) ||
-  (y.sixCount-x.sixCount) ||
-  (y.yearCount-x.yearCount) ||
-  x.title.localeCompare(y.title)
-);
+const SORTERS={
+  sold:x=>Number.isFinite(x.sold)?x.sold:null,
+  month:x=>Number(x.monthCount)||0,
+  six:x=>Number(x.sixCount)||0,
+  year:x=>Number(x.yearCount)||0,
+  id:x=>Number(x.id)||0,
+  title:x=>N(x.title),
+  source:x=>N(x.source)
+};
+
+const sorted=()=>{
+  const a=[...products.values()];
+  const getter=SORTERS[sortKey]||SORTERS.sold;
+
+  return a.sort((x,y)=>{
+    const av=getter(x),bv=getter(y);
+
+    if(av===null||av===undefined){
+      if(bv===null||bv===undefined)return N(x.title).localeCompare(N(y.title));
+      return 1;
+    }
+    if(bv===null||bv===undefined)return -1;
+
+    let cmp;
+    if(typeof av==="string"||typeof bv==="string"){
+      cmp=String(av).localeCompare(String(bv),undefined,{numeric:true,sensitivity:"base"});
+    }else{
+      cmp=Number(av)-Number(bv);
+    }
+
+    if(sortDir==="desc")cmp=-cmp;
+    return cmp||N(x.title).localeCompare(N(y.title));
+  });
+};
+
+function updateSortHeaders(){
+  for(const th of p.querySelectorAll("th[data-sort]")){
+    const active=th.dataset.sort===sortKey;
+    th.classList.toggle("active-sort",active);
+    const arrow=th.querySelector(".sort-arrow");
+    if(arrow)arrow.textContent=active?(sortDir==="asc"?"▲":"▼"):"↕";
+    th.setAttribute("aria-sort",active?(sortDir==="asc"?"ascending":"descending"):"none");
+  }
+}
 
 function soldCell(x){
   if(x.soldState==="loading")return'<span class="loading">Lettura…</span>';
@@ -381,6 +440,7 @@ function soldCell(x){
 
 function render(){
   const a=sorted();
+  updateSortHeaders();
 
   $("#mapped").textContent=mapped;
   $("#unmapped").textContent=unmapped;
