@@ -48,12 +48,10 @@ function parseDisplayFromRow(row){if(!row)return'';const t=clean(row.innerText||
 function partsFromDisplay(display){const a=display.split(',').map(clean).filter(Boolean);return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:a[2]||'',country:a[3]||''};}
 function cloneData(){try{return window.__capitanSellLikeCloneData||JSON.parse(localStorage.getItem('capitan-sell-like-clone-data-v1')||'null')}catch(_){return window.__capitanSellLikeCloneData||null}}
 function locationParts(display){
-  if(window.__capitanSellLikeMode==='variants'){
-    const d=cloneData()||{},p=d.itemLocationParts||{};
-    const city=clean(p.city),stateOrProvince=clean(p.stateOrProvince),postalCode=clean(p.postalCode),country=clean(p.country);
-    if(city||stateOrProvince||postalCode||country){
-      return {display:clean(d.itemLocation||display),city,stateOrProvince,postalCode,country}
-    }
+  const d=cloneData()||{},p=d.itemLocationParts||{};
+  const city=clean(p.city),stateOrProvince=clean(p.stateOrProvince),postalCode=clean(p.postalCode),country=clean(p.country);
+  if(city||stateOrProvince||postalCode||country){
+    return {display:clean(d.itemLocation||display),city,stateOrProvince,postalCode,country}
   }
   return partsFromDisplay(display)
 }
