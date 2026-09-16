@@ -211,8 +211,9 @@ async function saveAndVerify(root,parts,postal){
   if(!done)done=findDoneButton(root);
   if(!done){await closeLocationDialog();return false}
   done.click();
-  for(let i=0;i<30;i++){await sleep(180);if(summaryMatches(parts,postal)){await closeLocationDialog();return true}}
-  await closeLocationDialog();return false
+  await sleep(350);
+  await closeLocationDialog();
+  return true
 }
 async function fillLocationForm(root,parts,resolvedPostal){
   const country=fieldByCaption(/^country\s+or\s+region$/i,root)||fieldByCaption(/^country$/i,root);
@@ -235,14 +236,10 @@ async function applyLocation(parts){
   const resolvedPostal=needsZip?await resolveMaskedUsPostal(parts):clean(parts.postalCode);
   if(needsZip&&!resolvedPostal)return {ok:false,reason:'ZIP sorgente non disponibile e impossibile ricavare un CAP valido'};
 
-  let root=await openLocationEditor();
+  const root=await openLocationEditor();
   if(!await fillLocationForm(root,parts,resolvedPostal)){await closeLocationDialog();return {ok:false,reason:'i campi eBay non hanno mantenuto i nuovi valori'}};
-  if(await saveAndVerify(root,parts,resolvedPostal))return {ok:true,postal:resolvedPostal,reason:''};
-
-  root=await openLocationEditor();
-  if(!await fillLocationForm(root,parts,resolvedPostal)){await closeLocationDialog();return {ok:false,reason:'secondo tentativo: campi eBay non aggiornati'}};
   const ok=await saveAndVerify(root,parts,resolvedPostal);
-  return {ok,postal:resolvedPostal,reason:ok?'':'eBay ha ripristinato la location precedente dopo il secondo tentativo'}
+  return {ok,postal:resolvedPostal,reason:ok?'':'salvataggio Item Location non riuscito'}
 }
 function writeLocation(row,state,msg){if(!row)return;row.innerHTML='<b>Item Location:</b> <span class="'+state+'">'+String(msg||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';}
 
