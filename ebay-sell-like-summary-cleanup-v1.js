@@ -24,7 +24,7 @@ async function persistDiscount(){
       fixedFee:String(Number(r.fixedFee??.40))
     };
     const saved=await jsonpAction('sell_like_pricing_save',params);
-    if(saved&&saved.ok&&saved.rates)window.dispatchEvent(new CustomEvent('capitan-pricing-saved',{detail:{rates:saved.rates}}))
+    if(saved&&saved.ok&&saved.rates)window.dispatchEvent(new CustomEvent('capitan-pricing-saved',{detail:{rates:saved.rates,origin:'discount-input'}}))
   }catch(e){console.warn('Discount save',e)}
 }
 function numericDiscountInput(v){return Number(String(v??'').replace('%','').replace(',','.').trim())}
@@ -106,8 +106,10 @@ function cleanup(){
 let n=0;const t=setInterval(()=>{n++;cleanup();if(n>120)clearInterval(t)},125);
 window.addEventListener('capitan-break-even-updated',cleanup);
 window.addEventListener('capitan-pricing-saved',e=>{
-  const dr=Number(e.detail?.rates?.discountRate);
-  if(isFinite(dr)&&dr>-10&&dr<1)discountRate=dr;
+  if(e.detail?.origin!=='discount-input'){
+    const dr=Number(e.detail?.rates?.discountRate);
+    if(isFinite(dr)&&dr>-10&&dr<1)discountRate=dr
+  }
   emitDiscount();cleanup()
 });
 window.addEventListener('capitan-discount-reverse-updated',e=>{
