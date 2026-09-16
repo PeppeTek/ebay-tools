@@ -160,7 +160,7 @@ async function closeLocationDialog(){
   try{
     const close=[...dlg.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>{
       const t=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||''));
-      return /^(close|cancel|x|×)$/i.test(t)||/close dialog|dismiss/i.test(t);
+      return /^(close|cancel|x|×|done)$/i.test(t)||/close dialog|dismiss/i.test(t);
     });
     if(close){close.click();await sleep(250)}
   }catch(_){}
@@ -177,7 +177,10 @@ async function openLocationEditor(){
     }
   }
   const root=await waitForLocationForm();
-  try{__capitanLocationDialog=(root&&root.closest&&root.closest('[role="dialog"],dialog'))||document.querySelector('[role="dialog"],dialog')||null}catch(_){}
+  try{
+    const dlg=(root&&root.closest&&root.closest('[role="dialog"],dialog'))||document.querySelector('[role="dialog"],dialog')||null;
+    __capitanLocationDialog=dlg||((root&&root!==document&&root!==document.body)?root:null)
+  }catch(_){__capitanLocationDialog=(root&&root!==document&&root!==document.body)?root:null}
   return root;
 }
 function restoreHiddenLocationEditor(){closeLocationDialog();}
