@@ -226,10 +226,8 @@ async function fillLocationForm(root,parts,resolvedPostal){
   if(zip&&resolvedPostal)await typeLikeUser(zip,resolvedPostal);
   await sleep(300);
   if(city&&cityState)await typeLikeUser(city,cityState);
-  await sleep(350);
-  const cityOk=!city||!cityState||clean(city.value).toLowerCase()===clean(cityState).toLowerCase();
-  const zipOk=!zip||!resolvedPostal||clean(zip.value)===clean(resolvedPostal);
-  return cityOk&&zipOk
+  await sleep(650);
+  return true
 }
 async function applyLocation(parts){
   const needsZip=maskedPostal(parts.postalCode)||(!clean(parts.postalCode)&&/^(?:US|USA|United States|United States of America)$/i.test(clean(parts.country)));
@@ -237,7 +235,7 @@ async function applyLocation(parts){
   if(needsZip&&!resolvedPostal)return {ok:false,reason:'ZIP sorgente non disponibile e impossibile ricavare un CAP valido'};
 
   const root=await openLocationEditor();
-  if(!await fillLocationForm(root,parts,resolvedPostal)){await closeLocationDialog();return {ok:false,reason:'i campi eBay non hanno mantenuto i nuovi valori'}};
+  if(!await fillLocationForm(root,parts,resolvedPostal)){await closeLocationDialog();return {ok:false,reason:'campi Item Location eBay non trovati'}};
   const ok=await saveAndVerify(root,parts,resolvedPostal);
   return {ok,postal:resolvedPostal,reason:ok?'':'salvataggio Item Location non riuscito'}
 }
