@@ -95,19 +95,35 @@ function fieldByCaption(re,root=document){
 }
 function nativeValueSetter(el,value){
   const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
-  const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;if(!setter)return false;
+  const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+  if(!setter)return false;
   const old=el.value;setter.call(el,String(value));
   if(el._valueTracker&&typeof el._valueTracker.setValue==='function')el._valueTracker.setValue(old);
-  el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:String(value)}));
-  el.dispatchEvent(new Event('change',{bubbles:true}));return true;
+  try{el.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,inputType:'insertText',data:String(value)}))}catch(_){}
+  try{el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:String(value)}))}catch(_){el.dispatchEvent(new Event('input',{bubbles:true}))}
+  el.dispatchEvent(new Event('change',{bubbles:true}));
+  return true
 }
-async function typeLikeUser(el,value){
-  if(!el||value==null||value==='')return false;value=String(value);el.focus();
+function setTextControl(el,value){
+  if(!el||value==null||value==='')return false;value=String(value);
+  if(!(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement))return false;
+  el.focus();
   try{el.setSelectionRange(0,String(el.value||'').length)}catch(_){}
   nativeValueSetter(el,value);
   el.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Tab',code:'Tab',keyCode:9,which:9}));
   el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Tab',code:'Tab',keyCode:9,which:9}));
-  el.blur();await sleep(250);return clean(el.value)===clean(value);
+  el.blur();
+  return clean(el.value)===clean(value)
+}
+async function typeLikeUser(el,value){
+  if(!el||value==null||value==='')return false;
+  el.focus();
+  try{el.select?.()}catch(_){}
+  let ok=false;
+  try{ok=document.execCommand('insertText',false,String(value))}catch(_){}
+  if(!ok||clean(el.value)!==clean(value))ok=setTextControl(el,value);
+  await sleep(220);
+  return !!ok&&clean(el.value)===clean(value)
 }
 async function setChoice(el,value,isCountry=false){
   if(!el||!value)return false;const wanted=isCountry?countryDisplay(value):value;
@@ -182,33 +198,36 @@ async function saveAndVerify(root,parts,postal){
   if(!done)done=findDoneButton(root);
   if(!done){await closeLocationDialog();return false}
   done.click();
-  let ok=false;
-  for(let i=0;i<30;i++){await sleep(180);if(summaryMatches(parts,postal)){ok=true;break}}
-  await closeLocationDialog();
-  return ok;
+  for(let i=0;i<30;i++){await sleep(180);if(summaryMatches(parts,postal)){await closeLocationDialog();return true}}
+  await closeLocationDialog();return false
+}
+async function fillLocationForm(root,parts,resolvedPostal){
+  const country=fieldByCaption(/^country\s+or\s+region$/i,root)||fieldByCaption(/^country$/i,root);
+  const city=fieldByCaption(/^city\s*,\s*state$/i,root);
+  const zip=fieldByCaption(/^zip code$/i,root)||fieldByCaption(/^(zip|postal code|postcode)$/i,root);
+  const cityState=[parts.city,parts.stateOrProvince].filter(Boolean).join(', ');
+  if(country&&parts.country)await setChoice(country,parts.country,true);
+  if(zip&&resolvedPostal)await typeLikeUser(zip,resolvedPostal);
+  await sleep(300);
+  if(city&&cityState)await typeLikeUser(city,cityState);
+  await sleep(350);
+  const cityOk=!city||!cityState||clean(city.value).toLowerCase()===clean(cityState).toLowerCase();
+  const zipOk=!zip||!resolvedPostal||clean(zip.value)===clean(resolvedPostal);
+  return cityOk&&zipOk
 }
 async function applyLocation(parts){
   const needsZip=maskedPostal(parts.postalCode)||(!clean(parts.postalCode)&&/^(?:US|USA|United States|United States of America)$/i.test(clean(parts.country)));
   const resolvedPostal=needsZip?await resolveMaskedUsPostal(parts):clean(parts.postalCode);
   if(needsZip&&!resolvedPostal)return {ok:false,reason:'ZIP sorgente non disponibile e impossibile ricavare un CAP valido'};
+
   let root=await openLocationEditor();
-  const country=fieldByCaption(/^country\s+or\s+region$/i,root)||fieldByCaption(/^country$/i,root);
-  const city=fieldByCaption(/^city\s*,\s*state$/i,root);
-  const zip=fieldByCaption(/^zip code$/i,root)||fieldByCaption(/^(zip|postal code|postcode)$/i,root);
-  const cityState=[parts.city,parts.stateOrProvince].filter(Boolean).join(', ');
+  if(!await fillLocationForm(root,parts,resolvedPostal)){await closeLocationDialog();return {ok:false,reason:'i campi eBay non hanno mantenuto i nuovi valori'}};
+  if(await saveAndVerify(root,parts,resolvedPostal))return {ok:true,postal:resolvedPostal,reason:''};
 
-  if(country&&parts.country)await setChoice(country,parts.country,true);
-  if(zip&&resolvedPostal)await typeLikeUser(zip,resolvedPostal);
-  await sleep(450);
-  if(city&&cityState)await typeLikeUser(city,cityState);
-  await sleep(450);
-
-  const cityOk=!city||!cityState||clean(city.value).toLowerCase()===clean(cityState).toLowerCase();
-  const zipOk=!zip||!resolvedPostal||clean(zip.value)===clean(resolvedPostal);
-  if(!(cityOk&&zipOk)){await closeLocationDialog();return {ok:false,reason:'i campi eBay non hanno mantenuto i nuovi valori'}};
-
+  root=await openLocationEditor();
+  if(!await fillLocationForm(root,parts,resolvedPostal)){await closeLocationDialog();return {ok:false,reason:'secondo tentativo: campi eBay non aggiornati'}};
   const ok=await saveAndVerify(root,parts,resolvedPostal);
-  return {ok:ok,postal:resolvedPostal,reason:ok?'':'eBay ha ripristinato la location precedente dopo Done'};
+  return {ok,postal:resolvedPostal,reason:ok?'':'eBay ha ripristinato la location precedente dopo il secondo tentativo'}
 }
 function writeLocation(row,state,msg){if(!row)return;row.innerHTML='<b>Item Location:</b> <span class="'+state+'">'+String(msg||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';}
 
