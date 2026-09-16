@@ -137,7 +137,7 @@ window.__capitanReadSourcePrice=readSourcePrice;
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');
 const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
-function readDiscountLocal(){try{const n=Number(localStorage.getItem(DISCOUNT_KEY));return isFinite(n)&&n>-10&&n<1?n:.02}catch(_){return .02}}
+function readDiscountLocal(){try{const raw=localStorage.getItem(DISCOUNT_KEY),n=Number(raw);return raw!==null&&raw!==''&&isFinite(n)&&n>-10&&n<1?n:-.02}catch(_){return -.02}}
 let currentDiscountRate=readDiscountLocal();
 function setDiscountLocal(v){v=Number(v);if(!isFinite(v)||v<=-10||v>=1)return false;currentDiscountRate=v;try{localStorage.setItem(DISCOUNT_KEY,String(v))}catch(_){}return true}
 function targetFromSource(source){source=Number(source);return isFinite(source)&&source>0?Math.round(source*(1+currentDiscountRate)*100)/100:null}
@@ -232,7 +232,7 @@ function attachAiRetry(row,data){
   span.appendChild(a)
 }
 function photoInput(){return [...document.querySelectorAll('input[type="file"]')].find(x=>x.multiple||/image/i.test(x.accept||''))||document.querySelector('input[type="file"]')}
-async function uploadImages(urls){const input=photoInput();if(!input)throw Error('Input foto eBay non trovato');const dt=new DataTransfer();let ok=0;for(let i=0;i<urls.length;i++){const u=urls[i];try{const r=await fetch(u,{mode:'cors',credentials:'omit',cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const blob=await r.blob();const mime=blob.type||'image/jpeg';const ext=/png/i.test(mime)?'png':/webp/i.test(mime)?'webp':'jpg';dt.items.add(new File([blob],`${itemId}-${String(i+1).padStart(2,'0')}.${ext}`,{type:mime,lastModified:Date.now()}));ok++}catch(e){console.warn('Image fetch failed',u,e)}}if(!ok)throw Error('Nessuna foto scaricabile dal browser');input.files=dt.files;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));return ok}
+async function uploadImages(urls){const input=photoInput();if(!input)throw Error('Input foto eBay non trovato');urls=uniqUrls(urls).slice(0,24);if(!urls.length)throw Error('Nessuna foto sorgente disponibile');const files=new Array(urls.length);for(let base=0;base<urls.length;base+=4){await Promise.all(urls.slice(base,base+4).map(async(u,j)=>{const i=base+j;try{const r=await fetch(u,{mode:'cors',credentials:'omit',cache:'force-cache'});if(!r.ok)throw Error('HTTP '+r.status);const blob=await r.blob();const mime=blob.type||'image/jpeg';const ext=/png/i.test(mime)?'png':/webp/i.test(mime)?'webp':'jpg';files[i]=new File([blob],String(itemId)+'-'+String(i+1).padStart(2,'0')+'.'+ext,{type:mime,lastModified:Date.now()})}catch(e){console.warn('Image fetch failed',u,e)}}))}const dt=new DataTransfer();files.filter(Boolean).forEach(f=>dt.items.add(f));if(!dt.files.length)throw Error('Nessuna foto scaricabile dal browser');input.files=dt.files;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));return dt.files.length}
 let previewPreparePromise=null,previewReady=false,uploadedImageSignature='';
 const stepRows={};
 function setStep(name,state,msg){
@@ -271,6 +271,7 @@ function dataFromPreflight(pre){
     condition:'New',
     images,
     itemLocation:clean(pre.itemLocation||pre.itemLocationText||pre.location||''),
+    itemLocationParts:pre.itemLocationParts||pre.locationParts||{},
     descriptionHtml:'',
     aiDeferred:true,
     descriptionReady:false
@@ -287,8 +288,7 @@ async function initialNonAiData(){
   const data=dataFromPreflight(pre);
   if(!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0){
     const editorPrice=readEditorPrice();
-    if(isFinite(editorPrice)&&editorPrice>0)data.sourcePrice=editorPrice;
-    else try{data.sourcePrice=await readSourcePrice(itemId)}catch(e){console.warn('Source price fallback',e)}
+    if(isFinite(editorPrice)&&editorPrice>0)data.sourcePrice=editorPrice
   }
   if(isFinite(Number(data.sourcePrice))&&Number(data.sourcePrice)>0){
     window.__capitanSellLikeSourcePrice=Number(data.sourcePrice);
@@ -428,9 +428,8 @@ try{
   setStep('Condizione',conditionOk?'ok':'warn',conditionOk?'New':'controlla manualmente');
 
   if(data.itemLocation){
-    const locOk=setItemLocation(data.itemLocation);
-    setStep('Item Location',locOk?'ok':'warn',locOk?data.itemLocation:'sorgente: '+data.itemLocation+' — campo eBay non trovato, controlla manualmente')
-  }else setStep('Item Location','warn','in attesa di Preview');
+    setStep('Item Location','warn','sorgente: '+data.itemLocation+' — applicazione automatica in corso')
+  }else setStep('Item Location','warn','location sorgente non disponibile');
 
   setStep('Descrizione','ok','Template AI-HTML in attesa di Preview');
 
