@@ -3,7 +3,7 @@ javascript:(()=>{
 const PANEL_ID='capitan-sell-like-clone';
 const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
 const DISCOUNT_KEY='capitan-sell-like-discount-rate-v1';
-let discountRate=.02,reverseSaveTimer=null;
+let discountRate=-.02,reverseSaveTimer=null;
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 function endpoint(){return String(localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}
 function jsonpAction(action,params){const ep=endpoint();return new Promise((resolve,reject)=>{if(!ep)return reject(Error('Endpoint Apps Script non configurato'));const cb='__capitanDiscountCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),30000);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:Date.now().toString(),...(params||{})});s.src=ep+(ep.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
@@ -53,16 +53,18 @@ function cleanup(){
     discountRow=document.createElement('div');
     discountRow.id='capitan-discount-row';
     discountRow.className='row';
-    discountRow.style.cssText='display:grid;grid-template-columns:minmax(0,1fr) 82px 104px;align-items:center;gap:8px;min-height:38px';
-    discountRow.innerHTML='<b>Riduzione prezzo rispetto alla concorrenza:</b><input id="capitan-discount-manual" type="text" inputmode="decimal" aria-label="Riduzione prezzo percentuale" placeholder="%" style="width:82px;height:28px;box-sizing:border-box;border:1px solid #c5c9cf;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111"><span id="capitan-competitor-price" style="justify-self:end;text-align:right;white-space:nowrap;color:#7a1f2b;font-weight:700">—</span>';
+    discountRow.style.cssText='display:grid;grid-template-columns:minmax(0,1fr) 82px 40px 104px;align-items:center;gap:6px;min-height:38px';
+    discountRow.innerHTML='<b>Riduzione prezzo rispetto alla concorrenza:</b><input id="capitan-discount-manual" type="text" inputmode="decimal" aria-label="Riduzione prezzo percentuale" placeholder="%" style="width:82px;height:28px;box-sizing:border-box;border:1px solid #c5c9cf;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111"><button id="capitan-discount-set" type="button" style="width:40px;height:28px;padding:0;border:1px solid #c5c9cf;border-radius:7px;background:#f5f6f7;color:#333;font-size:11px;font-weight:700;cursor:pointer">Set</button><span id="capitan-competitor-price" style="justify-self:end;text-align:right;white-space:nowrap;color:#7a1f2b;font-weight:700">—</span>';
     sourceRow.insertAdjacentElement('afterend',discountRow);
     const input=discountRow.querySelector('#capitan-discount-manual');
     input.value=formatDiscountField();
+    const setBtn=discountRow.querySelector('#capitan-discount-set');
+    const applySet=()=>{if(applyDiscountPct(input.value,true))input.value=formatDiscountField();else input.value=formatDiscountField()};
     input.addEventListener('focus',()=>{input.value=String(discountNumber()).replace('.',',');input.select()});
-    input.addEventListener('change',()=>{if(applyDiscountPct(input.value,true))input.value=formatDiscountField()});
-    input.addEventListener('blur',()=>{if(applyDiscountPct(input.value,true))input.value=formatDiscountField();else input.value=formatDiscountField()});
-    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();input.blur()}});
+    input.addEventListener('blur',()=>{if(document.activeElement!==setBtn)input.value=formatDiscountField()});
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();applySet();input.blur()}});
     input.addEventListener('click',e=>e.stopPropagation());
+    setBtn?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();applySet();input.blur()});
   }else if(discountRow){
     const input=discountRow.querySelector('#capitan-discount-manual');
     if(input&&document.activeElement!==input)input.value=formatDiscountField();
@@ -122,10 +124,10 @@ cleanup();
   const remote=Number(d?.rates?.discountRate),local=Number(localStorage.getItem(DISCOUNT_KEY));
   if(d&&d.ok&&isFinite(remote)&&remote>-10&&remote<1)discountRate=remote;
   else if(isFinite(local)&&local>-10&&local<1)discountRate=local;
-  else discountRate=.02
+  else discountRate=-.02
 }catch(e){
   console.warn('Sell Like discount load',e);
-  try{const local=Number(localStorage.getItem(DISCOUNT_KEY));discountRate=isFinite(local)&&local>-10&&local<1?local:.02}catch(_){discountRate=.02}
+  try{const local=Number(localStorage.getItem(DISCOUNT_KEY));discountRate=isFinite(local)&&local>-10&&local<1?local:-.02}catch(_){discountRate=-.02}
 }
 emitDiscount();cleanup()})();
 })();
