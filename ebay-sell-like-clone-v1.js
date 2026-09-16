@@ -306,6 +306,17 @@ function attachAiRetry(row,data){
   };
   span.appendChild(a)
 }
+function existingEbayPhotoCount(){
+  const body=String(document.body?.innerText||'');
+  const matches=[...body.matchAll(/\b(\d{1,2})\s*\/\s*25\b/g)].map(m=>Number(m[1])).filter(n=>isFinite(n)&&n>=0&&n<=25);
+  if(matches.length)return Math.max(...matches);
+  const section=[...document.querySelectorAll('section,div')].find(x=>/photos\s*&\s*video/i.test(clean(x.innerText||x.textContent||''))&&clean(x.innerText||x.textContent||'').length<12000);
+  if(section){
+    const imgs=[...section.querySelectorAll('img')].filter(x=>visible(x)&&x.naturalWidth>0&&x.naturalHeight>0);
+    if(imgs.length)return Math.min(25,imgs.length)
+  }
+  return 0
+}
 function photoInput(){return [...document.querySelectorAll('input[type="file"]')].find(x=>x.multiple||/image/i.test(x.accept||''))||document.querySelector('input[type="file"]')}
 async function uploadImages(urls){const input=photoInput();if(!input)throw Error('Input foto eBay non trovato');urls=uniqUrls(urls).slice(0,24);if(!urls.length)throw Error('Nessuna foto sorgente disponibile');const files=new Array(urls.length);for(let base=0;base<urls.length;base+=4){await Promise.all(urls.slice(base,base+4).map(async(u,j)=>{const i=base+j;try{const r=await fetch(u,{mode:'cors',credentials:'omit',cache:'force-cache'});if(!r.ok)throw Error('HTTP '+r.status);const blob=await r.blob();const mime=blob.type||'image/jpeg';const ext=/png/i.test(mime)?'png':/webp/i.test(mime)?'webp':'jpg';files[i]=new File([blob],String(itemId)+'-'+String(i+1).padStart(2,'0')+'.'+ext,{type:mime,lastModified:Date.now()})}catch(e){console.warn('Image fetch failed',u,e)}}))}const dt=new DataTransfer();files.filter(Boolean).forEach(f=>dt.items.add(f));if(!dt.files.length)throw Error('Nessuna foto scaricabile dal browser');input.files=dt.files;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));return dt.files.length}
 let previewPreparePromise=null,previewReady=false,uploadedImageSignature='';
@@ -438,14 +449,20 @@ async function ensurePreviewFullData(){
     if(imgs.length){
       const sig=imgs.join('|');
       if(sig!==uploadedImageSignature){
-        status.textContent='Caricamento foto nello stesso ordine…';
-        try{
-          const n=await uploadImages(imgs);
+        const already=existingEbayPhotoCount();
+        if(already>0){
           uploadedImageSignature=sig;
-          operationalLog('Foto: '+n+'/'+imgs.length+' caricate su eBay','ok')
-        }catch(imgErr){
-          operationalLog('Foto: '+imgErr.message+' — verifica manualmente','bad');
-          throw imgErr
+          operationalLog('Foto: '+already+' già presenti nella bozza eBay · upload aggiuntivo saltato','ok')
+        }else{
+          status.textContent='Caricamento foto nello stesso ordine…';
+          try{
+            const n=await uploadImages(imgs);
+            uploadedImageSignature=sig;
+            operationalLog('Foto: '+n+'/'+imgs.length+' caricate su eBay','ok')
+          }catch(imgErr){
+            operationalLog('Foto: '+imgErr.message+' — verifica manualmente','bad');
+            throw imgErr
+          }
         }
       }
     }
@@ -519,12 +536,18 @@ try{
   setStep('Descrizione','ok','Template AI-HTML in attesa di Preview');
 
   if(data.images&&data.images.length){
-    status.textContent='Caricamento foto sorgente senza AI…';
-    try{
-      const n=await uploadImages(data.images);
+    const already=existingEbayPhotoCount();
+    if(already>0){
       uploadedImageSignature=data.images.join('|');
-      operationalLog('Foto: '+n+'/'+data.images.length+' caricate su eBay','ok')
-    }catch(imgErr){operationalLog('Foto: '+imgErr.message+' — ritento prima della Preview','warn')}
+      operationalLog('Foto: '+already+' già presenti nella bozza eBay · nessun duplicato caricato','ok')
+    }else{
+      status.textContent='Caricamento foto sorgente senza AI…';
+      try{
+        const n=await uploadImages(data.images);
+        uploadedImageSignature=data.images.join('|');
+        operationalLog('Foto: '+n+'/'+data.images.length+' caricate su eBay','ok')
+      }catch(imgErr){operationalLog('Foto: '+imgErr.message+' — ritento prima della Preview','warn')}
+    }
   }else operationalLog('Foto: nessuna immagine disponibile nella preparazione iniziale; ritento in Preview','warn');
 
   setStep('Policy','ok','non modificate');
