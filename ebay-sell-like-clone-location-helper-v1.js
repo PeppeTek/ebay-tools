@@ -42,12 +42,21 @@ function parseDisplayFromRow(row){if(!row)return'';const t=clean(row.innerText||
 function partsFromDisplay(display){const a=display.split(',').map(clean).filter(Boolean);if(a.length===3&&/^(?:US|USA|United States|United States of America)$/i.test(a[2]))return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:'',country:a[2]||''};return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:a[2]||'',country:a[3]||''};}
 function cloneData(){try{return window.__capitanSellLikeCloneData||JSON.parse(localStorage.getItem('capitan-sell-like-clone-data-v1')||'null')}catch(_){return window.__capitanSellLikeCloneData||null}}
 function locationParts(display){
+  const parsed=partsFromDisplay(clean(display));
   const d=cloneData()||{},p=d.itemLocationParts||{};
-  const city=clean(p.city),stateOrProvince=clean(p.stateOrProvince),postalCode=clean(p.postalCode),country=clean(p.country);
-  if(city||stateOrProvince||postalCode||country){
-    return {display:clean(d.itemLocation||display),city,stateOrProvince,postalCode,country}
+  const pc=clean(p.city),ps=clean(p.stateOrProvince),pz=clean(p.postalCode),pco=clean(p.country);
+  const sameCity=!parsed.city||!pc||parsed.city.toLowerCase()===pc.toLowerCase();
+  const sameState=!parsed.stateOrProvince||!ps||parsed.stateOrProvince.toLowerCase()===ps.toLowerCase();
+  if(sameCity&&sameState){
+    return {
+      display:clean(display),
+      city:parsed.city||pc,
+      stateOrProvince:parsed.stateOrProvince||ps,
+      postalCode:parsed.postalCode||pz,
+      country:parsed.country||pco
+    }
   }
-  return partsFromDisplay(display)
+  return parsed
 }
 function maskedPostal(v){return /[*xX]/.test(String(v||''));}
 function countryDisplay(v){
@@ -172,7 +181,8 @@ async function openLocationEditor(){
   if(anchor){
     let p=anchor;
     for(let i=0;i<8&&p;i++,p=p.parentElement){
-      const btn=[...p.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/edit|change|update/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.innerText||x.textContent||''))));
+      const buttons=[...p.querySelectorAll('button,a,[role="button"]')].filter(visible);
+      const btn=buttons.find(x=>/edit|change|update/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||'')+' '+(x.innerText||x.textContent||''))))||(buttons.length===1?buttons[0]:null);
       if(btn){btn.click();break}
     }
   }
@@ -209,6 +219,8 @@ async function fillLocationForm(root,parts,resolvedPostal){
   const city=fieldByCaption(/^city\s*,\s*state$/i,root);
   const zip=fieldByCaption(/^zip code$/i,root)||fieldByCaption(/^(zip|postal code|postcode)$/i,root);
   const cityState=[parts.city,parts.stateOrProvince].filter(Boolean).join(', ');
+  if(!city&&cityState)return false;
+  if(!zip&&resolvedPostal)return false;
   if(country&&parts.country)await setChoice(country,parts.country,true);
   if(zip&&resolvedPostal)await typeLikeUser(zip,resolvedPostal);
   await sleep(300);
