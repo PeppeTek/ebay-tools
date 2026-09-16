@@ -39,7 +39,7 @@ function triggerNativeAction(kind){const map={list:/^list it$/i,save:/^save for 
 
 function getLocationRow(){const p=panel();if(!p)return null;return [...p.querySelectorAll('#steps .row')].find(r=>/^Item Location:/i.test(clean(r.innerText||r.textContent)))||null;}
 function parseDisplayFromRow(row){if(!row)return'';const t=clean(row.innerText||row.textContent).replace(/^Item Location:\s*/i,'');const m=t.match(/sorgente:\s*(.*?)(?:\s+—|$)/i);return clean(m?m[1]:t.replace(/campo eBay.*$/i,''));}
-function partsFromDisplay(display){const a=display.split(',').map(clean).filter(Boolean);return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:a[2]||'',country:a[3]||''};}
+function partsFromDisplay(display){const a=display.split(',').map(clean).filter(Boolean);if(a.length===3&&/^(?:US|USA|United States|United States of America)$/i.test(a[2]))return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:'',country:a[2]||''};return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:a[2]||'',country:a[3]||''};}
 function cloneData(){try{return window.__capitanSellLikeCloneData||JSON.parse(localStorage.getItem('capitan-sell-like-clone-data-v1')||'null')}catch(_){return window.__capitanSellLikeCloneData||null}}
 function locationParts(display){
   const d=cloneData()||{},p=d.itemLocationParts||{};
@@ -68,7 +68,8 @@ function locationDisplay(parts,postal){
 const US_STATES={'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA','colorado':'CO','connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY','district of columbia':'DC'};
 function stateAbbr(v){v=clean(v);return /^[A-Za-z]{2}$/.test(v)?v.toUpperCase():(US_STATES[v.toLowerCase()]||'');}
 async function resolveMaskedUsPostal(parts){
-  if(!maskedPostal(parts.postalCode)||!/^US(?:A)?$/i.test(clean(parts.country))||!parts.city||!parts.stateOrProvince)return'';
+  const country=clean(parts.country);const needsZip=maskedPostal(parts.postalCode)||!clean(parts.postalCode);
+  if(!needsZip||!^(?:US|USA|United States|United States of America)$/i.test(country)||!parts.city||!parts.stateOrProvince)return'';
   const prefix=String(parts.postalCode||'').replace(/\D/g,'');
   const st=stateAbbr(parts.stateOrProvince);if(!st)return'';
   try{
@@ -187,8 +188,9 @@ async function saveAndVerify(root,parts,postal){
   return ok;
 }
 async function applyLocation(parts){
-  const resolvedPostal=maskedPostal(parts.postalCode)?await resolveMaskedUsPostal(parts):clean(parts.postalCode);
-  if(maskedPostal(parts.postalCode)&&!resolvedPostal)return {ok:false,reason:'ZIP sorgente mascherato e impossibile ricavare un CAP valido'};
+  const needsZip=maskedPostal(parts.postalCode)||(!clean(parts.postalCode)&&/^(?:US|USA|United States|United States of America)$/i.test(clean(parts.country)));
+  const resolvedPostal=needsZip?await resolveMaskedUsPostal(parts):clean(parts.postalCode);
+  if(needsZip&&!resolvedPostal)return {ok:false,reason:'ZIP sorgente non disponibile e impossibile ricavare un CAP valido'};
   let root=await openLocationEditor();
   const country=fieldByCaption(/^country\s+or\s+region$/i,root)||fieldByCaption(/^country$/i,root);
   const city=fieldByCaption(/^city\s*,\s*state$/i,root);
