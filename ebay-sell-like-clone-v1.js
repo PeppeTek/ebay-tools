@@ -243,6 +243,8 @@ function formatProcessElapsed(ms){ms=Math.max(0,Math.floor(ms));const total=Math
 function refreshProcessTimer(){if(processTimerEl)processTimerEl.textContent=formatProcessElapsed(Date.now()-processStartedAt)}
 function stopProcessTimer(){if(processTimerStopped)return;processTimerStopped=true;if(processTimerId){clearInterval(processTimerId);processTimerId=null}refreshProcessTimer();if(processTimerEl){processTimerEl.style.borderColor='#b9b9b9';processTimerEl.style.color='#333'}}
 window.__capitanStopProcessTimer=stopProcessTimer;
+window.addEventListener('capitan-sell-like-ui-ready',stopProcessTimer,{once:true});
+window.addEventListener('capitan-sell-like-ui-error',stopProcessTimer,{once:true});
 refreshProcessTimer();processTimerId=setInterval(refreshProcessTimer,25);
 panel.querySelector('[data-close]').onclick=()=>{stopProcessTimer();panel.remove()};
 const steps=panel.querySelector('#steps'),status=panel.querySelector('#st');
@@ -528,10 +530,10 @@ try{
   setStep('Policy','ok','non modificate');
   setStep('Pubblicazione','ok','List it lasciato manuale');
   status.textContent='';
-  if(sellMode==='mono')stopProcessTimer()
+  
 }catch(e){
   console.error(e);
   status.innerHTML='<span class="bad">Errore:</span> '+esc(e.message||e);
-  stopProcessTimer()
+  
 }
 })();
