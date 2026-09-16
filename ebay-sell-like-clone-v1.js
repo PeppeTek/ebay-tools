@@ -151,6 +151,7 @@ function parseSourceSnapshotHtml(html){
     if(seen.has(key))return;seen.add(key);images.push(v)
   }
   let price=null,itemLocation='',itemLocationParts={city:'',stateOrProvince:'',postalCode:'',country:''};
+  const cleanLocationText=v=>String(v||'').replace(/\s+/g,' ').replace(/(?:Delivery|Returns|Payments|Shipping|Seller)\s*:\s*.*$/i,'').replace(/(?:Delivery|Returns|Payments|Shipping|Seller).*$/i,'').trim();
   try{
     const doc=new DOMParser().parseFromString(raw,'text/html');
     for(const s of doc.querySelectorAll('script[type="application/ld+json"]')){
@@ -174,8 +175,8 @@ function parseSourceSnapshotHtml(html){
       }
     }
     const txt=String(doc.body&&doc.body.innerText||'').replace(/\s+/g,' ');
-    const lm=txt.match(/Located in:\s*([^|]{3,180}?)(?=\s+(?:Delivery|Returns|Payments|Shipping|Seller|$))/i)||txt.match(/Located in:\s*([^\n\r]{3,180})/i);
-    if(lm)itemLocation=String(lm[1]||'').trim()
+    const lm=txt.match(/Located in:\s*([^|]{3,180}?)(?=(?:\s*Delivery|\s*Returns|\s*Payments|\s*Shipping|\s*Seller|$))/i)||txt.match(/Located in:\s*([^\n\r]{3,180})/i);
+    if(lm)itemLocation=cleanLocationText(lm[1])
   }catch(_){}
   for(const m of raw.matchAll(/https?:\\?\/\\?\/i\.ebayimg\.com\\?\/images\\?\/g\\?\/[^"'<>\s]+/ig))addImage(m[0]);
   const locPos=raw.search(/"itemLocation"\s*:/i);
@@ -192,6 +193,7 @@ function parseSourceSnapshotHtml(html){
   if(!itemLocation){
     itemLocation=[itemLocationParts.city,itemLocationParts.stateOrProvince,itemLocationParts.postalCode,itemLocationParts.country].filter(Boolean).join(', ')
   }
+  itemLocation=cleanLocationText(itemLocation);
   return {price,images:images.slice(0,24),itemLocation,itemLocationParts}
 }
 async function readSourceSnapshot(sourceItemId){
