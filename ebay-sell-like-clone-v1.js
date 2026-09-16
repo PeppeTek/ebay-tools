@@ -265,7 +265,36 @@ function setItemLocation(v){v=clean(v);if(!v)return false;let el=labelControl(/^
 async function setConditionNew(){const c=labelControl(/condition/i)||candidates('select,[role="combobox"]',/condition/i);if(c&&c.tagName==='SELECT'){const o=[...c.options].find(o=>/^new$/i.test(clean(o.textContent))||/^1000$/.test(String(o.value)));if(o){c.value=o.value;c.dispatchEvent(new Event('change',{bubbles:true}));return true}}const section=[...document.querySelectorAll('section,div')].find(x=>/\bcondition\b/i.test(clean(x.querySelector('h2,h3,label')?.textContent||''))&&clean(x.innerText).length<1500);if(section){const btn=[...section.querySelectorAll('button,[role="option"],[role="radio"]')].find(x=>/^new$/i.test(clean(x.innerText||x.textContent)));if(btn){btn.click();await sleep(300);return true}}return false}
 function descriptionSection(){return [...document.querySelectorAll('section,div')].find(x=>/^description$/i.test(clean(x.querySelector('h2,h3,legend')?.textContent||'')))||document.body}
 async function enableHtmlMode(){const sec=descriptionSection();const items=[...sec.querySelectorAll('button,label,input[type="checkbox"],[role="checkbox"]')];for(const x of items){const txt=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute?.('aria-label')||''));if(/show html code|html code/i.test(txt)){if(x.matches('input[type="checkbox"]')){if(!x.checked)x.click()}else{x.click()}await sleep(500);return true}}return false}
-function setDescription(html){const sec=descriptionSection();let ta=[...sec.querySelectorAll('textarea')].sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight))[0];if(!ta)ta=[...document.querySelectorAll('textarea')].sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight))[0];if(ta)return nativeSet(ta,html);const ed=[...sec.querySelectorAll('[contenteditable="true"]')].sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight))[0];if(ed){ed.focus();ed.innerHTML=html;ed.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:null}));ed.dispatchEvent(new Event('change',{bubbles:true}));return true}return false}
+async function setDescription(html){
+  html=String(html||'');
+  const sec=descriptionSection();
+  let ta=null;
+  for(let i=0;i<20&&!ta;i++){
+    ta=[...sec.querySelectorAll('textarea')].filter(visible).sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight))[0]||[...document.querySelectorAll('textarea')].filter(visible).sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight))[0]||null;
+    if(!ta)await sleep(100)
+  }
+  if(ta){
+    ta.focus();
+    const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')?.set;
+    const old=String(ta.value||'');
+    if(setter)setter.call(ta,html);else ta.value=html;
+    try{if(ta._valueTracker&&typeof ta._valueTracker.setValue==='function')ta._valueTracker.setValue(old)}catch(_){}
+    try{ta.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,inputType:'insertText',data:html}))}catch(_){}
+    try{ta.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:html}))}catch(_){ta.dispatchEvent(new Event('input',{bubbles:true}))}
+    ta.dispatchEvent(new Event('change',{bubbles:true}));
+    ta.blur();
+    await sleep(450);
+    return String(ta.value||'')===html
+  }
+  const ed=[...sec.querySelectorAll('[contenteditable="true"]')].filter(visible).sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight))[0];
+  if(ed){
+    ed.focus();ed.innerHTML=html;
+    try{ed.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertHTML',data:html}))}catch(_){ed.dispatchEvent(new Event('input',{bubbles:true}))}
+    ed.dispatchEvent(new Event('change',{bubbles:true}));ed.blur?.();await sleep(350);
+    return clean(ed.innerHTML).length>0
+  }
+  return false
+}
 function attachAiRetry(row,data){
   if(!row||!data)return;
   const span=row.querySelector('span');
@@ -400,80 +429,42 @@ async function ensurePreviewFullData(){
   previewPreparePromise=(async()=>{
     const ep=endpoint();if(!ep)throw Error('URL backend mancante.');
     status.textContent='Generazione Template AI-HTML in corso…';
-    let data=await jsonp(ep);
-    if((!data||!data.ok)&&isAiDescriptionError(data&&data.error)){
-      try{const recovered=await jsonpAction(AI_RECOVERY_ENDPOINT,'clone_prepare',{itemId},90000);if(recovered&&recovered.ok)data=recovered}catch(recoveryError){console.warn('Sell Like AI fallback endpoint',recoveryError)}
+    operationalLog('Generazione Template AI-HTML in corso…','warn');
+    let response=await jsonp(ep);
+    if((!response||!response.ok)&&isAiDescriptionError(response&&response.error)){
+      try{const recovered=await jsonpAction(AI_RECOVERY_ENDPOINT,'clone_prepare',{itemId},90000);if(recovered&&recovered.ok)response=recovered}catch(recoveryError){console.warn('Sell Like AI fallback endpoint',recoveryError)}
     }
-    if(!data||!data.ok)throw Error(data&&data.error||'Risposta backend non valida');
-    if(data.aiFallback||!clean(data.descriptionHtml)){
+    if(!response||!response.ok)throw Error(response&&response.error||'Risposta backend non valida');
+    if(response.aiFallback||!clean(response.descriptionHtml)){
       try{
         const ai=await jsonpAction(AI_RECOVERY_ENDPOINT,'sell_like_ai_retry',{itemId},90000);
         if(ai&&ai.ok&&clean(ai.descriptionHtml)){
-          data={...data,descriptionHtml:ai.descriptionHtml,aiModel:ai.aiModel||data.aiModel,aiFallback:false,aiError:''}
+          response={...response,descriptionHtml:ai.descriptionHtml,aiModel:ai.aiModel||response.aiModel,aiFallback:false,aiError:''}
         }
       }catch(aiErr){console.warn('Sell Like Preview AI retry',aiErr)}
     }
-    if(data.aiFallback||!clean(data.descriptionHtml))throw Error('Template AI-HTML non disponibile: Preview non avviata.');
-    let fullSource=Number(data.sourcePrice);
-    if(!isFinite(fullSource)||fullSource<=0)fullSource=Number(window.__capitanSellLikeSourcePrice);
-    if(!isFinite(fullSource)||fullSource<=0){try{fullSource=await readSourcePrice(itemId)}catch(_){}}
-    if(isFinite(fullSource)&&fullSource>0){data.sourcePrice=fullSource;window.__capitanSellLikeSourcePrice=fullSource;data.targetPrice=targetFromSource(fullSource)}
+    if(response.aiFallback||!clean(response.descriptionHtml))throw Error('Template AI-HTML non disponibile: Preview non avviata.');
 
-    window.__capitanSellLikeCloneData=data;
-    try{localStorage.setItem('capitan-sell-like-clone-data-v1',JSON.stringify(data))}catch(_){}
+    status.textContent='Inserimento Template AI-HTML nella descrizione…';
+    operationalLog('Template AI-HTML generato · attivo modalità HTML','ok');
+    const htmlMode=await enableHtmlMode();
+    if(!htmlMode)operationalLog('Modalità HTML: controllo diretto editor','warn');
+    const descOk=await setDescription(response.descriptionHtml);
+    if(!descOk)throw Error('Template AI generato ma non scritto nell’editor HTML eBay');
 
-    const sellMode=window.__capitanSellLikeMode==='variants'?'variants':'mono';
-    if(sellMode==='mono'){
-      const sale=Number(data.targetPrice);
-      if(isFinite(sale)&&sale>0){
-        window.__capitanSellLikeSalePrice=sale;
-        const ok=setPrice(sale);
-        setStep('Prezzo',ok?'ok':'warn',ok?sale.toFixed(2)+' (-'+discountLabel()+'%)':'campo non trovato')
-      }
-      const q=Number(data.quantity||3);
-      const qtyOk=setQuantity(q);
-      setStep('Quantità',qtyOk?'ok':'warn',qtyOk?String(q):'campo non trovato')
-    }
-    const conditionOk=await setConditionNew();
-    setStep('Condizione',conditionOk?'ok':'warn',conditionOk?'New':'controlla manualmente');
-
-    if(clean(data.itemLocation)){
-      const locOk=setItemLocation(data.itemLocation);
-      setStep('Item Location',locOk?'ok':'warn',locOk?clean(data.itemLocation):'sorgente: '+clean(data.itemLocation)+' — campo eBay non trovato, controlla manualmente')
-    }
-
-    await enableHtmlMode();
-    const descOk=setDescription(data.descriptionHtml);
-    if(!descOk)throw Error('Template AI generato ma editor HTML eBay non trovato');
-    setStep('Descrizione','ok','Template AI-HTML incluso');
-
-    const imgs=uniqUrls(data.images||[]);
-    if(imgs.length){
-      const sig=imgs.join('|');
-      if(sig!==uploadedImageSignature){
-        const already=existingEbayPhotoCount();
-        if(already>0){
-          uploadedImageSignature=sig;
-          operationalLog('Foto: '+already+' già presenti nella bozza eBay · upload aggiuntivo saltato','ok')
-        }else{
-          status.textContent='Caricamento foto nello stesso ordine…';
-          try{
-            const n=await uploadImages(imgs);
-            uploadedImageSignature=sig;
-            operationalLog('Foto: '+n+'/'+imgs.length+' caricate su eBay','ok')
-          }catch(imgErr){
-            operationalLog('Foto: '+imgErr.message+' — verifica manualmente','bad');
-            throw imgErr
-          }
-        }
-      }
-    }
-    data.aiDeferred=false;data.descriptionReady=true;
-    window.__capitanSellLikeCloneData=data;
-    try{localStorage.setItem('capitan-sell-like-clone-data-v1',JSON.stringify(data))}catch(_){}
-    try{window.dispatchEvent(new CustomEvent('capitan-ai-description-updated',{detail:{itemId,descriptionHtml:data.descriptionHtml,aiModel:data.aiModel||''}}))}catch(_){}
+    const current=window.__capitanSellLikeCloneData||{};
+    current.descriptionHtml=response.descriptionHtml;
+    current.aiModel=response.aiModel||current.aiModel||'';
+    current.aiFallback=false;
+    current.aiError='';
+    current.aiDeferred=false;
+    current.descriptionReady=true;
+    window.__capitanSellLikeCloneData=current;
+    try{localStorage.setItem('capitan-sell-like-clone-data-v1',JSON.stringify(current))}catch(_){}
+    try{window.dispatchEvent(new CustomEvent('capitan-ai-description-updated',{detail:{itemId,descriptionHtml:response.descriptionHtml,aiModel:current.aiModel}}))}catch(_){}
+    operationalLog('Template AI-HTML scritto nella descrizione eBay','ok');
     previewReady=true;
-    status.innerHTML='<span class="ok">Template AI-HTML pronto.</span>';
+    status.textContent='Template AI-HTML pronto.';
     return true
   })();
   try{return await previewPreparePromise}finally{if(!previewReady)previewPreparePromise=null}
