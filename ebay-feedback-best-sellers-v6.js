@@ -1,7 +1,7 @@
 javascript:(async()=>{
 "use strict";
 
-const V="v6.7-AU";
+const V="v6.8-AU";
 const ID="pep-ebay-bs-v6";
 const FB=ID+"-fb";
 const PF=ID+"-pf-";
@@ -190,6 +190,96 @@ function titleScore(a,b){
   return (2*common)/(as.size+bs.size);
 }
 
+function sellerKey(v){
+  return N(decodeURIComponent(String(v||"")))
+    .replace(/^@+/,"")
+    .replace(/\s+/g,"")
+    .trim();
+}
+
+function sellerFromHref(href){
+  const s=String(href||"");
+  const m=s.match(/\/usr\/([^/?#]+)/i);
+  return m?decodeURIComponent(m[1]):"";
+}
+
+function sellerFromSearchBox(box){
+  if(!box)return"";
+
+  for(const a of box.querySelectorAll('a[href*="/usr/"]')){
+    const s=sellerFromHref(a.href);
+    if(s)return s;
+  }
+
+  const el=box.querySelector(".s-item__seller-info-text,.s-item__seller-info,[data-testid*=seller]");
+  const txt=C(el?.textContent||"");
+  if(txt){
+    const m=txt.match(/^([^\s(]+)\s*(?:\(|$)/);
+    if(m)return m[1];
+  }
+
+  return"";
+}
+
+function sellerFromItemHtml(html){
+  const d=new DOMParser().parseFromString(html,"text/html");
+
+  for(const a of d.querySelectorAll('a[href*="/usr/"]')){
+    const s=sellerFromHref(a.href);
+    if(s)return s;
+  }
+
+  for(const re of[
+    /"sellerUsername"\s*:\s*"([^"]+)"/i,
+    /"sellerUserName"\s*:\s*"([^"]+)"/i,
+    /"seller_name"\s*:\s*"([^"]+)"/i,
+    /"seller"\s*:\s*\{[^{}]{0,500}?"username"\s*:\s*"([^"]+)"/i
+  ]){
+    const m=html.match(re);
+    if(m&&m[1])return m[1].replace(/\\u002F/g,"/");
+  }
+
+  return"";
+}
+
+async function verifyCandidateSeller(q){
+  const expected=sellerKey(seller);
+  if(!expected)return false;
+
+  if(q.searchSeller&&sellerKey(q.searchSeller)===expected){
+    q.verifiedSeller=q.searchSeller;
+    q.sellerVerifiedBy="search";
+    return true;
+  }
+
+  const ac=new AbortController();
+  const timer=setTimeout(()=>ac.abort(),10000);
+
+  try{
+    const r=await fetch(q.url,{
+      credentials:"include",
+      cache:"no-store",
+      redirect:"follow",
+      signal:ac.signal
+    });
+
+    if(!r.ok)return false;
+    const html=await r.text();
+
+    if(/pardon our interruption|verify you are human|robot check|captcha|security measure/i.test(html)){
+      throw Error("CAPTCHA_SELLER");
+    }
+
+    const found=sellerFromItemHtml(html);
+    q.verifiedSeller=found;
+    q.sellerVerifiedBy=found?"item":"";
+
+    return !!found&&sellerKey(found)===expected;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
 function bestSearchMatch(html,queryTitle){
   if(/pardon our interruption|verify you are human|robot check|captcha|security measure/i.test(html)){
     throw Error("CAPTCHA_SEARCH");
@@ -205,6 +295,7 @@ function bestSearchMatch(html,queryTitle){
     ids.add(id);
 
     const box=a.closest("li.s-item,div.s-item,[data-view]")||a.parentElement;
+    const searchSeller=sellerFromSearchBox(box);
     const title=C(
       box?.querySelector(".s-item__title,[role=heading],h3")?.textContent ||
       a.getAttribute("aria-label") ||
@@ -226,7 +317,8 @@ function bestSearchMatch(html,queryTitle){
         url:OR+"/itm/"+id,
         source:"TitleSearch",
         recovered:true,
-        recoveryScore:score
+        recoveryScore:score,
+        searchSeller
       });
     }
   }
@@ -254,7 +346,18 @@ async function searchSellerTitle(title,completed=false){
     });
 
     if(!r.ok)throw Error("HTTP "+r.status);
-    return bestSearchMatch(await r.text(),title);
+
+    const q=bestSearchMatch(await r.text(),title);
+    if(!q)return null;
+
+    const sameSeller=await verifyCandidateSeller(q);
+
+    if(!sameSeller){
+      log("Scartato match titolo "+q.id+": venditore diverso da "+seller+".");
+      return null;
+    }
+
+    return q;
   }finally{
     clearTimeout(timer);
   }
@@ -271,7 +374,7 @@ async function findItemByTitle(title){
     q=await searchSellerTitle(title,false);
     if(!q)q=await searchSellerTitle(title,true);
   }catch(e){
-    if(e.message==="CAPTCHA_SEARCH"){
+    if(e.message==="CAPTCHA_SEARCH"||e.message==="CAPTCHA_SELLER"){
       recoveryAbort=1;
       log("Ricerca per titolo fermata: eBay ha richiesto una verifica.");
     }else{
@@ -334,7 +437,7 @@ async function recoverMissingByTitle(){
   }
 
   await Promise.all([worker(),worker(),worker()]);
-  log("Recupero da titolo completato: "+recoveredFromTitle+" feedback recuperati; "+unmapped+" ancora senza Item ID.");
+  log("Recupero da titolo completato: "+recoveredFromTitle+" feedback recuperati con titolo + venditore verificato; "+unmapped+" ancora senza Item ID.");
 }
 
 function fbRows(d){
@@ -646,7 +749,7 @@ function render(){
         <td class="num"><b>${x.monthCount}</b></td>
         <td class="num">${x.sixCount}</td>
         <td class="num">${x.yearCount}</td>
-        <td><a target="_blank" href="${E(x.url)}">${E(x.id)}</a>${x.recovered?'<span class="recovered-badge">recuperato da titolo</span>':""}</td>
+        <td><a target="_blank" href="${E(x.url)}">${E(x.id)}</a>${x.recovered?'<span class="recovered-badge">recuperato da titolo + seller</span>':""}</td>
         <td>${E(x.title)}</td>
       </tr>
     `).join("")
