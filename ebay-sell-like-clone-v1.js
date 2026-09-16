@@ -134,6 +134,79 @@ async function readSourcePrice(sourceItemId){
   }finally{clearTimeout(timer)}
 }
 window.__capitanReadSourcePrice=readSourcePrice;
+let sourceSnapshotPromise=null,sourceSnapshotAt=0;
+function normalizeEbayImageUrl(v){
+  v=String(v||'').replace(/\\u002F/gi,'/').replace(/\\\//g,'/').replace(/&amp;/g,'&').trim();
+  if(/^\/\//.test(v))v='https:'+v;
+  if(!/^https?:\/\//i.test(v))return'';
+  if(/i\.ebayimg\.com\/images\/g\//i.test(v))v=v.replace(/\/s-l\d+\.(?:jpg|jpeg|png|webp)(?=\?|$)/i,'/s-l1600.webp');
+  return v
+}
+function parseSourceSnapshotHtml(html){
+  const raw=String(html||''),images=[],seen=new Set();
+  function addImage(v){
+    v=normalizeEbayImageUrl(v);if(!v)return;
+    if(!/i\.ebayimg\.com\/images\/g\//i.test(v))return;
+    const key=v.replace(/\/s-l\d+\.(?:jpg|jpeg|png|webp)(?:\?.*)?$/i,'');
+    if(seen.has(key))return;seen.add(key);images.push(v)
+  }
+  let price=null,itemLocation='',itemLocationParts={city:'',stateOrProvince:'',postalCode:'',country:''};
+  try{
+    const doc=new DOMParser().parseFromString(raw,'text/html');
+    for(const s of doc.querySelectorAll('script[type="application/ld+json"]')){
+      try{
+        const root=JSON.parse(s.textContent||'null'),stack=Array.isArray(root)?root.slice():[root];
+        while(stack.length){
+          const x=stack.shift();if(!x||typeof x!=='object')continue;
+          if(String(x['@type']||'').toLowerCase()==='product'){
+            const vals=Array.isArray(x.image)?x.image:[x.image];vals.filter(Boolean).forEach(addImage);
+            const offers=Array.isArray(x.offers)?x.offers:[x.offers];
+            for(const o of offers){const n=Number(o&&o.price);if(!price&&isFinite(n)&&n>0)price=n}
+          }
+          for(const v of Object.values(x))if(v&&typeof v==='object')Array.isArray(v)?stack.push(...v):stack.push(v)
+        }
+      }catch(_){}
+    }
+    for(const el of doc.querySelectorAll('meta[property="og:image"],meta[itemprop="image"],img[src*="ebayimg.com/images/g/"]'))addImage(el.getAttribute('content')||el.getAttribute('src')||'');
+    if(!price){
+      for(const sel of ['meta[itemprop="price"]','meta[property="product:price:amount"]','meta[property="og:price:amount"]','[itemprop="price"]']){
+        const el=doc.querySelector(sel);if(!el)continue;const n=Number(String(el.getAttribute('content')||el.textContent||'').replace(/[^0-9.,]/g,'').replace(',','.'));if(isFinite(n)&&n>0){price=n;break}
+      }
+    }
+    const txt=String(doc.body&&doc.body.innerText||'').replace(/\s+/g,' ');
+    const lm=txt.match(/Located in:\s*([^|]{3,180}?)(?=\s+(?:Delivery|Returns|Payments|Shipping|Seller|$))/i)||txt.match(/Located in:\s*([^\n\r]{3,180})/i);
+    if(lm)itemLocation=String(lm[1]||'').trim()
+  }catch(_){}
+  for(const m of raw.matchAll(/https?:\\?\/\\?\/i\.ebayimg\.com\\?\/images\\?\/g\\?\/[^"'<>\s]+/ig))addImage(m[0]);
+  const locPos=raw.search(/"itemLocation"\s*:/i);
+  if(locPos>=0){
+    const seg=raw.slice(locPos,locPos+5000);
+    const pick=re=>{const m=seg.match(re);return m?String(m[1]||'').replace(/\\u002C/gi,',').replace(/\\u0020/gi,' ').replace(/\\u002D/gi,'-').trim():''};
+    itemLocationParts={
+      city:pick(/"(?:city|locality)"\s*:\s*"([^"]+)"/i),
+      stateOrProvince:pick(/"(?:stateOrProvince|state|region)"\s*:\s*"([^"]+)"/i),
+      postalCode:pick(/"(?:postalCode|zipCode|zip)"\s*:\s*"([^"]+)"/i),
+      country:pick(/"(?:countryCode|country)"\s*:\s*"([^"]+)"/i)
+    }
+  }
+  if(!itemLocation){
+    itemLocation=[itemLocationParts.city,itemLocationParts.stateOrProvince,itemLocationParts.postalCode,itemLocationParts.country].filter(Boolean).join(', ')
+  }
+  return {price,images:images.slice(0,24),itemLocation,itemLocationParts}
+}
+async function readSourceSnapshot(sourceItemId){
+  if(sourceSnapshotPromise&&Date.now()-sourceSnapshotAt<60000)return sourceSnapshotPromise;
+  sourceSnapshotAt=Date.now();
+  sourceSnapshotPromise=(async()=>{
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+    try{
+      const r=await fetch('https://www.ebay.com/itm/'+encodeURIComponent(sourceItemId),{credentials:'include',cache:'force-cache',signal:controller.signal});
+      if(!r.ok)throw Error('eBay HTTP '+r.status);
+      return parseSourceSnapshotHtml(await r.text())
+    }finally{clearTimeout(timer)}
+  })();
+  try{return await sourceSnapshotPromise}catch(e){sourceSnapshotPromise=null;throw e}
+}
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');
 const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
@@ -286,6 +359,16 @@ async function initialNonAiData(){
   try{mi=window.__capitanSellLikeModePromise?await Promise.race([window.__capitanSellLikeModePromise,sleep(12000).then(()=>null)]):null}catch(_){}
   const pre=(mi&&mi.data&&mi.data.ok?mi.data:null)||(window.__capitanSellLikePreflight&&window.__capitanSellLikePreflight.ok?window.__capitanSellLikePreflight:null);
   const data=dataFromPreflight(pre);
+  const needSnapshot=!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0||!data.images.length||!clean(data.itemLocation);
+  if(needSnapshot){
+    try{
+      const snap=await readSourceSnapshot(itemId);
+      if((!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0)&&isFinite(Number(snap.price))&&Number(snap.price)>0)data.sourcePrice=Number(snap.price);
+      if(!data.images.length&&snap.images&&snap.images.length)data.images=snap.images;
+      if(!clean(data.itemLocation)&&clean(snap.itemLocation))data.itemLocation=clean(snap.itemLocation);
+      if((!data.itemLocationParts||!Object.keys(data.itemLocationParts).length)&&snap.itemLocationParts)data.itemLocationParts=snap.itemLocationParts
+    }catch(e){console.warn('Source snapshot fallback',e);operationalLog('Dati sorgente: recupero diretto non riuscito','warn')}
+  }
   if(!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0){
     const editorPrice=readEditorPrice();
     if(isFinite(editorPrice)&&editorPrice>0)data.sourcePrice=editorPrice
