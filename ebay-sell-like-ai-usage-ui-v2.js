@@ -8,7 +8,7 @@ const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.disp
 const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmt=n=>Number(n||0).toLocaleString('it-IT');
 const euro=n=>Number(n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR',minimumFractionDigits:4,maximumFractionDigits:4});
-function endpoint(){return String(localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}
+function endpoint(){const portable=String(window.__capitanSellLikeBackendEndpoint||'').trim();if(portable)return portable.replace(/\/+$/,'');return String(localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}
 function jsonp(action){const ep=endpoint();return new Promise((resolve,reject)=>{if(!ep)return reject(Error('Endpoint non configurato'));const cb='__capitanAiUsage_'+Date.now()+'_'+Math.floor(Math.random()*1e6);const s=document.createElement('script');const timer=setTimeout(()=>finish(Error('Timeout backend')),30000);function finish(err,val){clearTimeout(timer);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>finish(null,v);s.onerror=()=>finish(Error('Backend non raggiungibile'));const q=new URLSearchParams({action:action,callback:cb,_:String(Date.now())});s.src=ep+(ep.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
 function costText(a){a=a||{};return Number(a.requests||0)>0&&Number(a.pricedRequests||0)!==Number(a.requests||0)?'N/D':euro(a.costEur||0)}
 function card(label,value,sub){return '<div style="border:1px solid #e2e5e9;border-radius:10px;padding:12px;background:#fff"><div style="font-size:11px;color:#666;margin-bottom:5px">'+esc(label)+'</div><div style="font-size:18px;font-weight:700;color:#111">'+esc(value)+'</div>'+(sub?'<div style="font-size:10px;color:#777;margin-top:4px">'+esc(sub)+'</div>':'')+'</div>'}
@@ -32,7 +32,11 @@ async function render(body){
       '<div id="capitan-ai-usage-table-scroll" style="overflow:auto;border:1px solid #e5e7eb;border-radius:9px;flex:1 1 auto;min-height:90px;max-height:none;margin-bottom:16px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead style="position:sticky;top:0;background:#fafafa;z-index:1"><tr style="background:#fafafa"><th style="padding:7px 5px;text-align:left">Data</th><th style="padding:7px 5px;text-align:left">Funzione</th><th style="padding:7px 5px;text-align:left">Modello</th><th style="padding:7px 5px;text-align:right">Token</th><th style="padding:7px 5px;text-align:right">Costo</th></tr></thead><tbody>'+(recent||'<tr><td colspan="5" style="padding:14px;text-align:center;color:#777">Nessuna chiamata registrata.</td></tr>')+'</tbody></table></div>'+
       '<div style="font-size:11px;color:#666;line-height:1.4;margin:0 0 8px">Cambio USD/EUR usato: '+esc(Number(d.usdEurRate||0).toFixed(4))+'. Se il modello non ha un prezzo configurato il costo viene indicato come N/D.</div>'+
       '<div style="font-size:10px;color:#777;line-height:1.4">Il pannello registra solo le chiamate effettuate dopo la sua attivazione. Il saldo o la fattura Groq non sono disponibili tramite questo endpoint pubblico.</div>';
-  }catch(err){body.innerHTML='<div style="color:#b42318;font-weight:700;font-size:12px">'+esc(err.message||err)+'</div>'}
+  }catch(err){
+    const msg=String(err&&err.message||err||'');
+    const friendly=window.__capitanSellLikeTestMode?'AI Usage non disponibile nel backend corrente.':msg;
+    body.innerHTML='<div style="color:#b42318;font-weight:700;font-size:12px">'+esc(friendly)+'</div>'
+  }
 }
 function patch(){
   const modal=document.getElementById(MODAL_ID);if(!modal||modal.dataset.aiUsageV4==='1')return;
