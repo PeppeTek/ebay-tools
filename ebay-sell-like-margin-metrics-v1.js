@@ -108,7 +108,7 @@ function updateSalePriceLabel(){
     if(isFinite(current))input.value=Number(current).toFixed(2);
     input.addEventListener('focus',()=>input.select());
     input.addEventListener('change',()=>{if(applyManualSalePrice(input.value,r,span,input))input.value=Number(String(input.value).replace(',','.')).toFixed(2)});
-    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();input.blur()}});
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const raw=input.value;if(applyManualSalePrice(raw,r,span,input))input.value=Number(String(raw).replace(',','.')).toFixed(2);input.blur()}});
     input.addEventListener('click',e=>e.stopPropagation());
     if(span)r.insertBefore(input,span);else r.appendChild(input)
   }else{
