@@ -11,12 +11,6 @@ function patchUi(){
   const title=p.querySelector('.h span'); if(title) title.textContent='Sell Like This v1.4';
   [...p.querySelectorAll('.row.muted')].forEach(x=>x.remove());
 
-  // Close button: fixed to the real top-right corner of the panel.
-  const closeBtn=p.querySelector('[data-close]');
-  if(closeBtn){
-    closeBtn.style.cssText='position:absolute;top:12px;right:12px;width:30px;height:30px;padding:0;border:1px solid #bbb;border-radius:8px;background:#fff;cursor:pointer;font-size:16px;line-height:28px;z-index:5';
-  }
-
   // Remove the redundant publication row from the summary.
   [...p.querySelectorAll('#steps .row')].forEach(r=>{
     if(/^Pubblicazione:/i.test(clean(r.innerText||r.textContent))) r.remove();
@@ -28,7 +22,7 @@ function patchUi(){
     box.style.cssText='padding:12px 14px;border-top:1px solid #ddd;display:grid;gap:8px;background:#fff;position:sticky;bottom:0;';
     box.innerHTML='<div data-amazon-actions-slot style="display:grid;grid-template-columns:1fr 1fr;gap:4px"></div><button data-ebay-action="list" style="height:44px;border:0;border-radius:24px;background:#1668e8;color:#fff;font-weight:700;font-size:14px;">List it</button><div data-ebay-secondary-pair style="display:grid;grid-template-columns:1fr 1fr;gap:4px"><button data-ebay-action="save" style="height:42px;border:1px solid #111;border-radius:22px 0 0 22px;background:#fff;color:#111;font-size:14px;">Save for later</button><button data-ebay-action="preview" style="height:42px;border:1px solid #111;border-radius:0 22px 22px 0;background:#f1f3f4;color:#111;font-size:14px;">Preview</button></div>';
     p.appendChild(box);
-    box.addEventListener('click',async e=>{const b=e.target.closest('button[data-ebay-action]');if(!b)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const kind=b.dataset.ebayAction;if(kind==='csv'){if(typeof window.__capitanDownloadVariantCsv==='function')window.__capitanDownloadVariantCsv();else alert('CSV varianti non ancora pronto.');return}if(kind==='preview'&&typeof window.__capitanPrepareAiForPreview==='function'){if(b.dataset.aiBusy==='1')return;const label=b.textContent;b.dataset.aiBusy='1';b.disabled=true;b.textContent='Preparazione AI…';try{await window.__capitanPrepareAiForPreview();triggerNativeAction('preview')}catch(err){console.warn('Sell Like Preview AI',err);const st=panel()?.querySelector('#st');if(st)st.innerHTML='<span class="bad">Preview non avviata.</span> '+String(err&&err.message||err)}finally{b.dataset.aiBusy='0';b.disabled=false;b.textContent=label}return}triggerNativeAction(kind);},true);
+    box.addEventListener('click',async e=>{const b=e.target.closest('button[data-ebay-action]');if(!b)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();const kind=b.dataset.ebayAction;const needsAi=kind==='preview'||kind==='list'||kind==='csv';if(needsAi&&typeof window.__capitanEnsureAiTemplate==='function'){if(b.dataset.aiBusy==='1')return;const label=b.textContent;b.dataset.aiBusy='1';b.disabled=true;b.textContent='Preparazione AI…';try{window.__capitanTestLog?.('AI richiesta prima di '+kind,'warn');await window.__capitanEnsureAiTemplate();if(kind==='csv'){if(typeof window.__capitanDownloadVariantCsv==='function')window.__capitanDownloadVariantCsv();else throw Error('CSV varianti non ancora pronto.')}else{triggerNativeAction(kind)}window.__capitanTestLog?.((kind==='csv'?'CSV':kind==='list'?'List it':'Preview')+' avviato dopo AI','ok')}catch(err){console.warn('Sell Like action AI',err);const st=panel()?.querySelector('#st');if(st)st.innerHTML='<span class="bad">Azione non avviata.</span> '+String(err&&err.message||err);window.__capitanTestLog?.('Azione '+kind+' bloccata: '+String(err&&err.message||err),'bad')}finally{b.dataset.aiBusy='0';b.disabled=false;b.textContent=label}return}if(kind==='csv'){if(typeof window.__capitanDownloadVariantCsv==='function')window.__capitanDownloadVariantCsv();else alert('CSV varianti non ancora pronto.');return}triggerNativeAction(kind);},true);
   }
 
   // Move the completion message to the bottom, immediately before the action buttons.
@@ -45,17 +39,24 @@ function triggerNativeAction(kind){const map={list:/^list it$/i,save:/^save for 
 
 function getLocationRow(){const p=panel();if(!p)return null;return [...p.querySelectorAll('#steps .row')].find(r=>/^Item Location:/i.test(clean(r.innerText||r.textContent)))||null;}
 function parseDisplayFromRow(row){if(!row)return'';const t=clean(row.innerText||row.textContent).replace(/^Item Location:\s*/i,'');const m=t.match(/sorgente:\s*(.*?)(?:\s+—|$)/i);return clean(m?m[1]:t.replace(/campo eBay.*$/i,''));}
-function partsFromDisplay(display){const a=display.split(',').map(clean).filter(Boolean);return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:a[2]||'',country:a[3]||''};}
+function partsFromDisplay(display){const a=display.split(',').map(clean).filter(Boolean);if(a.length===3&&/^(?:US|USA|United States|United States of America)$/i.test(a[2]))return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:'',country:a[2]||''};return {display,city:a[0]||'',stateOrProvince:a[1]||'',postalCode:a[2]||'',country:a[3]||''};}
 function cloneData(){try{return window.__capitanSellLikeCloneData||JSON.parse(localStorage.getItem('capitan-sell-like-clone-data-v1')||'null')}catch(_){return window.__capitanSellLikeCloneData||null}}
 function locationParts(display){
-  if(window.__capitanSellLikeMode==='variants'){
-    const d=cloneData()||{},p=d.itemLocationParts||{};
-    const city=clean(p.city),stateOrProvince=clean(p.stateOrProvince),postalCode=clean(p.postalCode),country=clean(p.country);
-    if(city||stateOrProvince||postalCode||country){
-      return {display:clean(d.itemLocation||display),city,stateOrProvince,postalCode,country}
+  const parsed=partsFromDisplay(clean(display));
+  const d=cloneData()||{},p=d.itemLocationParts||{};
+  const pc=clean(p.city),ps=clean(p.stateOrProvince),pz=clean(p.postalCode),pco=clean(p.country);
+  const sameCity=!parsed.city||!pc||parsed.city.toLowerCase()===pc.toLowerCase();
+  const sameState=!parsed.stateOrProvince||!ps||parsed.stateOrProvince.toLowerCase()===ps.toLowerCase();
+  if(sameCity&&sameState){
+    return {
+      display:clean(display),
+      city:parsed.city||pc,
+      stateOrProvince:parsed.stateOrProvince||ps,
+      postalCode:parsed.postalCode||pz,
+      country:parsed.country||pco
     }
   }
-  return partsFromDisplay(display)
+  return parsed
 }
 function maskedPostal(v){return /[*xX]/.test(String(v||''));}
 function countryDisplay(v){
@@ -76,7 +77,8 @@ function locationDisplay(parts,postal){
 const US_STATES={'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA','colorado':'CO','connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY','district of columbia':'DC'};
 function stateAbbr(v){v=clean(v);return /^[A-Za-z]{2}$/.test(v)?v.toUpperCase():(US_STATES[v.toLowerCase()]||'');}
 async function resolveMaskedUsPostal(parts){
-  if(!maskedPostal(parts.postalCode)||!/^US(?:A)?$/i.test(clean(parts.country))||!parts.city||!parts.stateOrProvince)return'';
+  const country=clean(parts.country);const needsZip=maskedPostal(parts.postalCode)||!clean(parts.postalCode);
+  if(!needsZip||!/^(?:US|USA|United States|United States of America)$/i.test(country)||!parts.city||!parts.stateOrProvince)return'';
   const prefix=String(parts.postalCode||'').replace(/\D/g,'');
   const st=stateAbbr(parts.stateOrProvince);if(!st)return'';
   try{
@@ -102,19 +104,35 @@ function fieldByCaption(re,root=document){
 }
 function nativeValueSetter(el,value){
   const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
-  const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;if(!setter)return false;
+  const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+  if(!setter)return false;
   const old=el.value;setter.call(el,String(value));
   if(el._valueTracker&&typeof el._valueTracker.setValue==='function')el._valueTracker.setValue(old);
-  el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:String(value)}));
-  el.dispatchEvent(new Event('change',{bubbles:true}));return true;
+  try{el.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,inputType:'insertText',data:String(value)}))}catch(_){}
+  try{el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:String(value)}))}catch(_){el.dispatchEvent(new Event('input',{bubbles:true}))}
+  el.dispatchEvent(new Event('change',{bubbles:true}));
+  return true
 }
-async function typeLikeUser(el,value){
-  if(!el||value==null||value==='')return false;value=String(value);el.focus();
+function setTextControl(el,value){
+  if(!el||value==null||value==='')return false;value=String(value);
+  if(!(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement))return false;
+  el.focus();
   try{el.setSelectionRange(0,String(el.value||'').length)}catch(_){}
   nativeValueSetter(el,value);
   el.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Tab',code:'Tab',keyCode:9,which:9}));
   el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Tab',code:'Tab',keyCode:9,which:9}));
-  el.blur();await sleep(250);return clean(el.value)===clean(value);
+  el.blur();
+  return clean(el.value)===clean(value)
+}
+async function typeLikeUser(el,value){
+  if(!el||value==null||value==='')return false;
+  el.focus();
+  try{el.select?.()}catch(_){}
+  let ok=false;
+  try{ok=document.execCommand('insertText',false,String(value))}catch(_){}
+  if(!ok||clean(el.value)!==clean(value))ok=setTextControl(el,value);
+  await sleep(220);
+  return !!ok&&clean(el.value)===clean(value)
 }
 async function setChoice(el,value,isCountry=false){
   if(!el||!value)return false;const wanted=isCountry?countryDisplay(value):value;
@@ -151,7 +169,7 @@ async function closeLocationDialog(){
   try{
     const close=[...dlg.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>{
       const t=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||''));
-      return /^(close|cancel|x|×)$/i.test(t)||/close dialog|dismiss/i.test(t);
+      return /^(close|cancel|x|×|done)$/i.test(t)||/close dialog|dismiss/i.test(t);
     });
     if(close){close.click();await sleep(250)}
   }catch(_){}
@@ -163,12 +181,16 @@ async function openLocationEditor(){
   if(anchor){
     let p=anchor;
     for(let i=0;i<8&&p;i++,p=p.parentElement){
-      const btn=[...p.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/edit|change|update/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.innerText||x.textContent||''))));
+      const buttons=[...p.querySelectorAll('button,a,[role="button"]')].filter(visible);
+      const btn=buttons.find(x=>/edit|change|update/i.test(clean((x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||'')+' '+(x.innerText||x.textContent||''))))||(buttons.length===1?buttons[0]:null);
       if(btn){btn.click();break}
     }
   }
   const root=await waitForLocationForm();
-  try{__capitanLocationDialog=(root&&root.closest&&root.closest('[role="dialog"],dialog'))||document.querySelector('[role="dialog"],dialog')||null}catch(_){}
+  try{
+    const dlg=(root&&root.closest&&root.closest('[role="dialog"],dialog'))||document.querySelector('[role="dialog"],dialog')||null;
+    __capitanLocationDialog=dlg||((root&&root!==document&&root!==document.body)?root:null)
+  }catch(_){__capitanLocationDialog=(root&&root!==document&&root!==document.body)?root:null}
   return root;
 }
 function restoreHiddenLocationEditor(){closeLocationDialog();}
@@ -189,32 +211,33 @@ async function saveAndVerify(root,parts,postal){
   if(!done)done=findDoneButton(root);
   if(!done){await closeLocationDialog();return false}
   done.click();
-  let ok=false;
-  for(let i=0;i<30;i++){await sleep(180);if(summaryMatches(parts,postal)){ok=true;break}}
+  await sleep(350);
   await closeLocationDialog();
-  return ok;
+  return true
 }
-async function applyLocation(parts){
-  const resolvedPostal=maskedPostal(parts.postalCode)?await resolveMaskedUsPostal(parts):clean(parts.postalCode);
-  if(maskedPostal(parts.postalCode)&&!resolvedPostal)return {ok:false,reason:'ZIP sorgente mascherato e impossibile ricavare un CAP valido'};
-  let root=await openLocationEditor();
+async function fillLocationForm(root,parts,resolvedPostal){
   const country=fieldByCaption(/^country\s+or\s+region$/i,root)||fieldByCaption(/^country$/i,root);
   const city=fieldByCaption(/^city\s*,\s*state$/i,root);
   const zip=fieldByCaption(/^zip code$/i,root)||fieldByCaption(/^(zip|postal code|postcode)$/i,root);
   const cityState=[parts.city,parts.stateOrProvince].filter(Boolean).join(', ');
-
+  if(!city&&cityState)return false;
+  if(!zip&&resolvedPostal)return false;
   if(country&&parts.country)await setChoice(country,parts.country,true);
   if(zip&&resolvedPostal)await typeLikeUser(zip,resolvedPostal);
-  await sleep(450);
+  await sleep(300);
   if(city&&cityState)await typeLikeUser(city,cityState);
-  await sleep(450);
+  await sleep(650);
+  return true
+}
+async function applyLocation(parts){
+  const needsZip=maskedPostal(parts.postalCode)||(!clean(parts.postalCode)&&/^(?:US|USA|United States|United States of America)$/i.test(clean(parts.country)));
+  const resolvedPostal=needsZip?await resolveMaskedUsPostal(parts):clean(parts.postalCode);
+  if(needsZip&&!resolvedPostal)return {ok:false,reason:'ZIP sorgente non disponibile e impossibile ricavare un CAP valido'};
 
-  const cityOk=!city||!cityState||clean(city.value).toLowerCase()===clean(cityState).toLowerCase();
-  const zipOk=!zip||!resolvedPostal||clean(zip.value)===clean(resolvedPostal);
-  if(!(cityOk&&zipOk)){await closeLocationDialog();return {ok:false,reason:'i campi eBay non hanno mantenuto i nuovi valori'}};
-
+  const root=await openLocationEditor();
+  if(!await fillLocationForm(root,parts,resolvedPostal)){await closeLocationDialog();return {ok:false,reason:'campi Item Location eBay non trovati'}};
   const ok=await saveAndVerify(root,parts,resolvedPostal);
-  return {ok:ok,postal:resolvedPostal,reason:ok?'':'eBay ha ripristinato la location precedente dopo Done'};
+  return {ok,postal:resolvedPostal,reason:ok?'':'salvataggio Item Location non riuscito'}
 }
 function writeLocation(row,state,msg){if(!row)return;row.innerHTML='<b>Item Location:</b> <span class="'+state+'">'+String(msg||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';}
 
