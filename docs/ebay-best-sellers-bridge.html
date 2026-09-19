@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>eBay Best Sellers Loader</title>
+  <meta name="robots" content="noindex,nofollow">
+  <style>
+    body{font:14px Arial,sans-serif;margin:20px;color:#202124}
+    .muted{color:#667085;font-size:12px}
+  </style>
+</head>
+<body>
+  <b>Caricamento eBay Best Sellers…</b>
+  <div id="s" class="muted">Recupero versione aggiornata da GitHub Pages.</div>
+<script>
+(async()=>{
+  const params=new URLSearchParams(location.search);
+  const token=params.get('token')||'';
+  const source='./ebay-best-sellers-v6.js?ts='+Date.now();
+
+  const send=(payload)=>{
+    const message=Object.assign({
+      type:'pep-ebay-best-sellers-loader',
+      token
+    },payload);
+
+    try{
+      if(window.opener&&!window.opener.closed){
+        window.opener.postMessage(message,'*');
+      }
+    }catch(_){}
+
+    try{
+      if(window.parent&&window.parent!==window){
+        window.parent.postMessage(message,'*');
+      }
+    }catch(_){}
+  };
+
+  try{
+    const r=await fetch(source,{cache:'no-store'});
+    if(!r.ok)throw new Error('GitHub Pages HTTP '+r.status);
+    const code=await r.text();
+    if(!code||code.length<1000)throw new Error('Sorgente non valido');
+
+    send({ok:true,code});
+    document.getElementById('s').textContent='Versione caricata. Puoi chiudere questa finestra.';
+    setTimeout(()=>window.close(),250);
+  }catch(e){
+    send({ok:false,error:e&&e.message?e.message:String(e)});
+    document.getElementById('s').textContent='Errore: '+(e&&e.message?e.message:e);
+  }
+})();
+</script>
+</body>
+</html>
