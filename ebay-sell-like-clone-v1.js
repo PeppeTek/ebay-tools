@@ -158,13 +158,13 @@ function normalizeEbayImageUrl(v){
   if(/i\.ebayimg\.com\/images\/g\//i.test(v))v=v.replace(/\/s-l\d+\.(?:jpg|jpeg|png|webp)(?=\?|$)/i,'/s-l1600.webp');
   return v
 }
-function parseSourceSnapshotHtml(html){
-  const raw=String(html||''),images=[],seen=new Set();
+function parseSourceSnapshotHtml(html,sourceItemId){
+  const raw=String(html||''),images=[],seen=new Set(),structuredProducts=[];
   function addImage(v){
     v=normalizeEbayImageUrl(v);if(!v)return;
-    if(!/i\.ebayimg\.com\/images\/g\//i.test(v))return;
+    if(!/^https:\/\/i\.ebayimg\.com\/images\/g\/[^/?#]+\/s-l\d+\.(?:jpg|jpeg|png|webp)(?:[?#].*)?$/i.test(v))return;
     const key=v.replace(/\/s-l\d+\.(?:jpg|jpeg|png|webp)(?:\?.*)?$/i,'');
-    if(seen.has(key))return;seen.add(key);images.push(v)
+    if(seen.has(key))return;seen.add(key);images.push(v.split('?')[0].split('#')[0])
   }
   let price=null,currency='',itemLocation='',itemLocationParts={city:'',stateOrProvince:'',postalCode:'',country:''};
   const cleanLocationText=v=>String(v||'').replace(/\s+/g,' ').replace(/(?:Delivery|Returns|Payments|Shipping|Seller)\s*:\s*.*$/i,'').replace(/(?:Delivery|Returns|Payments|Shipping|Seller).*$/i,'').trim();
@@ -176,7 +176,7 @@ function parseSourceSnapshotHtml(html){
         while(stack.length){
           const x=stack.shift();if(!x||typeof x!=='object')continue;
           if(String(x['@type']||'').toLowerCase()==='product'){
-            const vals=Array.isArray(x.image)?x.image:[x.image];vals.filter(Boolean).forEach(addImage);
+            structuredProducts.push(x);
             const offers=Array.isArray(x.offers)?x.offers:[x.offers];
             for(const o of offers){const n=Number(o&&o.price);if(!price&&isFinite(n)&&n>0)price=n;const c=String(o&&o.priceCurrency||'').toUpperCase();if(!currency&&/^[A-Z]{3}$/.test(c))currency=c}
           }
@@ -184,7 +184,29 @@ function parseSourceSnapshotHtml(html){
         }
       }catch(_){}
     }
-    for(const el of doc.querySelectorAll('meta[property="og:image"],meta[itemprop="image"],img[src*="ebayimg.com/images/g/"]'))addImage(el.getAttribute('content')||el.getAttribute('src')||'');
+    // Only this item's picture carousel is authoritative; the rest of the page includes recommendations.
+    const gallerySelectors=[
+      '#mainContent .ux-image-carousel-item img',
+      '.vim.x-photos .ux-image-carousel-item img',
+      '.ux-image-carousel-item img',
+      '[data-testid="x-photos"] img',
+      '[data-testid="image-gallery"] img'
+    ];
+    for(const selector of gallerySelectors){
+      const nodes=[...doc.querySelectorAll(selector)];
+      if(!nodes.length)continue;
+      for(const el of nodes)addImage(el.getAttribute('data-zoom-src')||el.getAttribute('data-src')||el.getAttribute('src')||'');
+      if(images.length)break
+    }
+    if(!images.length){
+      const wanted=String(sourceItemId||'').trim();
+      const matchItemUrl=wanted?new RegExp('/itm/(?:[^/?#]+/)?'+wanted+'(?:[/?#]|$)','i'):null;
+      const matches=structuredProducts.filter(x=>matchItemUrl&&matchItemUrl.test(String(x.url||x['@id']||'')));
+      const single=structuredProducts.length===1?structuredProducts[0]:null;
+      const primary=matches[0]||(single&&!String(single.url||single['@id']||'').includes('/itm/')?single:null);
+      if(primary){const vals=Array.isArray(primary.image)?primary.image:[primary.image];vals.filter(Boolean).forEach(addImage)}
+    }
+    if(!images.length&&!structuredProducts.length){const og=doc.querySelector('meta[property="og:image"]');if(og)addImage(og.getAttribute('content')||'')}
     if(!currency){const el=doc.querySelector('meta[itemprop="priceCurrency"],meta[property="product:price:currency"],meta[property="og:price:currency"]');const c=String(el&&(el.getAttribute('content')||el.textContent)||'').toUpperCase();if(/^[A-Z]{3}$/.test(c))currency=c}
     if(!price){
       for(const sel of ['meta[itemprop="price"]','meta[property="product:price:amount"]','meta[property="og:price:amount"]','[itemprop="price"]']){
@@ -195,7 +217,7 @@ function parseSourceSnapshotHtml(html){
     const lm=txt.match(/Located in:\s*([^|]{3,180}?)(?=(?:\s*Delivery|\s*Returns|\s*Payments|\s*Shipping|\s*Seller|$))/i)||txt.match(/Located in:\s*([^\n\r]{3,180})/i);
     if(lm)itemLocation=cleanLocationText(lm[1])
   }catch(_){}
-  for(const m of raw.matchAll(/https?:\\?\/\\?\/i\.ebayimg\.com\\?\/images\\?\/g\\?\/[^"'<>\s]+/ig))addImage(m[0]);
+  // Never grep all i.ebayimg.com links from raw HTML: they include unrelated products.
   const locPos=raw.search(/"itemLocation"\s*:/i);
   if(locPos>=0){
     const seg=raw.slice(locPos,locPos+5000);
@@ -221,7 +243,7 @@ async function readSourceSnapshot(sourceItemId){
     try{
       const r=await fetch(sourceItemUrl(sourceItemId),{credentials:'include',cache:'force-cache',signal:controller.signal});
       if(!r.ok)throw Error('eBay HTTP '+r.status);
-      return parseSourceSnapshotHtml(await r.text())
+      return parseSourceSnapshotHtml(await r.text(),sourceItemId)
     }finally{clearTimeout(timer)}
   })();
   try{return await sourceSnapshotPromise}catch(e){sourceSnapshotPromise=null;throw e}
@@ -375,7 +397,61 @@ function existingEbayPhotoCount(){
   return 0
 }
 function photoInput(){return [...document.querySelectorAll('input[type="file"]')].find(x=>x.multiple||/image/i.test(x.accept||''))||document.querySelector('input[type="file"]')}
-async function uploadImages(urls){const input=photoInput();if(!input)throw Error('Input foto eBay non trovato');urls=uniqUrls(urls).slice(0,24);if(!urls.length)throw Error('Nessuna foto sorgente disponibile');const files=new Array(urls.length);for(let base=0;base<urls.length;base+=4){await Promise.all(urls.slice(base,base+4).map(async(u,j)=>{const i=base+j;try{const r=await fetch(u,{mode:'cors',credentials:'omit',cache:'force-cache'});if(!r.ok)throw Error('HTTP '+r.status);const blob=await r.blob();const mime=blob.type||'image/jpeg';const ext=/png/i.test(mime)?'png':/webp/i.test(mime)?'webp':'jpg';files[i]=new File([blob],String(itemId)+'-'+String(i+1).padStart(2,'0')+'.'+ext,{type:mime,lastModified:Date.now()})}catch(e){console.warn('Image fetch failed',u,e)}}))}const dt=new DataTransfer();files.filter(Boolean).forEach(f=>dt.items.add(f));if(!dt.files.length)throw Error('Nessuna foto scaricabile dal browser');input.files=dt.files;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));return dt.files.length}
+async function decodedPhotoSize(blob){
+  if(typeof createImageBitmap==='function'){
+    const bitmap=await createImageBitmap(blob);
+    try{return {width:bitmap.width,height:bitmap.height}}finally{bitmap.close?.()}
+  }
+  const url=URL.createObjectURL(blob);
+  try{
+    return await new Promise((resolve,reject)=>{
+      const img=new Image();
+      img.onload=()=>resolve({width:img.naturalWidth,height:img.naturalHeight});
+      img.onerror=()=>reject(Error('Immagine non decodificabile'));
+      img.src=url
+    })
+  }finally{URL.revokeObjectURL(url)}
+}
+let lastImageUploadStats=null;
+async function uploadImages(urls){
+  const input=photoInput();
+  if(!input)throw Error('Input foto eBay non trovato');
+  urls=uniqUrls(urls).slice(0,24);
+  if(!urls.length)throw Error('Nessuna foto sorgente disponibile');
+  const files=new Array(urls.length);
+  const stats={requested:urls.length,valid:0,tooSmall:0,invalid:0,fetchFailed:0};
+  for(let base=0;base<urls.length;base+=4){
+    await Promise.all(urls.slice(base,base+4).map(async(u,j)=>{
+      const i=base+j;
+      try{
+        // Do not download or forward arbitrary backend URLs in the product-gallery uploader.
+        if(!/^https:\/\/i\.ebayimg\.com\/images\/g\//i.test(u)){stats.invalid++;return}
+        const r=await fetch(u,{mode:'cors',credentials:'omit',cache:'force-cache'});
+        if(!r.ok)throw Error('HTTP '+r.status);
+        const blob=await r.blob();
+        if(!/^image\/(?:jpeg|png|webp|gif)$/i.test(blob.type||'')){stats.invalid++;return}
+        let dim;
+        try{dim=await decodedPhotoSize(blob)}catch(err){stats.invalid++;console.warn('Invalid eBay image data',u,err);return}
+        if(dim.width<500||dim.height<500){
+          stats.tooSmall++;
+          console.warn('eBay photo below minimum 500px',u,dim);
+          return
+        }
+        const mime=blob.type,ext=/png/i.test(mime)?'png':/webp/i.test(mime)?'webp':/gif/i.test(mime)?'gif':'jpg';
+        files[i]=new File([blob],String(itemId)+'-'+String(i+1).padStart(2,'0')+'.'+ext,{type:mime,lastModified:Date.now()});
+        stats.valid++
+      }catch(err){stats.fetchFailed++;console.warn('Image fetch failed',u,err)}
+    }))
+  }
+  lastImageUploadStats=stats;
+  const dt=new DataTransfer();
+  files.filter(Boolean).forEach(f=>dt.items.add(f));
+  if(!dt.files.length)throw Error('Nessuna foto valida (minimo 500×500 pixel) da caricare');
+  input.files=dt.files;
+  input.dispatchEvent(new Event('input',{bubbles:true}));
+  input.dispatchEvent(new Event('change',{bubbles:true}));
+  return dt.files.length
+}
 let previewPreparePromise=null,previewReady=false,uploadedImageSignature='';
 const stepRows={};
 function setStep(name,state,msg){
@@ -433,7 +509,9 @@ async function initialNonAiData(){
   // Reject unknown-currency prices from the US-oriented backend on other marketplaces.
   const backendCurrency=String(pre&&(pre.currency||pre.priceCurrency)||'').toUpperCase();
   if(EBAY_SOURCE_NON_US&&backendCurrency!==EBAY_SOURCE_CURRENCY){data.sourcePrice=null;data.targetPrice=null}
-  const needSnapshot=EBAY_SOURCE_NON_US||!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0||!data.images.length||!clean(data.itemLocation);
+  const isVariationSource=(mi&&mi.mode==='variants')||!!(pre&&pre.hasVariations);
+  // The original item gallery, not arbitrary backend HTML images, is authoritative.
+  const needSnapshot=!isVariationSource||EBAY_SOURCE_NON_US||!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0||!data.images.length||!clean(data.itemLocation);
   if(needSnapshot){
     try{
       const snap=await readSourceSnapshot(itemId);
@@ -441,10 +519,13 @@ async function initialNonAiData(){
       if(EBAY_SOURCE_NON_US&&snapCurrency&&snapCurrency!==EBAY_SOURCE_CURRENCY){
         operationalLog('Prezzo sorgente '+snapCurrency+' diverso dalla valuta '+EBAY_SOURCE_CURRENCY+': conversione automatica evitata','warn');
       }else if((EBAY_SOURCE_NON_US||!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0)&&isFinite(Number(snap.price))&&Number(snap.price)>0)data.sourcePrice=Number(snap.price);
-      if((EBAY_SOURCE_NON_US||!data.images.length)&&snap.images&&snap.images.length)data.images=snap.images;
+      if(!isVariationSource){
+        data.images=snap.images||[];
+        if(!data.images.length)operationalLog('Foto: galleria originale non identificata; non importo immagini estranee','warn');
+      }else if((EBAY_SOURCE_NON_US||!data.images.length)&&snap.images&&snap.images.length)data.images=snap.images;
       if((EBAY_SOURCE_NON_US||!clean(data.itemLocation))&&clean(snap.itemLocation))data.itemLocation=clean(snap.itemLocation);
       if((!data.itemLocationParts||!Object.keys(data.itemLocationParts).length)&&snap.itemLocationParts)data.itemLocationParts=snap.itemLocationParts
-    }catch(e){console.warn('Source snapshot fallback',e);operationalLog('Dati sorgente: recupero diretto non riuscito','warn')}
+    }catch(e){if(!isVariationSource)data.images=[];console.warn('Source snapshot fallback',e);operationalLog('Dati sorgente: recupero diretto non riuscito'+(!isVariationSource?' · foto non importate per sicurezza':''),'warn')}
   }
   if(!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0){
     const editorPrice=readEditorPrice();
@@ -575,7 +656,11 @@ try{
       try{
         const n=await uploadImages(data.images);
         uploadedImageSignature=data.images.join('|');
-        operationalLog('Foto: '+n+'/'+data.images.length+' caricate su eBay','ok')
+        operationalLog('Foto: '+n+'/'+data.images.length+' file validi inviati al form eBay','ok');
+        if(lastImageUploadStats){
+          const st=lastImageUploadStats;
+          if(st.tooSmall||st.invalid||st.fetchFailed)operationalLog('Foto scartate: '+st.tooSmall+' sotto 500px, '+st.invalid+' non valide, '+st.fetchFailed+' non scaricabili','warn')
+        }
       }catch(imgErr){operationalLog('Foto: '+imgErr.message+' — ritento prima della Preview','warn')}
     }
   }else operationalLog('Foto: nessuna immagine disponibile nella preparazione iniziale; ritento in Preview','warn');
