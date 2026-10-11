@@ -200,14 +200,13 @@ function parseSourceSnapshotHtml(html,sourceItemId){
     }
     if(!images.length){
       const wanted=String(sourceItemId||'').trim();
-      const matches=structuredProducts.filter(x=>{
-        const u=String(x.url||x['@id']||'');
-        return wanted&&u.includes('/itm/')&&u.includes(wanted)
-      });
-      const primary=matches[0]||(structuredProducts.length===1?structuredProducts[0]:null);
+      const matchItemUrl=wanted?new RegExp('/itm/(?:[^/?#]+/)?'+wanted+'(?:[/?#]|$)','i'):null;
+      const matches=structuredProducts.filter(x=>matchItemUrl&&matchItemUrl.test(String(x.url||x['@id']||'')));
+      const single=structuredProducts.length===1?structuredProducts[0]:null;
+      const primary=matches[0]||(single&&!String(single.url||single['@id']||'').includes('/itm/')?single:null);
       if(primary){const vals=Array.isArray(primary.image)?primary.image:[primary.image];vals.filter(Boolean).forEach(addImage)}
     }
-    if(!images.length){const og=doc.querySelector('meta[property="og:image"]');if(og)addImage(og.getAttribute('content')||'')}
+    if(!images.length&&!structuredProducts.length){const og=doc.querySelector('meta[property="og:image"]');if(og)addImage(og.getAttribute('content')||'')}
     if(!currency){const el=doc.querySelector('meta[itemprop="priceCurrency"],meta[property="product:price:currency"],meta[property="og:price:currency"]');const c=String(el&&(el.getAttribute('content')||el.textContent)||'').toUpperCase();if(/^[A-Z]{3}$/.test(c))currency=c}
     if(!price){
       for(const sel of ['meta[itemprop="price"]','meta[property="product:price:amount"]','meta[property="og:price:amount"]','[itemprop="price"]']){
