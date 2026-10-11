@@ -402,9 +402,18 @@ async function applyLocation(parts){
   const returns=await selectPolicy('Return policy',POLICY_TARGETS.returns,activeRoot,{allowSearch:false});
   if(!returns.ok)reportSetting('Return policy: '+returns.reason,'warn');
   // Selecting a policy can re-render the form. Verify ZIP last, immediately before Done.
-  const zipOk=await ensurePostalCode(resolvedPostal);
+  let zipOk=await ensurePostalCode(resolvedPostal);
+  // ZIP updates can also rerender the Return control: verify and retry once if needed.
+  if(returns.ok&&!policySelected(policyField('Return policy',settingsRoot())||{},POLICY_TARGETS.returns)){
+    const retried=await selectPolicy('Return policy',POLICY_TARGETS.returns,settingsRoot(),{allowSearch:false});
+    returns.ok=!!retried.ok;
+    zipOk=await ensurePostalCode(resolvedPostal);
+  }
   const locationOk=zipOk&&locationFormMatches(parts,resolvedPostal);
+  const returnField=policyField('Return policy',settingsRoot());
+  if(returns.ok&&(!returnField||!policySelected(returnField,POLICY_TARGETS.returns)))returns.ok=false;
   if(!locationOk)reportSetting('Item Location: CAP non confermato; trovato '+clean(locationField('zip')?.value),'warn');
+  if(!returns.ok)reportSetting('Return policy: selezione non confermata dopo la modifica del CAP','warn');
   const saved=(locationOk||returns.ok)&&await saveAndVerify(settingsRoot(),parts,resolvedPostal);
   if(!saved)returns.ok=false;
   return {ok:!!(firstLocation&&locationOk&&saved),postal:resolvedPostal,returns,
@@ -427,11 +436,19 @@ try{
   writeLocation(row,'warn','Item Location Fort Pierce (FL) 34981 non applicata');
   reportSetting('Item Location: '+String(e&&e.message||e),'warn');
 }
+const policyStatus=[];
 for(const spec of [['Shipping policy',POLICY_TARGETS.shipping],['Payment policy',POLICY_TARGETS.payment]]){
   try{
     const res=await selectPolicy(spec[0],spec[1],document,{allowSearch:true});
-    reportSetting(spec[0]+': '+(res.ok?'selezionata '+spec[1]:res.reason),res.ok?'ok':'warn');
-  }catch(e){reportSetting(spec[0]+': '+String(e&&e.message||e),'warn')}
+    policyStatus.push({name:spec[0],target:spec[1],result:res});
+  }catch(e){policyStatus.push({name:spec[0],target:spec[1],result:{ok:false,reason:String(e&&e.message||e)}})}
+}
+await sleep(350);
+for(const status of policyStatus){
+  const field=policyField(status.name,document);
+  const confirmed=!!(status.result.ok&&field&&policySelected(field,status.target));
+  reportSetting(status.name+': '+(confirmed?'selezionata '+status.target:(status.result.reason||'eBay non ha mantenuto la selezione')),
+    confirmed?'ok':'warn');
 }
 patchUi();
 })();
