@@ -8,7 +8,8 @@ const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.disp
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const now=()=>new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-let lastStatus='',seenClicks=new WeakSet(),shippingFallbackPromise=null;
+let lastStatus='',seenClicks=new WeakSet(),shippingFallbackPromise=null,fxInflight=null,lastFxCurrency='';
+const FX_CACHE_KEY='capitan-sell-like-fx-usd-cache-v1';
 
 const style=document.createElement('style');
 style.id='capitan-prod-ui-style';
@@ -39,10 +40,81 @@ ${PANEL_ID} #capitan-amazon-results [data-card-shipping],${PANEL_ID} #capitan-al
 #${PANEL_ID} .capitan-log-ok{color:#137333}
 #${PANEL_ID} .capitan-log-warn{color:#a15c00}
 #${PANEL_ID} .capitan-log-bad{color:#b42318}
+#${PANEL_ID} .capitan-dual-money{display:inline-flex;flex-direction:column;align-items:flex-end;justify-content:center;line-height:1.05;white-space:nowrap;text-align:right}
+#${PANEL_ID} .capitan-dual-money .capitan-usd-line{display:block;font-size:10px;line-height:1.05;margin-top:2px;color:#555;font-weight:600}
+#${PANEL_ID} .capitan-dual-money .capitan-fx-pending{color:#888}
 `;
 document.head.appendChild(style);
 
 function panel(){return document.getElementById(PANEL_ID)}
+function currency(){return String(window.__capitanSellLikeCurrency||window.__capitanSellLikeCloneData?.currency||'USD').toUpperCase()}
+function fmt(n,c){return isFinite(Number(n))?Number(n).toFixed(2)+' '+String(c||'USD').toUpperCase():'—'}
+function parseMoneyText(v){const m=clean(v).match(/(-?\d+(?:[.,]\d+)?)/);return m?Number(String(m[1]).replace(',','.')):null}
+function fxCacheRead(){try{const x=JSON.parse(localStorage.getItem(FX_CACHE_KEY)||'{}');return x&&typeof x==='object'?x:{}}catch(_){return{}}}
+function fxCacheWrite(x){try{localStorage.setItem(FX_CACHE_KEY,JSON.stringify(x||{}))}catch(_){} }
+function getFxSync(cur){
+  cur=String(cur||'USD').toUpperCase();
+  if(cur==='USD')return 1;
+  if(Number(window.__capitanSellLikeFxCurrencyRateToUsd)>0&&String(window.__capitanSellLikeFxCurrency||'').toUpperCase()===cur)return Number(window.__capitanSellLikeFxCurrencyRateToUsd);
+  const hit=fxCacheRead()[cur];
+  if(hit&&Number(hit.rate)>0&&Date.now()-Number(hit.at||0)<12*60*60*1000){window.__capitanSellLikeFxCurrency=cur;window.__capitanSellLikeFxCurrencyRateToUsd=Number(hit.rate);return Number(hit.rate)}
+  loadFx(cur);
+  return null
+}
+async function loadFx(cur){
+  cur=String(cur||currency()||'USD').toUpperCase();
+  if(cur==='USD'||fxInflight&&lastFxCurrency===cur)return fxInflight;
+  lastFxCurrency=cur;
+  fxInflight=(async()=>{
+    try{
+      const r=await fetch('https://api.frankfurter.dev/v2/rates?base='+encodeURIComponent(cur)+'&quotes=USD',{mode:'cors',credentials:'omit',cache:'no-store'});
+      if(!r.ok)throw Error('FX HTTP '+r.status);
+      const d=await r.json();
+      let rate=Number(Array.isArray(d)?d.find(x=>String(x.quote||'').toUpperCase()==='USD')?.rate:(d?.rates?.USD||d?.rate));
+      if(!isFinite(rate)||rate<=0)throw Error('FX rate non disponibile');
+      window.__capitanSellLikeFxCurrency=cur;window.__capitanSellLikeFxCurrencyRateToUsd=rate;
+      const cache=fxCacheRead();cache[cur]={rate,at:Date.now()};fxCacheWrite(cache);
+      dualCurrencyRefresh();
+      log('Cambio '+cur+'/USD aggiornato: '+rate.toFixed(4),'ok');
+      return rate
+    }catch(e){console.warn('Sell Like FX',e);log('Cambio '+cur+'/USD non disponibile: USD secondario in attesa','warn');return null}
+    finally{fxInflight=null}
+  })();
+  return fxInflight
+}
+function dualMoneyHtml(value,cur){
+  cur=String(cur||currency()||'USD').toUpperCase();
+  if(!isFinite(Number(value)))return '—';
+  const local=fmt(value,cur);
+  if(cur==='USD')return esc(local);
+  const rate=getFxSync(cur);
+  const usd=isFinite(rate)?fmt(Number(value)*rate,'USD'):'USD …';
+  const cls=isFinite(rate)?'':' capitan-fx-pending';
+  return '<span class="capitan-dual-money"><span>'+esc(local)+'</span><span class="capitan-usd-line'+cls+'">'+esc(usd)+'</span></span>'
+}
+function setDual(el,value,cur){
+  if(!el||!isFinite(Number(value)))return false;
+  el.dataset.capitanDualValue=String(Number(value));
+  el.dataset.capitanDualCurrency=String(cur||currency()||'USD').toUpperCase();
+  el.innerHTML=dualMoneyHtml(Number(value),el.dataset.capitanDualCurrency);
+  el.style.whiteSpace='normal';el.style.lineHeight='1.05';el.style.textAlign='right';
+  return true
+}
+function findSaleSpan(){const p=panel();const row=p?.querySelector('#capitan-sale-price-row');if(!row)return null;return [...row.querySelectorAll('span')].find(x=>x.id!=='capitan-sale-price-editor')||null}
+function dualCurrencyRefresh(){
+  const p=panel();if(!p)return;
+  const cur=currency();
+  const map=[
+    ['#capitan-competitor-price',Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice)],
+    ['#capitan-break-even-value',null],
+    ['#capitan-margin-break [data-value]',null],
+    ['#capitan-margin-source [data-value]',null],
+    ['#capitan-margin-delta [data-value]',null]
+  ];
+  map.forEach(([sel,forced])=>{const el=p.querySelector(sel);if(!el)return;let n=isFinite(Number(forced))?Number(forced):Number(el.dataset.capitanDualValue);if(!isFinite(n))n=parseMoneyText(el.textContent||'');if(isFinite(n))setDual(el,n,cur)});
+  const sale=findSaleSpan();
+  if(sale){let n=Number(window.__capitanSellLikeSalePrice);if(!isFinite(n)||n<=0)n=Number(sale.dataset.capitanDualValue);if(!isFinite(n))n=parseMoneyText(sale.textContent||'');if(isFinite(n))setDual(sale,n,cur)}
+}
 function log(message,state='ok'){
   const p=panel();if(!p)return;
   ensureUi();
@@ -113,6 +185,7 @@ function ensureUi(){
     sc.style.display=(hasAli||hasAmz)?'grid':'none'
   }
   hideOkRows();
+  dualCurrencyRefresh();
   return true
 }
 
@@ -144,14 +217,16 @@ function observeStatus(){
 window.addEventListener('capitan-ai-description-updated',()=>log('Template AI-HTML generato','ok'));
 window.addEventListener('capitan-pricing-saved',()=>log('Tariffe aggiornate','ok'));
 window.addEventListener('capitan-shipping-policy-updated',e=>log('Shipping aggiornato: '+clean(e.detail?.target||e.detail?.shipping||''),'ok'));
-window.addEventListener('capitan-sale-price-updated',e=>log('Prezzo di vendita aggiornato: '+Number(e.detail?.value||0).toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD'),'ok'));
-window.addEventListener('capitan-sell-like-ui-ready',()=>{ensureUi();wireButtons();observeStatus();log('UI pronta','ok')});
+window.addEventListener('capitan-sale-price-updated',e=>{const value=Number(e.detail?.value||0);log('Prezzo di vendita aggiornato: '+fmt(value,currency()),'ok');setTimeout(dualCurrencyRefresh,0)});
+window.addEventListener('capitan-break-even-updated',()=>setTimeout(dualCurrencyRefresh,0));
+window.addEventListener('capitan-discount-updated',()=>setTimeout(dualCurrencyRefresh,0));
+window.addEventListener('capitan-sell-like-ui-ready',()=>{ensureUi();wireButtons();observeStatus();dualCurrencyRefresh();log('UI pronta','ok')});
 
 document.addEventListener('change',e=>{
   if(e.target?.matches('input.capitan-amazon-choice,input.capitan-aliexpress-choice'))log('Prodotto sourcing '+(e.target.checked?'selezionato':'deselezionato'),'ok')
 },true);
 
-const obs=new MutationObserver(()=>{ensureUi();wireButtons();observeStatus()});
+const obs=new MutationObserver(()=>{ensureUi();wireButtons();observeStatus();dualCurrencyRefresh()});
 obs.observe(document.body,{childList:true,subtree:true});
-ensureUi();wireButtons();observeStatus();
+ensureUi();wireButtons();observeStatus();dualCurrencyRefresh();
 })();
