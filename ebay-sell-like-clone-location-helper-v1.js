@@ -414,7 +414,7 @@ async function applyLocation(parts){
   if(returns.ok&&(!returnField||!policySelected(returnField,POLICY_TARGETS.returns)))returns.ok=false;
   if(!locationOk)reportSetting('Item Location: CAP non confermato; trovato '+clean(locationField('zip')?.value),'warn');
   if(!returns.ok)reportSetting('Return policy: selezione non confermata dopo la modifica del CAP','warn');
-  const saved=(locationOk||returns.ok)&&await saveAndVerify(settingsRoot(),parts,resolvedPostal);
+  const saved=locationOk&&await saveAndVerify(settingsRoot(),parts,resolvedPostal);
   if(!saved)returns.ok=false;
   return {ok:!!(firstLocation&&locationOk&&saved),postal:resolvedPostal,returns,
     reason:!locationOk?'ZIP non confermato da eBay':saved?'':'salvataggio Item Location non riuscito'}
