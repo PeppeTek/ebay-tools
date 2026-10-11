@@ -25,10 +25,13 @@ function header(){
   const timer=panel.querySelector('#capitan-process-timer');
 
   if(brand){
-    brand.style.padding='7px 14px 0';
+    brand.style.padding='7px 14px 14px';
     brand.style.margin='0';
     brand.style.position='relative';
-    brand.style.minHeight='52px';
+    brand.style.minHeight='58px';
+    brand.style.width='max-content';
+    brand.style.maxWidth='100%';
+    brand.style.flexShrink='0';
     brand.style.display='block'
   }
   if(logo){
@@ -38,7 +41,7 @@ function header(){
   }
   if(timer&&brand&&timer.parentNode!==brand)brand.appendChild(timer);
   if(timer){
-    timer.style.cssText='position:absolute;right:2px;bottom:0;border:0;background:transparent;color:#555;font:700 10px/14px ui-monospace,SFMono-Regular,Consolas,monospace;padding:0;margin:0;min-width:0;height:14px;box-shadow:none'
+    timer.style.cssText='position:absolute;right:14px;bottom:0;text-align:right;border:0;background:transparent;color:#555;font:700 10px/14px ui-monospace,SFMono-Regular,Consolas,monospace;padding:0;margin:0;min-width:0;height:14px;box-shadow:none'
   }
   if(titleRow){
     titleRow.style.cssText='display:flex;align-items:center;gap:7px;padding:4px 76px 7px 14px;border-bottom:1px solid #ddd;min-height:31px'
@@ -144,10 +147,20 @@ function apply(){
   panel.style.overflow='hidden';
   const body=panel.querySelector('.b');
   if(body){
-    body.style.flex='1 1 auto';
+    // Keep summary visible and let the provider result tables take the remaining space.
+    body.style.flex='0 1 auto';
     body.style.minHeight='0';
     body.style.overflowY='auto';
     body.style.overflowX='hidden';
+  }
+  for(const id of ['#capitan-aliexpress-match-ext','#capitan-amazon-match-ext']){
+    const wrap=panel.querySelector(id);
+    if(!wrap)continue;
+    wrap.style.flex='0 1 auto';
+    wrap.style.minHeight='0';
+    wrap.style.overflow='hidden';
+    const res=wrap.querySelector(id.replace('match-ext','results'));
+    if(res){res.style.maxHeight='min(38vh, 420px)';res.style.overflowY='auto';res.style.overflowX='hidden'}
   }
   const actions=panel.querySelector('[data-ebay-actions]');
   if(actions){actions.style.flex='0 0 auto';actions.style.position='relative'}
