@@ -82,21 +82,28 @@ async function loadFx(cur){
   })();
   return fxInflight
 }
-function dualMoneyHtml(value,cur){
+function dualMoneyHtml(value,cur,origin){
   cur=String(cur||currency()||'USD').toUpperCase();
+  origin=origin==='usd'?'usd':'local';
   if(!isFinite(Number(value)))return '—';
-  const local=fmt(value,cur);
-  if(cur==='USD')return esc(local);
+  if(cur==='USD')return esc(fmt(value,'USD'));
   const rate=getFxSync(cur);
-  const usd=isFinite(rate)?fmt(Number(value)*rate,'USD'):'USD …';
-  const cls=isFinite(rate)?'':' capitan-fx-pending';
-  return '<span class="capitan-dual-money"><span>'+esc(local)+'</span><span class="capitan-usd-line'+cls+'">'+esc(usd)+'</span></span>'
+  let local=Number(value),usd=null;
+  if(isFinite(rate)){
+    if(origin==='usd'){usd=Number(value);local=usd/rate}
+    else usd=Number(value)*rate
+  }
+  const top=isFinite(local)?fmt(local,cur):fmt(value,cur);
+  const bottom=isFinite(usd)?fmt(usd,'USD'):'USD …';
+  const cls=isFinite(usd)?'':' capitan-fx-pending';
+  return '<span class="capitan-dual-money"><span>'+esc(top)+'</span><span class="capitan-usd-line'+cls+'">'+esc(bottom)+'</span></span>'
 }
-function setDual(el,value,cur){
+function setDual(el,value,cur,origin){
   if(!el||!isFinite(Number(value)))return false;
   el.dataset.capitanDualValue=String(Number(value));
   el.dataset.capitanDualCurrency=String(cur||currency()||'USD').toUpperCase();
-  el.innerHTML=dualMoneyHtml(Number(value),el.dataset.capitanDualCurrency);
+  el.dataset.capitanDualOrigin=origin==='usd'?'usd':'local';
+  el.innerHTML=dualMoneyHtml(Number(value),el.dataset.capitanDualCurrency,el.dataset.capitanDualOrigin);
   el.style.whiteSpace='normal';el.style.lineHeight='1.05';el.style.textAlign='right';
   return true
 }
@@ -105,15 +112,15 @@ function dualCurrencyRefresh(){
   const p=panel();if(!p)return;
   const cur=currency();
   const map=[
-    ['#capitan-competitor-price',Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice)],
-    ['#capitan-break-even-value',null],
-    ['#capitan-margin-break [data-value]',null],
-    ['#capitan-margin-source [data-value]',null],
-    ['#capitan-margin-delta [data-value]',null]
+    ['#capitan-competitor-price',Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice),'local'],
+    ['#capitan-break-even-value',null,'usd'],
+    ['#capitan-margin-break [data-value]',null,'usd'],
+    ['#capitan-margin-source [data-value]',null,'usd'],
+    ['#capitan-margin-delta [data-value]',null,'usd']
   ];
-  map.forEach(([sel,forced])=>{const el=p.querySelector(sel);if(!el)return;let n=isFinite(Number(forced))?Number(forced):Number(el.dataset.capitanDualValue);if(!isFinite(n))n=parseMoneyText(el.textContent||'');if(isFinite(n))setDual(el,n,cur)});
+  map.forEach(([sel,forced,origin])=>{const el=p.querySelector(sel);if(!el)return;let n=isFinite(Number(forced))?Number(forced):Number(el.dataset.capitanDualValue);if(!isFinite(n))n=parseMoneyText(el.textContent||'');if(isFinite(n))setDual(el,n,cur,origin)});
   const sale=findSaleSpan();
-  if(sale){let n=Number(window.__capitanSellLikeSalePrice);if(!isFinite(n)||n<=0)n=Number(sale.dataset.capitanDualValue);if(!isFinite(n))n=parseMoneyText(sale.textContent||'');if(isFinite(n))setDual(sale,n,cur)}
+  if(sale){let n=Number(window.__capitanSellLikeSalePrice);if(!isFinite(n)||n<=0)n=Number(sale.dataset.capitanDualValue);if(!isFinite(n))n=parseMoneyText(sale.textContent||'');if(isFinite(n))setDual(sale,n,cur,'local')}
 }
 function log(message,state='ok'){
   const p=panel();if(!p)return;
