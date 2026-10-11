@@ -62,7 +62,7 @@ function applyManualSalePrice(value,row,span,input){
   const n=Number(String(value).replace(',','.'));
   if(!isFinite(n)||n<=0)return false;
   const rounded=Math.round(n*100)/100;
-  if(span){span.textContent=rounded.toFixed(2)+' USD';colorValue(span,rounded)}
+  if(span){span.textContent=rounded.toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD');colorValue(span,rounded)}
   const field=findEbayPriceField();
   if(field)setNativeInputValue(field,rounded.toFixed(2));
   window.__capitanSellLikeSalePrice=rounded;
@@ -93,7 +93,7 @@ function updateSalePriceLabel(){
   if(span){
     const t=clean(span.textContent||'').replace(/\s*\(-?\d+(?:[.,]\d+)?%\)\s*$/i,'');
     current=parseNumber(t,/([0-9]+(?:[.,][0-9]+)?)/);
-    if(isFinite(current)){span.textContent=Number(current).toFixed(2)+' USD';colorValue(span,current)}
+    if(isFinite(current)){span.textContent=Number(current).toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD');colorValue(span,current)}
     span.style.gridColumn='3';span.style.justifySelf='end';span.style.textAlign='right';span.style.whiteSpace='nowrap'
   }
   r.style.display='grid';r.style.gridTemplateColumns='minmax(0,1fr) 82px 104px';r.style.alignItems='center';r.style.gap='8px';r.style.minHeight='38px';
