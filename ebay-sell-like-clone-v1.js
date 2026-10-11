@@ -523,7 +523,10 @@ window.addEventListener('capitan-discount-updated',e=>{
 
 try{
   const ep=endpoint();if(!ep)throw Error('URL backend mancante.');
-  if(EBAY_SOURCE_NON_US)operationalLog('Marketplace sorgente: '+EBAY_SOURCE_HOST+' ('+EBAY_SOURCE_CURRENCY+') — recupero dalla stessa area eBay','ok');
+  if(EBAY_SOURCE_NON_US){
+    operationalLog('Marketplace sorgente: '+EBAY_SOURCE_HOST+' ('+EBAY_SOURCE_CURRENCY+') — recupero dalla stessa area eBay','ok');
+    operationalLog('Tariffe e costi sourcing in USD: conversione e margini esteri da verificare manualmente','warn');
+  }
   status.textContent='Preparazione dati sorgente — AI disattivata fino a Preview…';
   const initial=await initialNonAiData();
   const sellMode=initial.mode||'mono',data=initial.data||dataFromPreflight(null);
