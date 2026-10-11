@@ -225,100 +225,201 @@ function summaryMatches(parts,postal){
   return (!city||t.includes(city))&&(!state||t.includes(state))&&(!zip||t.includes(zip));
 }
 async function saveAndVerify(root,parts,postal){
-  let done=[...root.querySelectorAll('button,a,[role="button"]')].filter(visible).find(x=>/^(done|save|apply|confirm|update)$/i.test(clean(x.innerText||x.textContent||x.getAttribute('aria-label')||'')));
+  // Never show a successful save when the postcode is still the previous one.
+  if(!locationFormMatches(parts,postal))return false;
+  let done=[...root.querySelectorAll('button,a,[role="button"]')].filter(visible)
+    .find(x=>/^(done|save|apply|confirm|update)$/i.test(clean(x.innerText||x.textContent||x.getAttribute('aria-label')||'')));
   if(!done)done=findDoneButton(root);
   if(!done){await closeLocationDialog();return false}
   done.click();
-  await sleep(350);
+  await sleep(600);
   await closeLocationDialog();
   return true
 }
+
+function locationField(caption,root=settingsRoot()){
+  if(caption==='country')return fieldByCaption(/^country\s+or\s+region$/i,root)||fieldByCaption(/^country$/i,root);
+  if(caption==='city')return fieldByCaption(/^city\s*,\s*(?:state|province)$/i,root);
+  if(caption==='zip')return fieldByCaption(/^zip code$/i,root)||fieldByCaption(/^(zip|postal code|postcode)$/i,root);
+  return null
+}
+async function ensurePostalCode(value){
+  for(let attempt=0;attempt<3;attempt++){
+    // Always reacquire after city changes: eBay may replace/reactively reset the ZIP input.
+    const field=locationField('zip');
+    if(!field)return false;
+    if(clean(field.value)!==clean(value)){
+      await typeLikeUser(field,value);
+      field.dispatchEvent(new Event('change',{bubbles:true}));
+      field.blur?.();
+    }
+    await sleep(420);
+    const current=locationField('zip');
+    if(current&&clean(current.value)===clean(value))return true;
+  }
+  return false
+}
+function locationFormMatches(parts,postal){
+  const city=locationField('city'),zip=locationField('zip'),country=locationField('country');
+  const wanted=[parts.city,stateAbbr(parts.stateOrProvince)||parts.stateOrProvince].filter(Boolean).join(', ');
+  const actualCity=clean(city?.value).toLowerCase();
+  const countryVal=clean(country?.value).toLowerCase();
+  return !!(city&&zip&&country&&actualCity===wanted.toLowerCase()&&clean(zip.value)===clean(postal)&&
+    (countryVal==='united states'||countryVal==='us'||countryVal==='usa'))
+}
 async function fillLocationForm(root,parts,resolvedPostal){
-  const country=fieldByCaption(/^country\s+or\s+region$/i,root)||fieldByCaption(/^country$/i,root);
+  const country=locationField('country',root);
   if(!country||!await setChoice(country,parts.country,true))return false;
-  // React may remount the city/ZIP fields after a country change.
-  await sleep(350);
-  const activeRoot=settingsRoot();
-  const city=fieldByCaption(/^city\s*,\s*(?:state|province)$/i,activeRoot);
-  const zip=fieldByCaption(/^zip code$/i,activeRoot)||fieldByCaption(/^(zip|postal code|postcode)$/i,activeRoot);
+  await sleep(420);
+  const city=locationField('city');
   const cityState=[parts.city,stateAbbr(parts.stateOrProvince)||parts.stateOrProvince].filter(Boolean).join(', ');
-  if(!city||!zip)return false;
-  const zipOk=await typeLikeUser(zip,resolvedPostal);
-  await sleep(300);
-  const cityOk=await typeLikeUser(city,cityState);
-  await sleep(650);
-  return !!(zipOk&&cityOk&&clean(zip.value)===clean(resolvedPostal))
+  if(!city)return false;
+  if(clean(city.value).toLowerCase()!==cityState.toLowerCase()&&!await typeLikeUser(city,cityState))return false;
+  await sleep(450);
+  return await ensurePostalCode(resolvedPostal)&&locationFormMatches(parts,resolvedPostal)
 }
 
 function exactPolicyName(text,target){
   return clean(text).replace(/\s*[\[(]\s*\d+\s+listings\s*[)\]]\s*$/i,'').toLowerCase()===clean(target).toLowerCase()
 }
 function policyField(caption,root){
+  const expected=clean(caption).toLowerCase();
+  const isField=e=>e&&visible(e)&&!panel()?.contains(e)&&
+    (e.matches?.('input,textarea,select,[role="combobox"]')||/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName||''));
+  const captions=[...root.querySelectorAll('label,span,div,p,strong')].filter(e=>{
+    if(!visible(e)||panel()?.contains(e))return false;
+    const txt=clean(e.innerText||e.textContent);
+    return txt.length<=65&&txt.toLowerCase()===expected
+  });
+  captions.sort((a,b)=>(a.tagName==='LABEL'?0:1)-(b.tagName==='LABEL'?0:1));
+  for(const c of captions){
+    if(c.htmlFor){const el=document.getElementById(c.htmlFor);if(isField(el))return el}
+    const nested=c.querySelector?.('input,textarea,select,[role="combobox"]');
+    if(isField(nested))return nested;
+    for(let parent=c.parentElement,depth=0;parent&&depth<4;parent=parent.parentElement,depth++){
+      const candidates=[...parent.querySelectorAll('input,textarea,select,[role="combobox"]')].filter(isField);
+      if(candidates.length===1)return candidates[0];
+      if(candidates.length>1){
+        const r=c.getBoundingClientRect();
+        const below=candidates.filter(el=>el.getBoundingClientRect().top>=r.bottom-5)
+          .sort((a,b)=>Math.abs(a.getBoundingClientRect().top-r.bottom)-Math.abs(b.getBoundingClientRect().top-r.bottom));
+        if(below.length&&Math.abs(below[0].getBoundingClientRect().top-r.bottom)<100)return below[0]
+      }
+    }
+  }
   const re=caption==='Return policy'?/^return policy$/i:caption==='Shipping policy'?/^shipping policy$/i:/^payment policy$/i;
-  const f=fieldByCaption(re,root);
-  return f&&visible(f)&&!panel()?.contains(f)?f:null
+  const fallback=fieldByCaption(re,root);
+  return isField(fallback)?fallback:null
 }
 function policySelected(field,target){
   const values=[field.value,field.getAttribute?.('aria-valuetext'),field.getAttribute?.('data-value')];
   if(field.tagName==='SELECT')values.push(field.options?.[field.selectedIndex]?.textContent||'');
   return values.some(v=>exactPolicyName(v||'',target))
 }
-function policyOption(target){
-  const matches=[...document.querySelectorAll('[role="option"],[role="menuitem"],li,button,[data-testid*="option"],[class*="suggestion"],div,span')]
-    .filter(e=>visible(e)&&!panel()?.contains(e)&&clean(e.innerText||e.textContent).length<130&&exactPolicyName(e.innerText||e.textContent,target));
-  matches.sort((a,b)=>a.querySelectorAll('*').length-b.querySelectorAll('*').length);
-  for(const e of matches){
-    const opt=e.closest('[role="option"],[role="menuitem"],li,button,[data-testid*="option"]')||e;
-    if(visible(opt)&&!panel()?.contains(opt))return opt
+function policyOption(target,field){
+  const sel='[role="option"],[role="menuitem"],li,button,[data-testid*="option"],[class*="suggestion"],[class*="option"],div,span';
+  const nodes=[...document.querySelectorAll(sel)].filter(e=>{
+    if(!visible(e)||panel()?.contains(e))return false;
+    if(e.closest?.('label'))return false;
+    if(e===field||e.contains?.(field))return false;
+    const txt=clean(e.innerText||e.textContent);
+    return txt.length<=140&&exactPolicyName(txt,target)
+  });
+  // Prefer genuine menu options over generic text containers.
+  const itemFor=e=>e.closest?.('[role="option"],[role="menuitem"],[data-testid*="option"],li,[class*="suggestion"],[class*="option"]')||e;
+  nodes.sort((a,b)=>{
+    const aa=itemFor(a),bb=itemFor(b);
+    const score=x=>((x.matches?.('[role="option"],[role="menuitem"],li,[data-testid*="option"]'))?0:1)*100+
+       (x.querySelectorAll?.('*').length||0);
+    return score(aa)-score(bb)
+  });
+  for(const node of nodes){
+    const option=itemFor(node);
+    if(!visible(option)||panel()?.contains(option)||option.contains?.(field))continue;
+    if(option.closest?.('label'))continue;
+    if(!exactPolicyName(option.innerText||option.textContent,target))continue;
+    return option
   }
   return null
 }
 async function selectPolicy(caption,target,root=document,{allowSearch=true}={}){
   let field=null;
-  for(let i=0;i<12&&!field;i++){field=policyField(caption,root);if(!field)await sleep(160)}
+  for(let i=0;i<20&&!field;i++){field=policyField(caption,root);if(!field)await sleep(150)}
   if(!field)return {ok:false,reason:'campo '+caption+' non trovato'};
   if(policySelected(field,target))return {ok:true,already:true};
   if(field.disabled)return {ok:false,reason:'campo '+caption+' disabilitato'};
   if(field.tagName==='SELECT'){
     const option=[...field.options].find(x=>exactPolicyName(x.textContent||'',target));
     if(!option)return {ok:false,reason:'policy '+target+' non presente nelle opzioni'};
-    field.value=option.value;
+    const old=field.value;field.value=option.value;
+    if(field._valueTracker?.setValue)field._valueTracker.setValue(old);
     field.dispatchEvent(new Event('input',{bubbles:true}));
     field.dispatchEvent(new Event('change',{bubbles:true}));
-    await sleep(180);
+    await sleep(250);
     return policySelected(field,target)?{ok:true}:{ok:false,reason:'eBay non ha accettato '+target}
   }
+  const previous=String(field.value??'');
+  const restore=()=>{
+    if(field.isConnected!==false&&clean(field.value)===clean(target)&&!policySelected(field,previous)){
+      nativeValueSetter(field,previous);
+      field.blur?.()
+    }
+  };
   try{field.scrollIntoView({block:'center'})}catch(_){}
-  field.click?.();field.focus?.();
-  let option=null;
-  for(let i=0;i<9&&!option;i++){option=policyOption(target);if(!option)await sleep(120)}
-  if(!option&&allowSearch&&!field.readOnly&&(field instanceof HTMLInputElement||field instanceof HTMLTextAreaElement)){
-    nativeValueSetter(field,target);
-    await sleep(250);
-    for(let i=0;i<12&&!option;i++){option=policyOption(target);if(!option)await sleep(120)}
+  for(let round=0;round<2;round++){
+    const activeField=policyField(caption,root)||field;
+    activeField.click?.();activeField.focus?.();
+    let option=null;
+    for(let i=0;i<14&&!option;i++){option=policyOption(target,activeField);if(!option)await sleep(130)}
+    if(!option&&round===0&&allowSearch&&!activeField.readOnly&&
+       (activeField instanceof HTMLInputElement||activeField instanceof HTMLTextAreaElement)){
+      await typeLikeUser(activeField,target);
+      for(let i=0;i<12&&!option;i++){option=policyOption(target,activeField);if(!option)await sleep(130)}
+    }
+    if(!option)continue;
+    option.click();
+    for(let i=0;i<16;i++){
+      await sleep(150);
+      const current=policyField(caption,root)||activeField;
+      if(policySelected(current,target)){
+        current.blur?.();
+        return {ok:true}
+      }
+    }
   }
-  if(!option)return {ok:false,reason:'opzione '+target+' non presente nel menu'};
-  option.click();
-  for(let i=0;i<12;i++){await sleep(140);if(policySelected(field,target))return {ok:true}}
-  return {ok:false,reason:'eBay non ha confermato '+target}
+  restore();
+  return {ok:false,reason:'policy '+target+' non selezionata o non confermata da eBay'}
 }
 
 async function applyLocation(parts){
   const needsZip=maskedPostal(parts.postalCode)||(!clean(parts.postalCode)&&/^(?:US|USA|United States|United States of America)$/i.test(clean(parts.country)));
   const resolvedPostal=needsZip?await resolveMaskedUsPostal(parts):clean(parts.postalCode);
-  if(needsZip&&!resolvedPostal)return {ok:false,reason:'ZIP sorgente non disponibile e impossibile ricavare un CAP valido'};
-
+  if(needsZip&&!resolvedPostal)return {ok:false,reason:'ZIP non disponibile per la località fissa'};
   const root=await openLocationEditor();
-  const locationOk=await fillLocationForm(root,parts,resolvedPostal);
-  // Return policy lives in the same eBay "Your settings" modal.
+  const firstLocation=await fillLocationForm(root,parts,resolvedPostal);
   const activeRoot=settingsRoot();
+  // Return belongs to the same settings dialog as the item location.
   const returns=await selectPolicy('Return policy',POLICY_TARGETS.returns,activeRoot,{allowSearch:false});
   if(!returns.ok)reportSetting('Return policy: '+returns.reason,'warn');
-  if(!locationOk&&!returns.ok){await closeLocationDialog();return {ok:false,postal:resolvedPostal,returns,reason:'campi Item Location non aggiornabili'}}
-  const saved=await saveAndVerify(activeRoot,parts,resolvedPostal);
+  // Selecting a policy can re-render the form. Verify ZIP last, immediately before Done.
+  let zipOk=await ensurePostalCode(resolvedPostal);
+  // ZIP updates can also rerender the Return control: verify and retry once if needed.
+  if(returns.ok&&!policySelected(policyField('Return policy',settingsRoot())||{},POLICY_TARGETS.returns)){
+    const retried=await selectPolicy('Return policy',POLICY_TARGETS.returns,settingsRoot(),{allowSearch:false});
+    returns.ok=!!retried.ok;
+    zipOk=await ensurePostalCode(resolvedPostal);
+  }
+  const locationOk=zipOk&&locationFormMatches(parts,resolvedPostal);
+  const returnField=policyField('Return policy',settingsRoot());
+  if(returns.ok&&(!returnField||!policySelected(returnField,POLICY_TARGETS.returns)))returns.ok=false;
+  if(!locationOk)reportSetting('Item Location: CAP non confermato; trovato '+clean(locationField('zip')?.value),'warn');
+  if(!returns.ok)reportSetting('Return policy: selezione non confermata dopo la modifica del CAP','warn');
+  const saved=locationOk&&await saveAndVerify(settingsRoot(),parts,resolvedPostal);
   if(!saved)returns.ok=false;
-  return {ok:locationOk&&saved,postal:resolvedPostal,returns,reason:!locationOk?'Item Location non impostata':saved?'':'salvataggio Item Location non riuscito'}
+  return {ok:!!(firstLocation&&locationOk&&saved),postal:resolvedPostal,returns,
+    reason:!locationOk?'ZIP non confermato da eBay':saved?'':'salvataggio Item Location non riuscito'}
 }
+
 function writeLocation(row,state,msg){if(!row)return;row.innerHTML='<b>Item Location:</b> <span class="'+state+'">'+String(msg||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';}
 
 for(let i=0;i<40&&!patchUi();i++)await sleep(100);
@@ -335,11 +436,19 @@ try{
   writeLocation(row,'warn','Item Location Fort Pierce (FL) 34981 non applicata');
   reportSetting('Item Location: '+String(e&&e.message||e),'warn');
 }
+const policyStatus=[];
 for(const spec of [['Shipping policy',POLICY_TARGETS.shipping],['Payment policy',POLICY_TARGETS.payment]]){
   try{
     const res=await selectPolicy(spec[0],spec[1],document,{allowSearch:true});
-    reportSetting(spec[0]+': '+(res.ok?'selezionata '+spec[1]:res.reason),res.ok?'ok':'warn');
-  }catch(e){reportSetting(spec[0]+': '+String(e&&e.message||e),'warn')}
+    policyStatus.push({name:spec[0],target:spec[1],result:res});
+  }catch(e){policyStatus.push({name:spec[0],target:spec[1],result:{ok:false,reason:String(e&&e.message||e)}})}
+}
+await sleep(350);
+for(const status of policyStatus){
+  const field=policyField(status.name,document);
+  const confirmed=!!(status.result.ok&&field&&policySelected(field,status.target));
+  reportSetting(status.name+': '+(confirmed?'selezionata '+status.target:(status.result.reason||'eBay non ha mantenuto la selezione')),
+    confirmed?'ok':'warn');
 }
 patchUi();
 })();
