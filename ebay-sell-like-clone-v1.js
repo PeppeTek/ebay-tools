@@ -398,7 +398,61 @@ function existingEbayPhotoCount(){
   return 0
 }
 function photoInput(){return [...document.querySelectorAll('input[type="file"]')].find(x=>x.multiple||/image/i.test(x.accept||''))||document.querySelector('input[type="file"]')}
-async function uploadImages(urls){const input=photoInput();if(!input)throw Error('Input foto eBay non trovato');urls=uniqUrls(urls).slice(0,24);if(!urls.length)throw Error('Nessuna foto sorgente disponibile');const files=new Array(urls.length);for(let base=0;base<urls.length;base+=4){await Promise.all(urls.slice(base,base+4).map(async(u,j)=>{const i=base+j;try{const r=await fetch(u,{mode:'cors',credentials:'omit',cache:'force-cache'});if(!r.ok)throw Error('HTTP '+r.status);const blob=await r.blob();const mime=blob.type||'image/jpeg';const ext=/png/i.test(mime)?'png':/webp/i.test(mime)?'webp':'jpg';files[i]=new File([blob],String(itemId)+'-'+String(i+1).padStart(2,'0')+'.'+ext,{type:mime,lastModified:Date.now()})}catch(e){console.warn('Image fetch failed',u,e)}}))}const dt=new DataTransfer();files.filter(Boolean).forEach(f=>dt.items.add(f));if(!dt.files.length)throw Error('Nessuna foto scaricabile dal browser');input.files=dt.files;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));return dt.files.length}
+async function decodedPhotoSize(blob){
+  if(typeof createImageBitmap==='function'){
+    const bitmap=await createImageBitmap(blob);
+    try{return {width:bitmap.width,height:bitmap.height}}finally{bitmap.close?.()}
+  }
+  const url=URL.createObjectURL(blob);
+  try{
+    return await new Promise((resolve,reject)=>{
+      const img=new Image();
+      img.onload=()=>resolve({width:img.naturalWidth,height:img.naturalHeight});
+      img.onerror=()=>reject(Error('Immagine non decodificabile'));
+      img.src=url
+    })
+  }finally{URL.revokeObjectURL(url)}
+}
+let lastImageUploadStats=null;
+async function uploadImages(urls){
+  const input=photoInput();
+  if(!input)throw Error('Input foto eBay non trovato');
+  urls=uniqUrls(urls).slice(0,24);
+  if(!urls.length)throw Error('Nessuna foto sorgente disponibile');
+  const files=new Array(urls.length);
+  const stats={requested:urls.length,valid:0,tooSmall:0,invalid:0,fetchFailed:0};
+  for(let base=0;base<urls.length;base+=4){
+    await Promise.all(urls.slice(base,base+4).map(async(u,j)=>{
+      const i=base+j;
+      try{
+        // Do not download or forward arbitrary backend URLs in the product-gallery uploader.
+        if(!/^https:\/\/i\.ebayimg\.com\/images\/g\//i.test(u)){stats.invalid++;return}
+        const r=await fetch(u,{mode:'cors',credentials:'omit',cache:'force-cache'});
+        if(!r.ok)throw Error('HTTP '+r.status);
+        const blob=await r.blob();
+        if(!/^image\/(?:jpeg|png|webp|gif)$/i.test(blob.type||'')){stats.invalid++;return}
+        let dim;
+        try{dim=await decodedPhotoSize(blob)}catch(err){stats.invalid++;console.warn('Invalid eBay image data',u,err);return}
+        if(dim.width<500||dim.height<500){
+          stats.tooSmall++;
+          console.warn('eBay photo below minimum 500px',u,dim);
+          return
+        }
+        const mime=blob.type,ext=/png/i.test(mime)?'png':/webp/i.test(mime)?'webp':/gif/i.test(mime)?'gif':'jpg';
+        files[i]=new File([blob],String(itemId)+'-'+String(i+1).padStart(2,'0')+'.'+ext,{type:mime,lastModified:Date.now()});
+        stats.valid++
+      }catch(err){stats.fetchFailed++;console.warn('Image fetch failed',u,err)}
+    }))
+  }
+  lastImageUploadStats=stats;
+  const dt=new DataTransfer();
+  files.filter(Boolean).forEach(f=>dt.items.add(f));
+  if(!dt.files.length)throw Error('Nessuna foto valida (minimo 500×500 pixel) da caricare');
+  input.files=dt.files;
+  input.dispatchEvent(new Event('input',{bubbles:true}));
+  input.dispatchEvent(new Event('change',{bubbles:true}));
+  return dt.files.length
+}
 let previewPreparePromise=null,previewReady=false,uploadedImageSignature='';
 const stepRows={};
 function setStep(name,state,msg){
@@ -603,7 +657,11 @@ try{
       try{
         const n=await uploadImages(data.images);
         uploadedImageSignature=data.images.join('|');
-        operationalLog('Foto: '+n+'/'+data.images.length+' caricate su eBay','ok')
+        operationalLog('Foto: '+n+'/'+data.images.length+' file validi inviati al form eBay','ok');
+        if(lastImageUploadStats){
+          const st=lastImageUploadStats;
+          if(st.tooSmall||st.invalid||st.fetchFailed)operationalLog('Foto scartate: '+st.tooSmall+' sotto 500px, '+st.invalid+' non valide, '+st.fetchFailed+' non scaricabili','warn')
+        }
       }catch(imgErr){operationalLog('Foto: '+imgErr.message+' — ritento prima della Preview','warn')}
     }
   }else operationalLog('Foto: nessuna immagine disponibile nella preparazione iniziale; ritento in Preview','warn');
