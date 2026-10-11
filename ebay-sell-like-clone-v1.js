@@ -280,7 +280,9 @@ function readEditorPrice(){const el=labelControl(/^(price|buy it now price|fixed
 // Reuse the same editor-price writer as the working percentage control for direct edits.
 window.__capitanSellLikeWriteEditorPrice=function(value){
   const n=Number(value);
-  if(!isFinite(n)||n<=0||!setPrice(n))return false;
+  if(!isFinite(n)||n<=0)return false;
+  const field=labelControl(/^(price|buy it now price|fixed price)$/i)||candidates('input',/(^|\b)(price|binprice|startprice)(\b|$)/i);
+  if(!field||field.closest('#'+ID)||!setPrice(n))return false;
   const actual=readEditorPrice();
   return actual!=null&&Math.abs(actual-n)<.011
 };
