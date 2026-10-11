@@ -5,6 +5,13 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const visible=e=>!!(e&&e.getClientRects&&e.getClientRects().length);
 const panel=()=>document.getElementById(ID);
+const FIXED_ITEM_LOCATION=Object.freeze({city:'Fort Pierce',stateOrProvince:'Florida',postalCode:'34981',country:'US'});
+const POLICY_TARGETS=Object.freeze({returns:'No Return Accepted',shipping:'UPS 3 Day Select United States',payment:'Payment Policy'});
+function reportSetting(message,state='warn'){
+  const t=String(message||'');
+  if(typeof window.__capitanTestLog==='function')window.__capitanTestLog(t,state);
+  else (window.__capitanPendingTestLogs=window.__capitanPendingTestLogs||[]).push({message:t,state});
+}
 
 function patchUi(){
   const p=panel(); if(!p) return false;
@@ -219,37 +226,96 @@ async function fillLocationForm(root,parts,resolvedPostal){
   const country=fieldByCaption(/^country\s+or\s+region$/i,root)||fieldByCaption(/^country$/i,root);
   const city=fieldByCaption(/^city\s*,\s*state$/i,root);
   const zip=fieldByCaption(/^zip code$/i,root)||fieldByCaption(/^(zip|postal code|postcode)$/i,root);
-  const cityState=[parts.city,parts.stateOrProvince].filter(Boolean).join(', ');
-  if(!city&&cityState)return false;
-  if(!zip&&resolvedPostal)return false;
-  if(country&&parts.country)await setChoice(country,parts.country,true);
-  if(zip&&resolvedPostal)await typeLikeUser(zip,resolvedPostal);
+  const cityState=[parts.city,stateAbbr(parts.stateOrProvince)||parts.stateOrProvince].filter(Boolean).join(', ');
+  if(!country||!city||!zip)return false;
+  const countryOk=await setChoice(country,parts.country,true);
+  if(!countryOk)return false;
+  const zipOk=await typeLikeUser(zip,resolvedPostal);
   await sleep(300);
-  if(city&&cityState)await typeLikeUser(city,cityState);
+  const cityOk=await typeLikeUser(city,cityState);
   await sleep(650);
-  return true
+  return !!(zipOk&&cityOk&&clean(zip.value)===clean(resolvedPostal))
 }
+
+function exactPolicyName(text,target){
+  return clean(text).replace(/\s*[\[(]\s*\d+\s+listings\s*[)\]]\s*$/i,'').toLowerCase()===clean(target).toLowerCase()
+}
+function policyField(caption,root){
+  const re=caption==='Return policy'?/^return policy$/i:caption==='Shipping policy'?/^shipping policy$/i:/^payment policy$/i;
+  const f=fieldByCaption(re,root);
+  return f&&visible(f)&&!panel()?.contains(f)?f:null
+}
+function policySelected(field,target){
+  const values=[field.value,field.getAttribute?.('aria-valuetext'),field.getAttribute?.('data-value')];
+  if(field.tagName==='SELECT')values.push(field.options?.[field.selectedIndex]?.textContent||'');
+  return values.some(v=>exactPolicyName(v||'',target))
+}
+function policyOption(target){
+  const matches=[...document.querySelectorAll('[role="option"],[role="menuitem"],li,button,[data-testid*="option"],[class*="suggestion"],div,span')]
+    .filter(e=>visible(e)&&!panel()?.contains(e)&&clean(e.innerText||e.textContent).length<130&&exactPolicyName(e.innerText||e.textContent,target));
+  matches.sort((a,b)=>a.querySelectorAll('*').length-b.querySelectorAll('*').length);
+  for(const e of matches){
+    const opt=e.closest('[role="option"],[role="menuitem"],li,button,[data-testid*="option"]')||e;
+    if(visible(opt)&&!panel()?.contains(opt))return opt
+  }
+  return null
+}
+async function selectPolicy(caption,target,root=document,{allowSearch=true}={}){
+  let field=null;
+  for(let i=0;i<12&&!field;i++){field=policyField(caption,root);if(!field)await sleep(160)}
+  if(!field)return {ok:false,reason:'campo '+caption+' non trovato'};
+  if(policySelected(field,target))return {ok:true,already:true};
+  if(field.disabled)return {ok:false,reason:'campo '+caption+' disabilitato'};
+  try{field.scrollIntoView({block:'center'})}catch(_){}
+  field.click?.();field.focus?.();
+  let option=null;
+  for(let i=0;i<9&&!option;i++){option=policyOption(target);if(!option)await sleep(120)}
+  if(!option&&allowSearch&&!field.readOnly&&(field instanceof HTMLInputElement||field instanceof HTMLTextAreaElement)){
+    nativeValueSetter(field,target);
+    await sleep(250);
+    for(let i=0;i<12&&!option;i++){option=policyOption(target);if(!option)await sleep(120)}
+  }
+  if(!option)return {ok:false,reason:'opzione '+target+' non presente nel menu'};
+  option.click();
+  for(let i=0;i<12;i++){await sleep(140);if(policySelected(field,target))return {ok:true}}
+  return {ok:false,reason:'eBay non ha confermato '+target}
+}
+
 async function applyLocation(parts){
   const needsZip=maskedPostal(parts.postalCode)||(!clean(parts.postalCode)&&/^(?:US|USA|United States|United States of America)$/i.test(clean(parts.country)));
   const resolvedPostal=needsZip?await resolveMaskedUsPostal(parts):clean(parts.postalCode);
   if(needsZip&&!resolvedPostal)return {ok:false,reason:'ZIP sorgente non disponibile e impossibile ricavare un CAP valido'};
 
   const root=await openLocationEditor();
-  if(!await fillLocationForm(root,parts,resolvedPostal)){await closeLocationDialog();return {ok:false,reason:'campi Item Location eBay non trovati'}};
-  const ok=await saveAndVerify(root,parts,resolvedPostal);
-  return {ok,postal:resolvedPostal,reason:ok?'':'salvataggio Item Location non riuscito'}
+  const locationOk=await fillLocationForm(root,parts,resolvedPostal);
+  // Return policy lives in the same eBay "Your settings" modal.
+  const returns=await selectPolicy('Return policy',POLICY_TARGETS.returns,root,{allowSearch:false});
+  if(!returns.ok)reportSetting('Return policy: '+returns.reason,'warn');
+  if(!locationOk&&!returns.ok){await closeLocationDialog();return {ok:false,postal:resolvedPostal,returns,reason:'campi Item Location non aggiornabili'}}
+  const saved=await saveAndVerify(root,parts,resolvedPostal);
+  return {ok:locationOk&&saved,postal:resolvedPostal,returns,reason:!locationOk?'Item Location non impostata':saved?'':'salvataggio Item Location non riuscito'}
 }
 function writeLocation(row,state,msg){if(!row)return;row.innerHTML='<b>Item Location:</b> <span class="'+state+'">'+String(msg||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';}
 
 for(let i=0;i<40&&!patchUi();i++)await sleep(100);
-let row=null;for(let i=0;i<900;i++){row=getLocationRow();if(row)break;await sleep(100)}
-if(!row)return;
-const display=parseDisplayFromRow(row);if(!display)return;
-const parts=locationParts(display);
+let row=null;for(let i=0;i<130;i++){row=getLocationRow();if(row)break;await sleep(100)}
+const parts=FIXED_ITEM_LOCATION;
 try{
   const result=await applyLocation(parts);
-  if(result.ok)writeLocation(row,'ok',window.__capitanSellLikeMode==='variants'?locationDisplay(parts,result.postal):parts.city+', '+parts.stateOrProvince+', '+result.postal+', '+parts.country);
-  else writeLocation(row,'warn','sorgente: '+display+' — '+result.reason);
-}catch(e){await closeLocationDialog();console.warn('Sell Like This location',e);writeLocation(row,'warn','sorgente: '+display+' — copia automatica non riuscita');}
+  if(result.ok){writeLocation(row,'ok',locationDisplay(parts,result.postal));reportSetting('Item Location inviata: '+locationDisplay(parts,result.postal),'ok')}
+  else{writeLocation(row,'warn','Fort Pierce (FL) 34981 non confermata — '+result.reason);reportSetting('Item Location: '+result.reason,'warn')}
+  if(result.returns?.ok)reportSetting('Return policy selezionata: '+POLICY_TARGETS.returns,'ok');
+}catch(e){
+  await closeLocationDialog();
+  console.warn('Sell Like This location',e);
+  writeLocation(row,'warn','Item Location Fort Pierce (FL) 34981 non applicata');
+  reportSetting('Item Location: '+String(e&&e.message||e),'warn');
+}
+for(const spec of [['Shipping policy',POLICY_TARGETS.shipping],['Payment policy',POLICY_TARGETS.payment]]){
+  try{
+    const res=await selectPolicy(spec[0],spec[1],document,{allowSearch:true});
+    reportSetting(spec[0]+': '+(res.ok?'selezionata '+spec[1]:res.reason),res.ok?'ok':'warn');
+  }catch(e){reportSetting(spec[0]+': '+String(e&&e.message||e),'warn')}
+}
 patchUi();
 })();
