@@ -11,6 +11,7 @@ let panel=null,logBody=null,alertChip=null;
 const seen=new Set();
 const lastStatus=new Map();
 let alertCount=0;
+const pendingLog=[];
 
 function stamp(){try{return new Intl.DateTimeFormat('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date())}catch(_){return new Date().toLocaleTimeString()}}
 function levelColor(l){return l==='bad'?'#b42318':l==='warn'?'#a15c00':l==='ok'?'#137333':'#444'}
@@ -92,15 +93,26 @@ function ensureLog(){
   logBody=box.querySelector('#capitan-oplog-body');
   return !!logBody
 }
-function log(msg,level='info'){
-  msg=clean(msg);if(!msg)return;
-  const key=level+'|'+msg;if(seen.has(key))return;seen.add(key);
-  if(!ensureLog())return;
+function appendLog(msg,level){
+  const key=level+'|'+msg;if(seen.has(key))return;
+  seen.add(key);
   const row=document.createElement('div');
   row.style.cssText='display:grid;grid-template-columns:68px 1fr;padding:2px 7px;border-bottom:1px solid #eee;color:'+levelColor(level);
   row.innerHTML='<span>'+esc(stamp())+'</span><span>'+esc(msg)+'</span>';
   logBody.appendChild(row);logBody.scrollTop=logBody.scrollHeight;
   if(level==='warn'||level==='bad')alert()
+}
+function flushPendingLog(){
+  if(!ensureLog())return;
+  while(pendingLog.length){
+    const x=pendingLog.shift();
+    appendLog(x.msg,x.level)
+  }
+}
+function log(msg,level='info'){
+  msg=clean(msg);if(!msg)return;
+  if(!ensureLog()){pendingLog.push({msg,level});return}
+  appendLog(msg,level)
 }
 window.__capitanLog=log;
 
@@ -164,7 +176,7 @@ function apply(){
   }
   const actions=panel.querySelector('[data-ebay-actions]');
   if(actions){actions.style.flex='0 0 auto';actions.style.position='relative'}
-  header();ensureLog();hideRoutineRows();scan();
+  header();ensureLog();flushPendingLog();hideRoutineRows();scan();
   return true
 }
 for(let i=0;i<80&&!apply();i++)await sleep(75);
