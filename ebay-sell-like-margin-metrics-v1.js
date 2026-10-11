@@ -36,16 +36,17 @@ function hasSourcingResults(){
 }
 function colorValue(el,val){if(!el)return;el.style.fontWeight=isFinite(val)?'700':'400';el.style.color=isFinite(val)?(val<0?'#b42318':'#137333'):''}
 function findEbayPriceField(){
-  const labelRe=/^(price|buy it now price|fixed price)$/i;
+  const labelRe=/^(?:item\s+)?(?:price|buy it now price|fixed price)$/i;
+  const editorField=el=>!!(el&&!el.disabled&&!el.closest('#'+PANEL_ID));
   for(const l of document.querySelectorAll('label')){
     const t=clean(l.innerText||l.textContent);
     if(!labelRe.test(t))continue;
     let el=l.htmlFor?document.getElementById(l.htmlFor):l.querySelector('input');
-    if(el)return el;
+    if(editorField(el))return el;
     let p=l.parentElement;
-    for(let i=0;i<4&&p;i++,p=p.parentElement){el=p.querySelector('input');if(el)return el}
+    for(let i=0;i<4&&p;i++,p=p.parentElement){el=p.querySelector('input');if(editorField(el))return el}
   }
-  return [...document.querySelectorAll('input')].find(el=>/(^|\b)(price|binprice|startprice)(\b|$)/i.test(clean([el.name,el.id,el.getAttribute('aria-label'),el.placeholder].join(' '))))||null
+  return [...document.querySelectorAll('input')].find(el=>editorField(el)&&/(^|\b)(price|binprice|startprice)(\b|$)/i.test(clean([el.name,el.id,el.getAttribute('aria-label'),el.placeholder].join(' '))))||null
 }
 function setNativeInputValue(el,value){
   if(!el)return false;
@@ -62,9 +63,24 @@ function applyManualSalePrice(value,row,span,input){
   const n=Number(String(value).replace(',','.'));
   if(!isFinite(n)||n<=0)return false;
   const rounded=Math.round(n*100)/100;
+  // Match the already-working percent-price path; never interpret updating this input alone as success.
+  const writer=window.__capitanSellLikeWriteEditorPrice;
+  let priceWritten=false;
+  if(typeof writer==='function'){
+    try{priceWritten=writer(rounded)===true}catch(e){console.warn('Sell Like manual editor price',e)}
+  }else{
+    const field=findEbayPriceField();
+    if(field&&setNativeInputValue(field,rounded.toFixed(2))){
+      const actual=Number(String(field.value||'').replace(/[^0-9.,]/g,'').replace(',','.'));
+      priceWritten=isFinite(actual)&&Math.abs(actual-rounded)<.011
+    }
+  }
+  if(!priceWritten){
+    console.warn('Sell Like: Item price eBay non aggiornato',rounded);
+    try{window.__capitanTestLog?.('Prezzo manuale non scritto in Item price eBay','warn')}catch(_){}
+    return false
+  }
   if(span){span.textContent=rounded.toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD');colorValue(span,rounded)}
-  const field=findEbayPriceField();
-  if(field)setNativeInputValue(field,rounded.toFixed(2));
   window.__capitanSellLikeSalePrice=rounded;
   const source=Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice);
   let reverseDiscount=null;
