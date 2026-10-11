@@ -302,10 +302,11 @@ async function applyLocation(parts){
   const root=await openLocationEditor();
   const locationOk=await fillLocationForm(root,parts,resolvedPostal);
   // Return policy lives in the same eBay "Your settings" modal.
-  const returns=await selectPolicy('Return policy',POLICY_TARGETS.returns,root,{allowSearch:false});
+  const activeRoot=settingsRoot();
+  const returns=await selectPolicy('Return policy',POLICY_TARGETS.returns,activeRoot,{allowSearch:false});
   if(!returns.ok)reportSetting('Return policy: '+returns.reason,'warn');
   if(!locationOk&&!returns.ok){await closeLocationDialog();return {ok:false,postal:resolvedPostal,returns,reason:'campi Item Location non aggiornabili'}}
-  const saved=await saveAndVerify(root,parts,resolvedPostal);
+  const saved=await saveAndVerify(activeRoot,parts,resolvedPostal);
   if(!saved)returns.ok=false;
   return {ok:locationOk&&saved,postal:resolvedPostal,returns,reason:!locationOk?'Item Location non impostata':saved?'':'salvataggio Item Location non riuscito'}
 }
