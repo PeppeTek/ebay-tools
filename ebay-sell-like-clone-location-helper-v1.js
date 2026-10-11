@@ -279,6 +279,15 @@ async function selectPolicy(caption,target,root=document,{allowSearch=true}={}){
   if(!field)return {ok:false,reason:'campo '+caption+' non trovato'};
   if(policySelected(field,target))return {ok:true,already:true};
   if(field.disabled)return {ok:false,reason:'campo '+caption+' disabilitato'};
+  if(field.tagName==='SELECT'){
+    const option=[...field.options].find(x=>exactPolicyName(x.textContent||'',target));
+    if(!option)return {ok:false,reason:'policy '+target+' non presente nelle opzioni'};
+    field.value=option.value;
+    field.dispatchEvent(new Event('input',{bubbles:true}));
+    field.dispatchEvent(new Event('change',{bubbles:true}));
+    await sleep(180);
+    return policySelected(field,target)?{ok:true}:{ok:false,reason:'eBay non ha accettato '+target}
+  }
   try{field.scrollIntoView({block:'center'})}catch(_){}
   field.click?.();field.focus?.();
   let option=null;
