@@ -109,19 +109,25 @@ function shippingNumeric(v){
   return m?Number(String(m[1]).replace(',','.')):0
 }
 function cardTotal(x){
-  const base=Number(x&&x.price);
-  if(!isFinite(base))return null;
-  const ship=clean(x&&x.shipping||'');
+  if(!x||x.price===null||x.price===undefined||x.price==='')return null;
+  const base=Number(x.price);
+  if(!isFinite(base)||base<0)return null;
+  const ship=clean(x.shipping||'');
   if(/free\s+shipping\s+over/i.test(ship))return Math.round((base+1.99)*100)/100;
-  const explicit=Number(x&&x.shippingAmount);
-  if(isFinite(explicit)&&explicit>0)return Math.round((base+explicit)*100)/100;
+  if(/^free\s+shipping\s*$/i.test(ship))return Math.round(base*100)/100;
+  if(!ship)return null; // Never misrepresent product price as delivered total.
+  if(x.shippingAmount!==null&&x.shippingAmount!==undefined&&x.shippingAmount!==''){
+    const explicit=Number(x.shippingAmount);
+    if(isFinite(explicit)&&explicit>=0)return Math.round((base+explicit)*100)/100
+  }
   const parsed=shippingNumeric(ship);
-  return Math.round((base+(isFinite(parsed)?parsed:0))*100)/100
+  return isFinite(parsed)?Math.round((base+parsed)*100)/100:null
 }
 function render(list,append=false){
-  const incoming=(Array.isArray(list)?list:[]).filter(x=>{
-    return !!clean(x&&x.image||'') && !!clean(x&&x.shipping||'')
-  });
+  // Preserve all product matches. Missing image/shipping is a warning, not grounds
+  // to hide the product (which made a successful search appear completely empty).
+  const incoming=(Array.isArray(list)?list:[]).filter(x=>!!clean(x&&x.productId||''));
+  const selectedIds=new Set([...results.querySelectorAll('input.capitan-aliexpress-choice:checked')].map(el=>el.value));
   if(!append)accumulatedMatches=[];
 
   const existingIds=new Set(accumulatedMatches.map(x=>String(x&&x.productId||'')));
@@ -149,10 +155,12 @@ function render(list,append=false){
     r.style.cssText='position:relative;display:grid;grid-template-columns:24px 72px minmax(0,1fr);gap:8px;align-items:center;padding:7px 8px;border-bottom:'+(i===lastMatches.length-1?'0':'1px solid #eee')+';cursor:pointer;font-size:12px;min-height:82px';
 
     const total=cardTotal(x);
-    const totalText=total==null?'—':Number(total).toFixed(2)+' '+esc(x.currency||'USD');
+    const totalText=total==null?'Totale n.d.':Number(total).toFixed(2)+' '+esc(x.currency||'USD');
     const url=esc(x.url||('https://www.aliexpress.us/item/'+(x.productId||'')+'.html'));
     const image=clean(x.image||'');
-    const img='<img src="'+esc(image)+'" referrerpolicy="no-referrer" alt="AliExpress" style="width:72px;height:72px;object-fit:contain;border:1px solid #ddd;border-radius:7px;background:#fff">';
+    const img=image
+      ? '<img src="'+esc(image)+'" referrerpolicy="no-referrer" loading="lazy" alt="AliExpress" style="width:72px;height:72px;object-fit:contain;border:1px solid #ddd;border-radius:7px;background:#fff">'
+      : '<div title="Main image AliExpress non recuperata" style="width:72px;height:72px;border:1px solid #e9b86d;border-radius:7px;background:#fff9ef;display:grid;place-items:center;font-size:11px;color:#a15c00">⚠ Foto</div>';
 
     const title=clean(x.title||'');
     const shortTitle=title.length>72?title.slice(0,69)+'…':title;
@@ -165,7 +173,7 @@ function render(list,append=false){
     const line3=[];
     if(sold)line3.push('Venduti: '+esc(sold));
     if(delivery)line3.push('Consegna: '+esc(delivery));
-    const line4='Spedizione: '+esc(shipping)+(stock?' · Stock: '+esc(stock):'');
+    const line4='Spedizione: '+esc(shipping||'da verificare')+(stock?' · Stock: '+esc(stock):'');
 
     const info='<div style="min-width:0;line-height:1.12;padding-right:68px">'+
       '<a href="'+url+'" target="_blank" rel="noopener" style="display:block;color:#111;text-decoration:none;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(shortTitle||x.productId||'')+'</a>'+
@@ -174,7 +182,7 @@ function render(list,append=false){
       '<div style="margin-top:2px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:68px">'+line4+'</div>'+
       '</div>';
 
-    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(i===0?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747">'+img+info+
+    r.innerHTML='<input type="checkbox" class="capitan-aliexpress-choice" value="'+esc(x.productId||'')+'" '+(selectedIds.has(String(x.productId||''))||(i===0&&selectedIds.size===0)?'checked':'')+' style="width:16px;height:16px;border-radius:0;accent-color:#ff4747">'+img+info+
       '<span style="position:absolute;top:6px;right:7px;opacity:.95">'+aliLogoSvg()+'</span>'+
       '<span title="Totale prodotto + spedizione" style="position:absolute;right:8px;bottom:7px;white-space:nowrap;font-weight:700">'+totalText+'</span>';
 
