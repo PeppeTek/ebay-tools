@@ -9,6 +9,7 @@ const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const now=()=>new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 let lastStatus='',seenClicks=new WeakSet(),shippingFallbackPromise=null;
+let dualRefreshQueued=false,fxPending=null,fxLastFailure=0,fxActiveCurrency='',fxRate=null;
 
 const style=document.createElement('style');
 style.id='capitan-prod-ui-style';
@@ -39,10 +40,117 @@ ${PANEL_ID} #capitan-amazon-results [data-card-shipping],${PANEL_ID} #capitan-al
 #${PANEL_ID} .capitan-log-ok{color:#137333}
 #${PANEL_ID} .capitan-log-warn{color:#a15c00}
 #${PANEL_ID} .capitan-log-bad{color:#b42318}
+#${PANEL_ID} .capitan-dual-output{position:absolute;right:0;top:50%;transform:translateY(-50%);width:104px;text-align:right;white-space:nowrap;pointer-events:none;line-height:1.1;font:700 12px Arial,sans-serif}
+#${PANEL_ID} .capitan-dual-output small{display:block;font:600 10px Arial,sans-serif;line-height:1.1;margin-top:2px;color:#666}
 `;
 document.head.appendChild(style);
 
 function panel(){return document.getElementById(PANEL_ID)}
+
+const FX_CACHE_KEY='capitan-sell-like-fx-to-usd-v2';
+const FX_TTL_MS=24*60*60*1000;
+function marketCurrency(){return String(window.__capitanSellLikeCurrency||window.__capitanSellLikeCloneData?.currency||'USD').toUpperCase()}
+function roundCurrency(n){return Math.round((n+Number.EPSILON)*100)/100}
+function formatted(n,c){return Number.isFinite(n)?roundCurrency(n).toFixed(2)+' '+c:'— '+c}
+function readNumeric(el){
+  const raw=clean(el&&el.textContent||'');
+  const match=raw.match(/^-?\d+(?:[.,]\d+)?/);
+  return match?Number(match[0].replace(',','.')):null
+}
+function validFx(rate){return typeof rate==='number'&&Number.isFinite(rate)&&rate>0}
+function fxCache(){
+  try{const x=JSON.parse(localStorage.getItem(FX_CACHE_KEY)||'{}');return x&&typeof x==='object'?x:{}}catch(_){return{}}
+}
+function fxRead(cur){
+  if(cur==='USD')return 1;
+  if(fxActiveCurrency===cur&&validFx(fxRate))return fxRate;
+  const hit=fxCache()[cur];
+  if(hit&&validFx(hit.rate)&&Date.now()-Number(hit.at||0)<FX_TTL_MS){
+    fxActiveCurrency=cur;fxRate=hit.rate;return fxRate
+  }
+  return null
+}
+async function fxLoad(cur){
+  if(fxPending)return fxPending;
+  if(cur==='USD'||fxRead(cur)!==null||Date.now()-fxLastFailure<15*60*1000)return;
+  fxPending=(async()=>{
+    const ctl=new AbortController(),timeout=setTimeout(()=>ctl.abort(),8000);
+    try{
+      const r=await fetch('https://api.frankfurter.dev/v2/rate/'+encodeURIComponent(cur.toLowerCase())+'/usd',{mode:'cors',credentials:'omit',cache:'no-store',signal:ctl.signal});
+      if(!r.ok)throw Error('HTTP '+r.status);
+      const d=await r.json(),n=Number(d&&d.rate);
+      if(String(d&&d.base||'').toUpperCase()!==cur||String(d&&d.quote||'').toUpperCase()!=='USD'||!validFx(n))throw Error('Tasso o payload non valido');
+      fxActiveCurrency=cur;fxRate=n;
+      const cache=fxCache();cache[cur]={rate:n,at:Date.now(),date:String(d.date||'')};
+      try{localStorage.setItem(FX_CACHE_KEY,JSON.stringify(cache))}catch(_){}
+      queueDualRefresh();
+      log('Cambio '+cur+'/USD: '+n.toFixed(5)+(d.date?' (riferimento '+String(d.date)+')':''),'ok')
+    }catch(e){
+      fxLastFailure=Date.now();
+      console.warn('Sell Like cambio non disponibile',e);
+      log('Cambio '+cur+'/USD non disponibile: conversioni sospese','warn')
+    }finally{clearTimeout(timeout);fxPending=null}
+  })();
+  return fxPending
+}
+function queueDualRefresh(){
+  if(dualRefreshQueued)return;
+  dualRefreshQueued=true;
+  setTimeout(()=>{dualRefreshQueued=false;paintDualMoney()},85)
+}
+function paintDualMoney(){
+  const p=panel(),cur=marketCurrency();
+  if(!p||cur==='USD')return;
+  const rate=fxRead(cur);
+  if(rate===null)void fxLoad(cur);
+  const source=Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice);
+  const sale=Number(window.__capitanSellLikeSalePrice);
+  const breakEven=readNumeric(p.querySelector('#capitan-break-even-value'));
+  const fee=readNumeric(p.querySelector('#capitan-margin-break [data-value]'));
+  const purchaseUsd=readNumeric(p.querySelector('#capitan-margin-source [data-value]'));
+  // Break-even and fee formulas use the eBay local selling price. Supplier acquisition is USD.
+  const profitUsd=rate!==null&&breakEven!==null&&purchaseUsd!==null?roundCurrency(breakEven*rate-purchaseUsd):null;
+  const profitLocal=profitUsd!==null?profitUsd/rate:null;
+  const rowConfigs=[
+    ['#capitan-discount-row','#capitan-competitor-price',Number.isFinite(source)&&source>0?source:null,'local'],
+    ['#capitan-sale-price-row','span:not(#capitan-sale-price-editor)',Number.isFinite(sale)&&sale>0?sale:null,'local'],
+    ['#capitan-margin-break','[data-value]',fee,'local'],
+    ['#capitan-break-even-row','#capitan-break-even-value',breakEven,'local'],
+    ['#capitan-margin-source','[data-value]',purchaseUsd,'usd'],
+    ['#capitan-margin-delta','[data-value]',profitLocal,'profit']
+  ];
+  for(const [rowSelector,valueSelector,value,kind] of rowConfigs){
+    const row=p.querySelector(rowSelector),original=row&&row.querySelector(valueSelector);
+    if(!row||!original)continue;
+    const needsPlaceholder=kind==='profit'&&breakEven!==null&&purchaseUsd!==null;
+    if(value===null&&!needsPlaceholder){
+      const stale=row.querySelector(':scope > .capitan-dual-output');
+      if(stale)stale.remove();
+      if(original.style.visibility==='hidden')original.style.visibility='';
+      continue
+    }
+    let local=null,usd=null;
+    if(kind==='local'){local=value;usd=rate===null?null:roundCurrency(value*rate)}
+    else if(kind==='usd'){usd=value;local=rate===null?null:roundCurrency(value/rate)}
+    else{local=profitLocal;usd=profitUsd}
+    const top=formatted(local,cur),bottom=formatted(usd,'USD');
+    let out=row.querySelector(':scope > .capitan-dual-output');
+    if(!out){
+      out=document.createElement('output');
+      out.className='capitan-dual-output';
+      out.innerHTML='<b></b><small></small>';
+      row.appendChild(out);
+    }
+    if(row.style.position!=='relative')row.style.position='relative';
+    if(original.style.visibility!=='hidden')original.style.visibility='hidden';
+    const first=out.querySelector('b'),second=out.querySelector('small');
+    if(first.textContent!==top)first.textContent=top;
+    if(second.textContent!==bottom)second.textContent=bottom;
+    const wantedColor=kind==='profit'?(usd!==null&&usd<0?'#b42318':'#137333'):rowSelector==='#capitan-break-even-row'?'#1668e8':rowSelector==='#capitan-discount-row'?'#7a1f2b':rowSelector==='#capitan-margin-break'||rowSelector==='#capitan-margin-source'?'#ff4747':'#137333';
+    if(out.style.color!==wantedColor)out.style.color=wantedColor;
+  }
+}
+
 function log(message,state='ok'){
   const p=panel();if(!p)return;
   ensureUi();
@@ -145,13 +253,16 @@ window.addEventListener('capitan-ai-description-updated',()=>log('Template AI-HT
 window.addEventListener('capitan-pricing-saved',()=>log('Tariffe aggiornate','ok'));
 window.addEventListener('capitan-shipping-policy-updated',e=>log('Shipping aggiornato: '+clean(e.detail?.target||e.detail?.shipping||''),'ok'));
 window.addEventListener('capitan-sale-price-updated',e=>log('Prezzo di vendita aggiornato: '+Number(e.detail?.value||0).toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD'),'ok'));
-window.addEventListener('capitan-sell-like-ui-ready',()=>{ensureUi();wireButtons();observeStatus();log('UI pronta','ok')});
+window.addEventListener('capitan-sell-like-ui-ready',()=>{ensureUi();wireButtons();observeStatus();queueDualRefresh();log('UI pronta','ok')});
+window.addEventListener('capitan-sale-price-updated',queueDualRefresh);
+window.addEventListener('capitan-discount-updated',queueDualRefresh);
+window.addEventListener('capitan-break-even-updated',queueDualRefresh);
 
 document.addEventListener('change',e=>{
   if(e.target?.matches('input.capitan-amazon-choice,input.capitan-aliexpress-choice'))log('Prodotto sourcing '+(e.target.checked?'selezionato':'deselezionato'),'ok')
 },true);
 
-const obs=new MutationObserver(()=>{ensureUi();wireButtons();observeStatus()});
+const obs=new MutationObserver(()=>{ensureUi();wireButtons();observeStatus();queueDualRefresh()});
 obs.observe(document.body,{childList:true,subtree:true});
-ensureUi();wireButtons();observeStatus();
+ensureUi();wireButtons();observeStatus();queueDualRefresh();
 })();
