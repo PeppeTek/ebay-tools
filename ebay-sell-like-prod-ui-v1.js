@@ -54,7 +54,7 @@ function roundCurrency(n){return Math.round((n+Number.EPSILON)*100)/100}
 function formatted(n,c){return Number.isFinite(n)?roundCurrency(n).toFixed(2)+' '+c:'— '+c}
 function readNumeric(el){
   const raw=clean(el&&el.textContent||'');
-  const match=raw.match(/^-?\\d+(?:[.,]\\d+)?/);
+  const match=raw.match(/^-?\d+(?:[.,]\d+)?/);
   return match?Number(match[0].replace(',','.')):null
 }
 function validFx(rate){return typeof rate==='number'&&Number.isFinite(rate)&&rate>0}
