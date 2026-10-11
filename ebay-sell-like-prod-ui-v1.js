@@ -71,7 +71,8 @@ function fxRead(cur){
   return null
 }
 async function fxLoad(cur){
-  if(cur==='USD'||fxRead(cur)!==null||fxPending||Date.now()-fxLastFailure<15*60*1000)return;
+  if(fxPending)return fxPending;
+  if(cur==='USD'||fxRead(cur)!==null||Date.now()-fxLastFailure<15*60*1000)return;
   fxPending=(async()=>{
     const ctl=new AbortController(),timeout=setTimeout(()=>ctl.abort(),8000);
     try{
