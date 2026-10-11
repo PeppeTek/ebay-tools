@@ -147,7 +147,18 @@ async function setChoice(el,value,isCountry=false){
     const a=clean(wanted).toLowerCase(),b=clean(value).toLowerCase();const o=[...el.options].find(x=>[a,b].includes(clean(x.textContent).toLowerCase())||[a,b].includes(clean(x.value).toLowerCase()));if(!o)return false;
     const old=el.value;el.value=o.value;if(el._valueTracker&&typeof el._valueTracker.setValue==='function')el._valueTracker.setValue(old);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return true;
   }
-  if(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement){if(clean(el.value).toLowerCase()===clean(wanted).toLowerCase())return true;return await typeLikeUser(el,wanted);}
+  if(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement){
+    if(clean(el.value).toLowerCase()===clean(wanted).toLowerCase())return true;
+    if(isCountry){
+      if(el.disabled)return false;
+      el.click();await sleep(220);
+      const options=[...document.querySelectorAll('[role="option"],li,button')].filter(visible);
+      const match=options.find(x=>clean(x.innerText||x.textContent).toLowerCase()===clean(wanted).toLowerCase());
+      if(match){match.click();await sleep(280);return clean(el.value).toLowerCase()===clean(wanted).toLowerCase()}
+      if(el.readOnly)return false;
+    }
+    return await typeLikeUser(el,wanted)
+  }
   el.click?.();await sleep(250);const targets=[clean(value).toLowerCase(),clean(wanted).toLowerCase()];const option=[...document.querySelectorAll('[role="option"],li,button')].filter(visible).find(x=>targets.includes(clean(x.innerText||x.textContent).toLowerCase()));if(option){option.click();await sleep(250);return true}return false;
 }
 function locationAnchor(){const all=[...document.querySelectorAll('h1,h2,h3,h4,label,legend,span,div')].filter(visible);return all.find(x=>/^(item location|located in)$/i.test(clean(x.innerText||x.textContent)))||all.find(x=>/item location/i.test(clean(x.innerText||x.textContent))&&clean(x.innerText||x.textContent).length<120)||null;}
@@ -224,12 +235,14 @@ async function saveAndVerify(root,parts,postal){
 }
 async function fillLocationForm(root,parts,resolvedPostal){
   const country=fieldByCaption(/^country\s+or\s+region$/i,root)||fieldByCaption(/^country$/i,root);
-  const city=fieldByCaption(/^city\s*,\s*state$/i,root);
-  const zip=fieldByCaption(/^zip code$/i,root)||fieldByCaption(/^(zip|postal code|postcode)$/i,root);
+  if(!country||!await setChoice(country,parts.country,true))return false;
+  // React may remount the city/ZIP fields after a country change.
+  await sleep(350);
+  const activeRoot=settingsRoot();
+  const city=fieldByCaption(/^city\s*,\s*(?:state|province)$/i,activeRoot);
+  const zip=fieldByCaption(/^zip code$/i,activeRoot)||fieldByCaption(/^(zip|postal code|postcode)$/i,activeRoot);
   const cityState=[parts.city,stateAbbr(parts.stateOrProvince)||parts.stateOrProvince].filter(Boolean).join(', ');
-  if(!country||!city||!zip)return false;
-  const countryOk=await setChoice(country,parts.country,true);
-  if(!countryOk)return false;
+  if(!city||!zip)return false;
   const zipOk=await typeLikeUser(zip,resolvedPostal);
   await sleep(300);
   const cityOk=await typeLikeUser(city,cityState);
@@ -293,6 +306,7 @@ async function applyLocation(parts){
   if(!returns.ok)reportSetting('Return policy: '+returns.reason,'warn');
   if(!locationOk&&!returns.ok){await closeLocationDialog();return {ok:false,postal:resolvedPostal,returns,reason:'campi Item Location non aggiornabili'}}
   const saved=await saveAndVerify(root,parts,resolvedPostal);
+  if(!saved)returns.ok=false;
   return {ok:locationOk&&saved,postal:resolvedPostal,returns,reason:!locationOk?'Item Location non impostata':saved?'':'salvataggio Item Location non riuscito'}
 }
 function writeLocation(row,state,msg){if(!row)return;row.innerHTML='<b>Item Location:</b> <span class="'+state+'">'+String(msg||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';}
