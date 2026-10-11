@@ -124,18 +124,40 @@ function scan(){
     const t=clean(el.innerText||el.textContent);if(!t||lastStatus.get(sel)===t)return;
     lastStatus.set(sel,t);
     if(/completat|pronto|errore|fallit|non disponibile|aggiunt|inserit|generat/i.test(t))log(t,statusLevel(t));
-    if(sel==='#st')el.style.display='none'
+    if(sel==='#st'){
+      // Keep errors and in-progress messages visible. Hiding status unconditionally
+      // caused a blank panel while the loader was still waiting for the backend.
+      const waiting=panel.classList.contains('capitan-preparing');
+      const failure=/errore|fallit|non disponibile|non recuper|timeout|impossibile|non completat/i.test(t);
+      const finished=/preparazione completata|csv ebay pronto/i.test(t);
+      el.style.display=(!waiting&&finished&&!failure)?'none':'';
+    }
   })
 }
 function apply(){
   panel=document.getElementById(PANEL_ID);if(!panel)return false;
+  // Fixed-height panel with scrollable CONTENT, not a clipped, empty panel.
+  panel.style.display='flex';
+  panel.style.flexDirection='column';
+  panel.style.height='calc(100vh - 24px)';
+  panel.style.maxHeight='calc(100vh - 24px)';
+  panel.style.overflow='hidden';
+  const body=panel.querySelector('.b');
+  if(body){
+    body.style.flex='1 1 auto';
+    body.style.minHeight='0';
+    body.style.overflowY='auto';
+    body.style.overflowX='hidden';
+  }
+  const actions=panel.querySelector('[data-ebay-actions]');
+  if(actions){actions.style.flex='0 0 auto';actions.style.position='relative'}
   header();ensureLog();hideRoutineRows();scan();
   return true
 }
 for(let i=0;i<80&&!apply();i++)await sleep(75);
 if(!panel)return;
 log('Ambiente TEST pronto','ok');
-const obs=new MutationObserver(()=>{header();ensureLog();hideRoutineRows();scan()});
+const obs=new MutationObserver(()=>{apply()});
 obs.observe(panel,{subtree:true,childList:true,characterData:true});
 window.addEventListener('capitan-ai-description-updated',()=>log('Template AI-HTML incluso','ok'));
 window.addEventListener('capitan-sale-price-updated',e=>{const v=Number(e&&e.detail&&e.detail.value);if(isFinite(v))log('Prezzo di vendita aggiornato: '+v.toFixed(2)+' USD','ok')});
