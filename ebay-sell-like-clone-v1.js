@@ -8,6 +8,22 @@ const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
 const SOURCE_KEY='capitan-sell-like-last-source-item';
 const SHIPPING_CACHE_KEY='capitan-sell-like-source-shipping-cache-v1';
 const SOURCE_PRICE_CACHE_KEY='capitan-sell-like-source-price-cache-v1';
+// Keep source requests on the eBay marketplace hosting the current Sell Like editor.
+const EBAY_SOURCE_HOST=String(location.hostname||'').toLowerCase().replace(/^www\./,'');
+const EBAY_SOURCE_ORIGIN=/^ebay\.(?:com(?:\.[a-z]{2})?|co\.[a-z]{2}|[a-z]{2,3})$/i.test(EBAY_SOURCE_HOST)?location.origin:'https://www.ebay.com';
+const EBAY_SOURCE_CURRENCIES={
+  'ebay.com':'USD','ebay.com.au':'AUD','ebay.co.uk':'GBP','ebay.ca':'CAD',
+  'ebay.de':'EUR','ebay.fr':'EUR','ebay.it':'EUR','ebay.es':'EUR','ebay.at':'EUR',
+  'ebay.ie':'EUR','ebay.nl':'EUR','ebay.be':'EUR','ebay.ch':'CHF','ebay.pl':'PLN',
+  'ebay.com.hk':'HKD','ebay.com.sg':'SGD','ebay.com.my':'MYR','ebay.com.tw':'TWD',
+  'ebay.com.ph':'PHP','ebay.com.br':'BRL','ebay.com.mx':'MXN'
+};
+const EBAY_SOURCE_CURRENCY=EBAY_SOURCE_CURRENCIES[EBAY_SOURCE_HOST]||'USD';
+const EBAY_SOURCE_NON_US=EBAY_SOURCE_HOST!=='ebay.com';
+const sourceItemUrl=id=>EBAY_SOURCE_ORIGIN+'/itm/'+encodeURIComponent(id);
+const sourceDataKey=id=>EBAY_SOURCE_NON_US?EBAY_SOURCE_HOST+'|'+id:id;
+window.__capitanSellLikeSourceOrigin=EBAY_SOURCE_ORIGIN;
+window.__capitanSellLikeCurrency=EBAY_SOURCE_CURRENCY;
 const DISCOUNT_KEY='capitan-sell-like-discount-rate-v1';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function shippingCacheRead(){
@@ -65,21 +81,21 @@ function parseSourceShippingLabel(html){
 async function readSourceShippingLabel(sourceItemId){
   sourceItemId=String(sourceItemId||'').trim();
   if(!/^\d{9,12}$/.test(sourceItemId))throw Error('Item ID sorgente non valido per la spedizione');
-  const cache=shippingCacheRead(),hit=cache[sourceItemId];
+  const sourceKey=sourceDataKey(sourceItemId),cache=shippingCacheRead(),hit=cache[sourceKey];
   if(hit&&hit.label&&Date.now()-Number(hit.at||0)<12*60*60*1000)return hit.label;
-  if(shippingInflight[sourceItemId])return shippingInflight[sourceItemId];
-  shippingInflight[sourceItemId]=(async()=>{
+  if(shippingInflight[sourceKey])return shippingInflight[sourceKey];
+  shippingInflight[sourceKey]=(async()=>{
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),7000);
     try{
-      const r=await fetch('https://www.ebay.com/itm/'+encodeURIComponent(sourceItemId),{credentials:'include',cache:'no-store',signal:controller.signal});
+      const r=await fetch(sourceItemUrl(sourceItemId),{credentials:'include',cache:'no-store',signal:controller.signal});
       if(!r.ok)throw Error('eBay HTTP '+r.status);
       const label=parseSourceShippingLabel(await r.text());
       if(!label)throw Error('Spedizione non riconosciuta nella listing sorgente');
-      const latest=shippingCacheRead();latest[sourceItemId]={label,at:Date.now()};shippingCacheWrite(latest);
+      const latest=shippingCacheRead();latest[sourceKey]={label,at:Date.now()};shippingCacheWrite(latest);
       return label
     }finally{clearTimeout(timer)}
   })();
-  try{return await shippingInflight[sourceItemId]}finally{delete shippingInflight[sourceItemId]}
+  try{return await shippingInflight[sourceKey]}finally{delete shippingInflight[sourceKey]}
 }
 window.__capitanReadSourceShippingLabel=readSourceShippingLabel;
 function sourcePriceCacheRead(){try{const x=JSON.parse(localStorage.getItem(SOURCE_PRICE_CACHE_KEY)||'{}');return x&&typeof x==='object'?x:{}}catch(_){return{}}}
@@ -121,15 +137,15 @@ function parseSourcePrice(html){
 }
 async function readSourcePrice(sourceItemId){
   sourceItemId=String(sourceItemId||'').trim();
-  const cache=sourcePriceCacheRead(),hit=cache[sourceItemId];
+  const sourceKey=sourceDataKey(sourceItemId),cache=sourcePriceCacheRead(),hit=cache[sourceKey];
   if(hit&&isFinite(Number(hit.price))&&Number(hit.price)>0&&Date.now()-Number(hit.at||0)<12*60*60*1000)return Number(hit.price);
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
   try{
-    const r=await fetch('https://www.ebay.com/itm/'+encodeURIComponent(sourceItemId),{credentials:'include',cache:'no-store',signal:controller.signal});
+    const r=await fetch(sourceItemUrl(sourceItemId),{credentials:'include',cache:'no-store',signal:controller.signal});
     if(!r.ok)throw Error('eBay HTTP '+r.status);
     const price=parseSourcePrice(await r.text());
     if(!isFinite(price)||price<=0)throw Error('Prezzo sorgente non riconosciuto');
-    const latest=sourcePriceCacheRead();latest[sourceItemId]={price,at:Date.now()};sourcePriceCacheWrite(latest);
+    const latest=sourcePriceCacheRead();latest[sourceKey]={price,at:Date.now()};sourcePriceCacheWrite(latest);
     return price
   }finally{clearTimeout(timer)}
 }
@@ -150,7 +166,7 @@ function parseSourceSnapshotHtml(html){
     const key=v.replace(/\/s-l\d+\.(?:jpg|jpeg|png|webp)(?:\?.*)?$/i,'');
     if(seen.has(key))return;seen.add(key);images.push(v)
   }
-  let price=null,itemLocation='',itemLocationParts={city:'',stateOrProvince:'',postalCode:'',country:''};
+  let price=null,currency='',itemLocation='',itemLocationParts={city:'',stateOrProvince:'',postalCode:'',country:''};
   const cleanLocationText=v=>String(v||'').replace(/\s+/g,' ').replace(/(?:Delivery|Returns|Payments|Shipping|Seller)\s*:\s*.*$/i,'').replace(/(?:Delivery|Returns|Payments|Shipping|Seller).*$/i,'').trim();
   try{
     const doc=new DOMParser().parseFromString(raw,'text/html');
@@ -162,13 +178,14 @@ function parseSourceSnapshotHtml(html){
           if(String(x['@type']||'').toLowerCase()==='product'){
             const vals=Array.isArray(x.image)?x.image:[x.image];vals.filter(Boolean).forEach(addImage);
             const offers=Array.isArray(x.offers)?x.offers:[x.offers];
-            for(const o of offers){const n=Number(o&&o.price);if(!price&&isFinite(n)&&n>0)price=n}
+            for(const o of offers){const n=Number(o&&o.price);if(!price&&isFinite(n)&&n>0)price=n;const c=String(o&&o.priceCurrency||'').toUpperCase();if(!currency&&/^[A-Z]{3}$/.test(c))currency=c}
           }
           for(const v of Object.values(x))if(v&&typeof v==='object')Array.isArray(v)?stack.push(...v):stack.push(v)
         }
       }catch(_){}
     }
     for(const el of doc.querySelectorAll('meta[property="og:image"],meta[itemprop="image"],img[src*="ebayimg.com/images/g/"]'))addImage(el.getAttribute('content')||el.getAttribute('src')||'');
+    if(!currency){const el=doc.querySelector('meta[itemprop="priceCurrency"],meta[property="product:price:currency"],meta[property="og:price:currency"]');const c=String(el&&(el.getAttribute('content')||el.textContent)||'').toUpperCase();if(/^[A-Z]{3}$/.test(c))currency=c}
     if(!price){
       for(const sel of ['meta[itemprop="price"]','meta[property="product:price:amount"]','meta[property="og:price:amount"]','[itemprop="price"]']){
         const el=doc.querySelector(sel);if(!el)continue;const n=Number(String(el.getAttribute('content')||el.textContent||'').replace(/[^0-9.,]/g,'').replace(',','.'));if(isFinite(n)&&n>0){price=n;break}
@@ -194,7 +211,7 @@ function parseSourceSnapshotHtml(html){
     itemLocation=[itemLocationParts.city,itemLocationParts.stateOrProvince,itemLocationParts.postalCode,itemLocationParts.country].filter(Boolean).join(', ')
   }
   itemLocation=cleanLocationText(itemLocation);
-  return {price,images:images.slice(0,24),itemLocation,itemLocationParts}
+  return {price,currency,images:images.slice(0,24),itemLocation,itemLocationParts}
 }
 async function readSourceSnapshot(sourceItemId){
   if(sourceSnapshotPromise&&Date.now()-sourceSnapshotAt<60000)return sourceSnapshotPromise;
@@ -202,7 +219,7 @@ async function readSourceSnapshot(sourceItemId){
   sourceSnapshotPromise=(async()=>{
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
     try{
-      const r=await fetch('https://www.ebay.com/itm/'+encodeURIComponent(sourceItemId),{credentials:'include',cache:'force-cache',signal:controller.signal});
+      const r=await fetch(sourceItemUrl(sourceItemId),{credentials:'include',cache:'force-cache',signal:controller.signal});
       if(!r.ok)throw Error('eBay HTTP '+r.status);
       return parseSourceSnapshotHtml(await r.text())
     }finally{clearTimeout(timer)}
@@ -381,6 +398,7 @@ function dataFromPreflight(pre){
     title:clean(pre.title||''),
     categoryId:clean(pre.categoryId||pre.categoryID||''),
     categoryName:clean(pre.categoryName||''),
+    currency:EBAY_SOURCE_CURRENCY,
     aspects:pre.aspects||{},
     sourcePrice:isFinite(source)&&source>0?source:null,
     targetPrice:isFinite(source)&&source>0?targetFromSource(source):(isFinite(target)&&target>0?target:null),
@@ -403,13 +421,19 @@ async function initialNonAiData(){
   try{mi=window.__capitanSellLikeModePromise?await Promise.race([window.__capitanSellLikeModePromise,sleep(12000).then(()=>null)]):null}catch(_){}
   const pre=(mi&&mi.data&&mi.data.ok?mi.data:null)||(window.__capitanSellLikePreflight&&window.__capitanSellLikePreflight.ok?window.__capitanSellLikePreflight:null);
   const data=dataFromPreflight(pre);
-  const needSnapshot=!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0||!data.images.length||!clean(data.itemLocation);
+  // Reject unknown-currency prices from the US-oriented backend on other marketplaces.
+  const backendCurrency=String(pre&&(pre.currency||pre.priceCurrency)||'').toUpperCase();
+  if(EBAY_SOURCE_NON_US&&backendCurrency!==EBAY_SOURCE_CURRENCY){data.sourcePrice=null;data.targetPrice=null}
+  const needSnapshot=EBAY_SOURCE_NON_US||!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0||!data.images.length||!clean(data.itemLocation);
   if(needSnapshot){
     try{
       const snap=await readSourceSnapshot(itemId);
-      if((!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0)&&isFinite(Number(snap.price))&&Number(snap.price)>0)data.sourcePrice=Number(snap.price);
-      if(!data.images.length&&snap.images&&snap.images.length)data.images=snap.images;
-      if(!clean(data.itemLocation)&&clean(snap.itemLocation))data.itemLocation=clean(snap.itemLocation);
+      const snapCurrency=String(snap.currency||'').toUpperCase();
+      if(EBAY_SOURCE_NON_US&&snapCurrency&&snapCurrency!==EBAY_SOURCE_CURRENCY){
+        operationalLog('Prezzo sorgente '+snapCurrency+' diverso dalla valuta '+EBAY_SOURCE_CURRENCY+': conversione automatica evitata','warn');
+      }else if((EBAY_SOURCE_NON_US||!isFinite(Number(data.sourcePrice))||Number(data.sourcePrice)<=0)&&isFinite(Number(snap.price))&&Number(snap.price)>0)data.sourcePrice=Number(snap.price);
+      if((EBAY_SOURCE_NON_US||!data.images.length)&&snap.images&&snap.images.length)data.images=snap.images;
+      if((EBAY_SOURCE_NON_US||!clean(data.itemLocation))&&clean(snap.itemLocation))data.itemLocation=clean(snap.itemLocation);
       if((!data.itemLocationParts||!Object.keys(data.itemLocationParts).length)&&snap.itemLocationParts)data.itemLocationParts=snap.itemLocationParts
     }catch(e){console.warn('Source snapshot fallback',e);operationalLog('Dati sorgente: recupero diretto non riuscito','warn')}
   }
@@ -499,6 +523,10 @@ window.addEventListener('capitan-discount-updated',e=>{
 
 try{
   const ep=endpoint();if(!ep)throw Error('URL backend mancante.');
+  if(EBAY_SOURCE_NON_US){
+    operationalLog('Marketplace sorgente: '+EBAY_SOURCE_HOST+' ('+EBAY_SOURCE_CURRENCY+') — recupero dalla stessa area eBay','ok');
+    operationalLog('Tariffe e costi sourcing in USD: conversione e margini esteri da verificare manualmente','warn');
+  }
   status.textContent='Preparazione dati sorgente — AI disattivata fino a Preview…';
   const initial=await initialNonAiData();
   const sellMode=initial.mode||'mono',data=initial.data||dataFromPreflight(null);

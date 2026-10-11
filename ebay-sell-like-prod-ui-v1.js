@@ -144,7 +144,7 @@ function observeStatus(){
 window.addEventListener('capitan-ai-description-updated',()=>log('Template AI-HTML generato','ok'));
 window.addEventListener('capitan-pricing-saved',()=>log('Tariffe aggiornate','ok'));
 window.addEventListener('capitan-shipping-policy-updated',e=>log('Shipping aggiornato: '+clean(e.detail?.target||e.detail?.shipping||''),'ok'));
-window.addEventListener('capitan-sale-price-updated',e=>log('Prezzo di vendita aggiornato: '+Number(e.detail?.value||0).toFixed(2)+' USD','ok'));
+window.addEventListener('capitan-sale-price-updated',e=>log('Prezzo di vendita aggiornato: '+Number(e.detail?.value||0).toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD'),'ok'));
 window.addEventListener('capitan-sell-like-ui-ready',()=>{ensureUi();wireButtons();observeStatus();log('UI pronta','ok')});
 
 document.addEventListener('change',e=>{

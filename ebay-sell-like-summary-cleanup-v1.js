@@ -72,7 +72,7 @@ function cleanup(){
   const competitor=p.querySelector('#capitan-competitor-price');
   if(competitor){
     const source=Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice);
-    competitor.textContent=isFinite(source)&&source>0?source.toFixed(2)+' USD':'—';
+    competitor.textContent=isFinite(source)&&source>0?source.toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD'):'—';
   }
 
   // Sale-price row: percentage is no longer repeated in the label/value.
@@ -84,7 +84,7 @@ function cleanup(){
     const value=spans.find(s=>/\d/.test(clean(s.textContent||'')))||spans[0];
     if(value){
       let t=clean(value.textContent||'').replace(/\s*\(-\d+(?:[.,]\d+)?%\)\s*$/i,'');
-      if(/^\d+(?:[.,]\d+)?$/i.test(t))t=t+' USD';
+      if(/^\d+(?:[.,]\d+)?$/i.test(t))t=t+' '+(window.__capitanSellLikeCurrency||'USD');
       value.textContent=' '+t;
     }
   }
