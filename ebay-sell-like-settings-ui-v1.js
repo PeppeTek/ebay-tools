@@ -99,14 +99,14 @@ async function renderPricing(body){
       '<div data-market-tabs style="display:flex;gap:6px;margin-bottom:14px"></div>'+
       (provisional?'<div style="font-size:11px;color:#a15c00;margin-bottom:12px">Tariffe '+selected+' non ancora configurate: valori USA provvisori, da verificare e salvare.</div>':'')+
       '<div style="display:grid;grid-template-columns:1fr 150px;gap:11px 14px;align-items:center;font-size:13px">'+
-      '<label>Riduzione prezzo %</label><input data-rate="discountRate" value="'+pct(rates.discountRate)+'"'+(selected==='US'?'':' disabled title="Riduzione prezzo condivisa: modificabile nella scheda US"')+'>'+
+      '<label>Riduzione prezzo %</label><input data-rate="discountRate" value="'+pct(rates.discountRate)+'">'+
       '<label>eBay Fee %</label><input data-rate="ebayFee" value="'+pct(current.ebayFee)+'">'+
       '<label>International Fee %</label><input data-rate="internationalFee" value="'+pct(current.internationalFee)+'">'+
       '<label>Marketing Fee %</label><input data-rate="marketingFee" value="'+pct(current.marketingFee)+'">'+
       '<label>VAT on Fees %</label><input data-rate="vatOnFees" value="'+pct(current.vatOnFees)+'">'+
       '<label>Sales Tax Estimate %</label><input data-rate="salesTaxEstimate" value="'+pct(current.salesTaxEstimate)+'">'+
       '<label>eBay Fixed Fee</label><input data-rate="fixedFee" value="'+Number(current.fixedFee||0).toFixed(2)+'"></div>'+
-      (selected!=='US'?'<div style="font-size:11px;color:#666;margin-top:10px">Le tariffe '+selected+' vengono salvate per questo browser e dominio eBay; non sono sincronizzate con gli altri browser o domini.</div>':'')+
+      (selected!=='US'?'<div style="font-size:11px;color:#666;margin-top:10px">Riduzione prezzo condivisa tra i marketplace. Le tariffe '+selected+' vengono salvate in questo browser/dominio eBay e non sono sincronizzate su altri domini o dispositivi.</div>':'')+
       '<div id="capitan-settings-msg" style="min-height:18px;margin-top:14px;font-size:12px"></div>'+
       '<button data-save style="'+buttonCss(true)+';width:100%;height:44px;margin-top:8px">Salva</button>';
     const nav=body.querySelector('[data-market-tabs]');
@@ -140,6 +140,20 @@ async function renderPricing(body){
           rates={...rates,...d.rates};
           window.dispatchEvent(new CustomEvent('capitan-pricing-saved',{detail:{rates,marketplace:'US'}}));
         }else{
+          // Discount remains globally editable on every marketplace, as it was before these country tabs.
+          // Update the legacy US pricing backend ONLY when its shared discount actually changes.
+          const discount=vals.discountRate/100;
+          if(!Number.isFinite(discount)||discount<=-10||discount>=1)throw Error('Controlla Riduzione prezzo.');
+          if(Math.abs(discount-Number(rates.discountRate||0))>0.000001){
+            const params={
+              discountRate:String(discount),
+              ...Object.fromEntries(MARKET_RATE_FIELDS.map(k=>[k,String(rates[k]??(k==='fixedFee'?.4:0))]))
+            };
+            const d=await jsonpAction('sell_like_pricing_save',params);
+            if(!d||!d.ok||!d.rates)throw Error(d?.error||'Salvataggio dello sconto condiviso non confermato');
+            rates={...rates,...d.rates};
+            window.dispatchEvent(new CustomEvent('capitan-pricing-saved',{detail:{rates,marketplace:'US'}}));
+          }
           const next=localProfiles();
           next[selectedAtSave]=Object.fromEntries(MARKET_RATE_FIELDS.map(k=>[k,k==='fixedFee'?vals[k]:vals[k]/100]));
           localStorage.setItem(MARKET_PRICING_KEY,JSON.stringify(next));
