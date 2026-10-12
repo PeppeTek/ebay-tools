@@ -69,7 +69,7 @@ function ensureRow(){
   if(anchor&&row.previousElementSibling!==anchor)anchor.insertAdjacentElement('afterend',row);
   else if(!row.parentElement)steps.prepend(row);
   row.style.display='grid';row.style.gridTemplateColumns='minmax(0,1fr) 82px 104px';row.style.alignItems='center';row.style.gap='8px';row.style.minHeight='38px';
-  row.style.borderTop='1px solid #e7e7e7';row.style.marginTop='4px';
+  row.style.borderTop='0';row.style.marginTop='4px';
   const b=row.querySelector('b');if(b){b.style.gridColumn='1';if(b.textContent!=='Prezzo minimo di pareggio:')b.textContent='Prezzo minimo di pareggio:'}
   const value=row.querySelector('#capitan-break-even-value');if(value){value.style.gridColumn='3';value.style.justifySelf='end';value.style.textAlign='right';value.style.whiteSpace='nowrap'}
   row.querySelector('#capitan-pricing-open')?.remove();

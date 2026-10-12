@@ -15,7 +15,6 @@ function reportSetting(message,state='warn'){
 
 function patchUi(){
   const p=panel(); if(!p) return false;
-  const title=p.querySelector('.h span'); if(title) title.textContent='Sell Like This v1.4';
   [...p.querySelectorAll('.row.muted')].forEach(x=>x.remove());
 
   // Remove the redundant publication row from the summary.

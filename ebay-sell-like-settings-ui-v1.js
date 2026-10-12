@@ -36,26 +36,9 @@ function inputCss(){return'height:36px;border:1px solid #c5c9cf;border-radius:8p
 function buttonCss(primary){
   return 'height:38px;border:'+(primary?'0':'1px solid #b9b9b9')+';border-radius:20px;background:'+(primary?'#1668e8':'#fff')+';color:'+(primary?'#fff':'#111')+';font-weight:700;font-size:12px;padding:0 16px;cursor:pointer'
 }
-function versionFromCore(panel){
-  const version=String(window.__capitanSellLikeVersion||'').trim();
-  if(/^v\d+\.\d+(?:\.\d+)?$/.test(version))return version;
-  const fromTitle=String(panel?.querySelector('.h .title')?.textContent||'').match(/\bv\d+\.\d+(?:\.\d+)?\b/);
-  return fromTitle?fromTitle[0]:'n.d.'
-}
-function syncVersionTitle(){
-  const panel=document.getElementById(PANEL_ID);
-  if(!panel)return false;
-  const version=versionFromCore(panel);
-  if(version==='n.d.')return false;
-  const title=panel.querySelector('.h .title');
-  const intended='Sell Like This '+version;
-  if(title&&title.textContent!==intended)title.textContent=intended;
-  return !!title
-}
 function ensureHeaderControls(){
   const panel=document.getElementById(PANEL_ID);if(!panel)return false;
   const close=panel.querySelector('[data-close]');if(!close)return false;
-  syncVersionTitle();
   panel.style.position='fixed';
   let controls=panel.querySelector('#capitan-header-controls');
   if(!controls){controls=document.createElement('div');controls.id='capitan-header-controls';panel.appendChild(controls)}
@@ -282,15 +265,13 @@ async function renderAli(body){
 async function openSettingsDashboard(){
   document.getElementById(MODAL_ID)?.remove();
   const panel=document.getElementById(PANEL_ID);if(!panel)return;
-  syncVersionTitle();
-  const currentVersion=versionFromCore(panel);
   const logo=panel.querySelector('.brand img')?.src||panel.querySelector('img')?.src||'';
   const overlay=document.createElement('div');overlay.id=MODAL_ID;
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:20px;font-family:Arial,sans-serif;pointer-events:none';
   overlay.innerHTML='<div id="capitan-settings-shell" style="width:min(650px,94vw);height:min(780px,90vh);max-height:90vh;overflow:hidden;background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.28);border:1px solid #d9d9d9;display:flex;flex-direction:column;pointer-events:auto">'+
     '<div style="padding:18px 22px 14px;border-bottom:1px solid #e7e7e7;position:relative">'+
       (logo?'<img src="'+esc(logo)+'" alt="Dropper Analytics" style="display:block;width:auto;height:38px;max-width:180px;object-fit:contain;margin-bottom:12px">':'')+
-      '<div style="font-size:19px;font-weight:700;color:#111">Sell Like This '+esc(currentVersion)+' - Impostazioni</div>'+
+      '<div style="font-size:19px;font-weight:700;color:#111">Sell Like This - Impostazioni</div>'+
       '<button data-close style="position:absolute;right:16px;top:16px;width:32px;height:32px;border:1px solid #bbb;border-radius:8px;background:#fff;cursor:pointer;font-size:18px">×</button>'+
     '</div>'+
     '<div data-tabs style="display:flex;gap:4px;padding:10px 18px 0;border-bottom:1px solid #e5e7eb;background:#fafafa">'+
@@ -315,5 +296,4 @@ async function openSettingsDashboard(){
 }
 let n=0;const t=setInterval(()=>{n++;if(ensureHeaderControls()||n>100)clearInterval(t)},100);
 ensureHeaderControls();
-window.addEventListener('capitan-sell-like-ui-ready',syncVersionTitle);
 })();
