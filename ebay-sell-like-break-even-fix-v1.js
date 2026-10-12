@@ -9,10 +9,42 @@ const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const visible=el=>!!(el&&el.getClientRects&&el.getClientRects().length);
 let rates={ebayFee:.136,internationalFee:.016,marketingFee:.02,vatOnFees:.22,salesTaxEstimate:.06,fixedFee:.40};
+const PROFILE_KEY='capitan-sell-like-market-pricing-v1';
+const FEE_KEYS=['ebayFee','internationalFee','marketingFee','vatOnFees','salesTaxEstimate','fixedFee'];
+const market=()=>/\.com\.au$/i.test(location.hostname)?'AU':/\.ca$/i.test(location.hostname)?'CA':'US';
+function savedMarketRates(){
+  if(market()==='US')return null;
+  try{
+    const stored=JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}')[market()];
+    return stored&&FEE_KEYS.every(k=>Number.isFinite(Number(stored[k]))&&Number(stored[k])>=0)?stored:null
+  }catch(_){return null}
+}
+function activeRates(){return {...rates,...(savedMarketRates()||{})}}
+function fxRate(){
+  if(market()==='US')return 1;
+  const currency=String(window.__capitanSellLikeCurrency||'USD').toUpperCase();
+  if(currency==='USD')return 1;
+  return window.__capitanSellLikeFxCurrency===currency&&Number(window.__capitanSellLikeFxCurrencyRateToUsd)>0?
+    Number(window.__capitanSellLikeFxCurrencyRateToUsd):null
+}
+function computeFinancials(s,r,costUSD,fx){
+  const price=Number(s);
+  const feeRate=Number(r.ebayFee||0)+Number(r.internationalFee||0)+Number(r.marketingFee||0);
+  const variable=(1+Number(r.salesTaxEstimate||0))*feeRate*(1+Number(r.vatOnFees||0));
+  const fixed=Number(r.fixedFee||0)*(1+Number(r.vatOnFees||0));
+  if(!Number.isFinite(price)||price<=0||!Number.isFinite(variable)||!Number.isFinite(fixed)||variable>=1)return null;
+  const round=n=>Math.round((n+Number.EPSILON)*100)/100;
+  const feeLocal=round(price*variable+fixed);
+  const netLocal=round(price-feeLocal);
+  const validCost=typeof costUSD==='number'&&Number.isFinite(costUSD)&&costUSD>=0;
+  const validFx=typeof fx==='number'&&Number.isFinite(fx)&&fx>0;
+  const trueBreakEvenLocal=validCost&&validFx?round((costUSD/fx+fixed)/(1-variable)):null;
+  const profitUSD=validCost&&validFx?round(netLocal*fx-costUSD):null;
+  return {saleLocal:price,feeLocal,netLocal,trueBreakEvenLocal,profitUSD,variableRate:variable,fixedLocal:fixed,fx:validFx?fx:null,costUSD:validCost?costUSD:null}
+}
 function endpoint(){return (localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}
 function jsonpAction(action){const ep=endpoint();return new Promise((resolve,reject)=>{if(!ep)return reject(Error('Endpoint Apps Script non configurato'));const cb='__capitanBeCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),30000);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:Date.now().toString()});s.src=ep+(ep.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
 function salePrice(){const global=Number(window.__capitanSellLikeSalePrice);const p=document.getElementById(PANEL_ID);if(!p)return isFinite(global)&&global>0?global:null;const rows=[...p.querySelectorAll('#steps .row')];const row=rows.find(r=>/^Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:/i.test(clean(r.innerText||r.textContent)));const t=clean(row?.innerText||row?.textContent||'');const m=t.match(/Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:\s*([0-9]+(?:[.,][0-9]+)?)/i);const dom=m?Number(m[1].replace(',','.')):null;return isFinite(dom)&&dom>0?dom:(isFinite(global)&&global>0?global:null)}
-function calc(s,r){s=Number(s);if(!isFinite(s)||s<=0)return null;const feeRate=(r.ebayFee||0)+(r.internationalFee||0)+(r.marketingFee||0);const variable=(1+(r.salesTaxEstimate||0))*feeRate*(1+(r.vatOnFees||0));const fixed=(r.fixedFee||0)*(1+(r.vatOnFees||0));const v=(s*(1-variable))-fixed;return isFinite(v)?Math.round(v*100)/100:null}
 function ensureRow(){
   const p=document.getElementById(PANEL_ID),steps=p?.querySelector('#steps');if(!steps)return null;
   const pr=[...steps.querySelectorAll('.row')].find(r=>/^Prezzo(?: di vendita)?(?: \(-?\d+(?:[.,]\d+)?%\))?:/i.test(clean(r.innerText||r.textContent)));
@@ -28,11 +60,50 @@ function ensureRow(){
   row.querySelector('#capitan-pricing-open')?.remove();
   return value
 }
-function refresh(){const el=ensureRow();if(!el)return false;const sp=salePrice();const v=calc(sp,rates);el.textContent=v==null?'—':`${v.toFixed(2)} USD`;el.style.color=v==null?'':(v<0?'#b42318':'#137333');el.style.fontWeight=v==null?'400':'700';window.dispatchEvent(new CustomEvent('capitan-break-even-updated',{detail:{salePrice:sp,breakEven:v,rates}}));return v!=null}
-async function load(){refresh();try{const d=await jsonpAction('sell_like_pricing_get');if(d&&d.ok&&d.rates)rates=d.rates}catch(e){console.warn('Break Even pricing',e)}refresh()}
-window.addEventListener('capitan-pricing-saved',e=>{if(e.detail?.rates)rates=e.detail.rates;refresh()});
-window.addEventListener('capitan-sale-price-updated',()=>refresh());
+function refresh(){
+  const el=ensureRow();if(!el)return false;
+  const sp=salePrice();
+  const rawCost=window.__capitanSellLikePurchaseUSD;
+  const costUSD=typeof rawCost==='number'&&Number.isFinite(rawCost)?rawCost:null;
+  const fx=fxRate();
+  const result=computeFinancials(sp,activeRates(),costUSD,fx);
+  el.textContent=result&&result.trueBreakEvenLocal!==null?result.trueBreakEvenLocal.toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD'):'—';
+  el.style.color=result&&result.trueBreakEvenLocal!==null?'#1668e8':'';
+  el.style.fontWeight=result&&result.trueBreakEvenLocal!==null?'700':'400';
+  window.__capitanSellLikePricingSnapshot=result;
+  window.dispatchEvent(new CustomEvent('capitan-break-even-updated',{detail:{
+    salePrice:sp,breakEven:result?.trueBreakEvenLocal??null,netAfterFees:result?.netLocal??null,
+    estimatedFees:result?.feeLocal??null,profitUSD:result?.profitUSD??null,rates:activeRates(),marketplace:market()
+  }}));
+  return !!result
+}
+async function load(){
+  refresh();
+  try{
+    const d=await jsonpAction('sell_like_pricing_get');
+    if(d&&d.ok&&d.rates){
+      rates={...rates,...d.rates};
+      refresh();
+    }
+  }catch(e){console.warn('Break Even pricing',e)}
+}
+window.addEventListener('capitan-pricing-saved',e=>{
+  // Legacy backend pricing remains the source for US; CA/AU keep their independent profiles.
+  const target=String(e.detail?.marketplace||'US').toUpperCase();
+  if(target==='US'&&e.detail?.rates)rates={...rates,...e.detail.rates};
+  if(target===market()&&e.detail?.rates&&target!=='US'){
+    try{
+      const stored=JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}');
+      stored[target]=Object.fromEntries(FEE_KEYS.map(k=>[k,Number(e.detail.rates[k])]));
+      localStorage.setItem(PROFILE_KEY,JSON.stringify(stored))
+    }catch(e){console.warn('Pricing cache',e)}
+  }
+  refresh()
+});
+window.addEventListener('capitan-sale-price-updated',refresh);
 window.addEventListener('capitan-discount-updated',()=>setTimeout(refresh,0));
+window.addEventListener('capitan-purchase-cost-updated',refresh);
+window.addEventListener('capitan-fx-rate-updated',refresh);
 let tries=0;const timer=setInterval(()=>{tries++;if(refresh()||tries>200)clearInterval(timer)},100);
 load();
 
