@@ -146,10 +146,10 @@ function ensureRows(){
   p.querySelector('#capitan-margin-amazon')?.remove();
   const be=p.querySelector('#capitan-break-even-row');if(!be)return p;
   let fee=p.querySelector('#capitan-margin-break');
-  if(!fee){fee=document.createElement('div');fee.id='capitan-margin-break';fee.className='row';fee.innerHTML='<b>Costo stimato delle tariffe:</b> <span data-value>—</span>'}
+  if(!fee){fee=document.createElement('div');fee.id='capitan-margin-break';fee.className='row';fee.innerHTML='<b>Tariffe sul prezzo di vendita:</b> <span data-value>—</span>'}
   const priceRow=p.querySelector('#capitan-sale-price-row');
   if(priceRow&&fee.previousElementSibling!==priceRow)priceRow.insertAdjacentElement('afterend',fee);
-  if(fee.nextElementSibling!==be)fee.insertAdjacentElement('afterend',be);
+
 
   let purchase=p.querySelector('#capitan-margin-source');
   if(!purchase){
@@ -168,14 +168,15 @@ function ensureRows(){
     input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();input.blur()}});
     input.addEventListener('click',e=>e.stopPropagation())
   }
-  if(be.nextElementSibling!==purchase)be.insertAdjacentElement('afterend',purchase);
+  if(fee.nextElementSibling!==purchase)fee.insertAdjacentElement('afterend',purchase);
 
   let profit=p.querySelector('#capitan-margin-delta');
   if(!profit){profit=document.createElement('div');profit.id='capitan-margin-delta';profit.className='row';profit.innerHTML='<b>Il mio utile netto:</b> <span data-value>—</span>'}
   if(purchase.nextElementSibling!==profit)purchase.insertAdjacentElement('afterend',profit);
+  if(profit.nextElementSibling!==be)profit.insertAdjacentElement('afterend',be);
 
   const pb=profit.querySelector('b');if(pb)pb.textContent='Il mio utile netto:';
-  const fb=fee.querySelector('b');if(fb)fb.textContent='Costo stimato delle tariffe:';
+  const fb=fee.querySelector('b');if(fb&&fb.textContent!=='Tariffe sul prezzo di vendita:')fb.textContent='Tariffe sul prezzo di vendita:';
   const cb=purchase.querySelector('b');if(cb)cb.textContent="Costo totale d'acquisto:";
   [fee,be,purchase,profit].forEach(styleMetricRow);
   return p
