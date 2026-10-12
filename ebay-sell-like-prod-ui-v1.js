@@ -61,12 +61,20 @@ function validFx(rate){return typeof rate==='number'&&Number.isFinite(rate)&&rat
 function fxCache(){
   try{const x=JSON.parse(localStorage.getItem(FX_CACHE_KEY)||'{}');return x&&typeof x==='object'?x:{}}catch(_){return{}}
 }
+function publishFx(cur,rate){
+  const oldCur=window.__capitanSellLikeFxCurrency;
+  const oldRate=window.__capitanSellLikeFxCurrencyRateToUsd;
+  if(oldCur===cur&&oldRate===rate)return;
+  window.__capitanSellLikeFxCurrency=cur;
+  window.__capitanSellLikeFxCurrencyRateToUsd=rate;
+  setTimeout(()=>window.dispatchEvent(new CustomEvent('capitan-fx-rate-updated',{detail:{currency:cur,rate}})),0)
+}
 function fxRead(cur){
   if(cur==='USD')return 1;
-  if(fxActiveCurrency===cur&&validFx(fxRate))return fxRate;
+  if(fxActiveCurrency===cur&&validFx(fxRate)){publishFx(cur,fxRate);return fxRate}
   const hit=fxCache()[cur];
   if(hit&&validFx(hit.rate)&&Date.now()-Number(hit.at||0)<FX_TTL_MS){
-    fxActiveCurrency=cur;fxRate=hit.rate;return fxRate
+    fxActiveCurrency=cur;fxRate=hit.rate;publishFx(cur,fxRate);return fxRate
   }
   return null
 }
@@ -80,7 +88,7 @@ async function fxLoad(cur){
       if(!r.ok)throw Error('HTTP '+r.status);
       const d=await r.json(),n=Number(d&&d.rate);
       if(String(d&&d.base||'').toUpperCase()!==cur||String(d&&d.quote||'').toUpperCase()!=='USD'||!validFx(n))throw Error('Tasso o payload non valido');
-      fxActiveCurrency=cur;fxRate=n;
+      fxActiveCurrency=cur;fxRate=n;publishFx(cur,fxRate);
       const cache=fxCache();cache[cur]={rate:n,at:Date.now(),date:String(d.date||'')};
       try{localStorage.setItem(FX_CACHE_KEY,JSON.stringify(cache))}catch(_){}
       queueDualRefresh();
@@ -105,12 +113,13 @@ function paintDualMoney(){
   if(rate===null)void fxLoad(cur);
   const source=Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice);
   const sale=Number(window.__capitanSellLikeSalePrice);
-  const breakEven=readNumeric(p.querySelector('#capitan-break-even-value'));
-  const fee=readNumeric(p.querySelector('#capitan-margin-break [data-value]'));
-  const purchaseUsd=readNumeric(p.querySelector('#capitan-margin-source [data-value]'));
-  // Break-even and fee formulas use the eBay local selling price. Supplier acquisition is USD.
-  const profitUsd=rate!==null&&breakEven!==null&&purchaseUsd!==null?roundCurrency(breakEven*rate-purchaseUsd):null;
-  const profitLocal=profitUsd!==null?profitUsd/rate:null;
+  const pricing=window.__capitanSellLikePricingSnapshot||null;
+  const sameSale=pricing&&Number.isFinite(Number(pricing.saleLocal))&&Math.abs(pricing.saleLocal-sale)<.011;
+  const breakEven=sameSale?pricing.trueBreakEvenLocal:null;
+  const fee=sameSale?pricing.feeLocal:null;
+  const purchaseUsd=typeof window.__capitanSellLikePurchaseUSD==='number'?window.__capitanSellLikePurchaseUSD:null;
+  const profitUsd=sameSale&&rate!==null?pricing.profitUSD:null;
+  const profitLocal=profitUsd!==null&&rate!==null?profitUsd/rate:null;
   const rowConfigs=[
     ['#capitan-discount-row','#capitan-competitor-price',Number.isFinite(source)&&source>0?source:null,'local'],
     ['#capitan-sale-price-row','span:not(#capitan-sale-price-editor)',Number.isFinite(sale)&&sale>0?sale:null,'local'],
@@ -122,7 +131,7 @@ function paintDualMoney(){
   for(const [rowSelector,valueSelector,value,kind] of rowConfigs){
     const row=p.querySelector(rowSelector),original=row&&row.querySelector(valueSelector);
     if(!row||!original)continue;
-    const needsPlaceholder=kind==='profit'&&breakEven!==null&&purchaseUsd!==null;
+    const needsPlaceholder=kind==='profit'&&purchaseUsd!==null;
     if(value===null&&!needsPlaceholder){
       const stale=row.querySelector(':scope > .capitan-dual-output');
       if(stale)stale.remove();

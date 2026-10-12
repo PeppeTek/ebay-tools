@@ -76,38 +76,85 @@ function formatSeconds(v){
   const d=Math.floor(n/86400),h=Math.floor((n%86400)/3600);
   return d?d+'g '+h+'h':Math.floor(n/3600)+'h'
 }
+const MARKET_PRICING_KEY='capitan-sell-like-market-pricing-v1';
+const MARKET_RATE_FIELDS=['ebayFee','internationalFee','marketingFee','vatOnFees','salesTaxEstimate','fixedFee'];
+function localProfiles(){
+  try{const raw=JSON.parse(localStorage.getItem(MARKET_PRICING_KEY)||'{}');return raw&&typeof raw==='object'?raw:{}}catch(_){return{}}
+}
+function activeCountry(){
+  const host=location.hostname.toLowerCase();
+  return host.endsWith('.com.au')?'AU':host.endsWith('.ca')?'CA':'US'
+}
 async function renderPricing(body){
-  body.innerHTML='<div style="font-size:16px;font-weight:700;color:#111;margin:0 0 14px">Aggiorna tariffe</div><div id="capitan-settings-loading" style="font-size:12px;color:#666">Caricamento tariffe…</div>';
+  body.innerHTML='<div style="font-size:16px;font-weight:700;color:#111;margin:0 0 14px">Aggiorna tariffe</div><div style="font-size:12px;color:#666">Caricamento tariffe…</div>';
   await loadRates();
   if(!document.body.contains(body))return;
+  let selected=activeCountry();
   const pct=v=>(Number(v||0)*100).toFixed(2);
-  body.innerHTML='<div style="font-size:16px;font-weight:700;color:#111;margin:0 0 14px">Aggiorna tariffe</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 150px;gap:11px 14px;align-items:center;font-size:13px">'+
-    '<label>Riduzione prezzo %</label><input data-rate="discountRate" value="'+pct(rates.discountRate)+'">'+
-    '<label>eBay Fee %</label><input data-rate="ebayFee" value="'+pct(rates.ebayFee)+'">'+
-    '<label>International Fee %</label><input data-rate="internationalFee" value="'+pct(rates.internationalFee)+'">'+
-    '<label>Marketing Fee %</label><input data-rate="marketingFee" value="'+pct(rates.marketingFee)+'">'+
-    '<label>VAT on Fees %</label><input data-rate="vatOnFees" value="'+pct(rates.vatOnFees)+'">'+
-    '<label>Sales Tax Estimate %</label><input data-rate="salesTaxEstimate" value="'+pct(rates.salesTaxEstimate)+'">'+
-    '<label>eBay Fixed Fee</label><input data-rate="fixedFee" value="'+Number(rates.fixedFee||0).toFixed(2)+'"></div>'+
-    '<div id="capitan-settings-msg" style="min-height:18px;margin-top:14px;font-size:12px"></div>'+
-    '<button data-save style="'+buttonCss(true)+';width:100%;height:44px;margin-top:8px">Salva</button>';
-  body.querySelectorAll('input').forEach(i=>i.style.cssText=inputCss());
-  body.querySelector('[data-save]').addEventListener('click',async()=>{
-    const msg=body.querySelector('#capitan-settings-msg');
-    try{
-      const vals={};body.querySelectorAll('[data-rate]').forEach(i=>vals[i.dataset.rate]=Number(String(i.value).replace(',','.')));
-      for(const k of ['discountRate','ebayFee','internationalFee','marketingFee','vatOnFees','salesTaxEstimate'])if(!isFinite(vals[k])||vals[k]<-999||vals[k]>=100)throw Error('Controlla le percentuali inserite.');
-      if(!isFinite(vals.fixedFee)||vals.fixedFee<0)throw Error('Controlla eBay Fixed Fee.');
-      const params={discountRate:String(vals.discountRate/100),ebayFee:String(vals.ebayFee/100),internationalFee:String(vals.internationalFee/100),marketingFee:String(vals.marketingFee/100),vatOnFees:String(vals.vatOnFees/100),salesTaxEstimate:String(vals.salesTaxEstimate/100),fixedFee:String(vals.fixedFee)};
-      msg.textContent='Salvataggio…';
-      const d=await jsonpAction('sell_like_pricing_save',params);
-      if(!d||!d.ok)throw Error(d?.error||'Salvataggio non riuscito');
-      rates=d.rates||rates;window.dispatchEvent(new CustomEvent('capitan-pricing-saved',{detail:{rates}}));
-      msg.innerHTML='<span style="color:#137333;font-weight:700">Tariffe salvate.</span>'
-    }catch(e){msg.innerHTML='<span style="color:#b42318;font-weight:700">'+esc(e.message||e)+'</span>'}
-  })
+  const draw=()=>{
+    const profiles=localProfiles(),saved=profiles[selected];
+    const current=selected==='US'?rates:(saved||rates);
+    const provisional=selected!=='US'&&!saved;
+    body.innerHTML='<div style="font-size:16px;font-weight:700;color:#111;margin:0 0 14px">Aggiorna tariffe</div>'+
+      '<div data-market-tabs style="display:flex;gap:6px;margin-bottom:14px"></div>'+
+      (provisional?'<div style="font-size:11px;color:#a15c00;margin-bottom:12px">Tariffe '+selected+' non ancora configurate: valori USA provvisori, da verificare e salvare.</div>':'')+
+      '<div style="display:grid;grid-template-columns:1fr 150px;gap:11px 14px;align-items:center;font-size:13px">'+
+      '<label>Riduzione prezzo %</label><input data-rate="discountRate" value="'+pct(rates.discountRate)+'"'+(selected==='US'?'':' disabled title="Riduzione prezzo condivisa: modificabile nella scheda US"')+'>'+
+      '<label>eBay Fee %</label><input data-rate="ebayFee" value="'+pct(current.ebayFee)+'">'+
+      '<label>International Fee %</label><input data-rate="internationalFee" value="'+pct(current.internationalFee)+'">'+
+      '<label>Marketing Fee %</label><input data-rate="marketingFee" value="'+pct(current.marketingFee)+'">'+
+      '<label>VAT on Fees %</label><input data-rate="vatOnFees" value="'+pct(current.vatOnFees)+'">'+
+      '<label>Sales Tax Estimate %</label><input data-rate="salesTaxEstimate" value="'+pct(current.salesTaxEstimate)+'">'+
+      '<label>eBay Fixed Fee</label><input data-rate="fixedFee" value="'+Number(current.fixedFee||0).toFixed(2)+'"></div>'+
+      (selected!=='US'?'<div style="font-size:11px;color:#666;margin-top:10px">Le tariffe '+selected+' vengono salvate per questo browser e dominio eBay; non sono sincronizzate con gli altri browser o domini.</div>':'')+
+      '<div id="capitan-settings-msg" style="min-height:18px;margin-top:14px;font-size:12px"></div>'+
+      '<button data-save style="'+buttonCss(true)+';width:100%;height:44px;margin-top:8px">Salva</button>';
+    const nav=body.querySelector('[data-market-tabs]');
+    for(const id of ['US','CA','AU']){
+      const btn=document.createElement('button');btn.type='button';btn.textContent=id;btn.dataset.market=id;
+      btn.style.cssText='flex:1;height:32px;border:1px solid '+(id===selected?'#1668e8':'#c5c9cf')+
+        ';border-radius:6px;background:'+(id===selected?'#eef5ff':'#fff')+';color:'+(id===selected?'#1668e8':'#555')+
+        ';font:700 12px Arial,sans-serif;cursor:pointer';
+      btn.addEventListener('click',()=>{selected=id;draw()});nav.appendChild(btn)
+    }
+    body.querySelectorAll('input').forEach(i=>i.style.cssText=inputCss()+(i.disabled?';background:#f4f4f4;color:#777':''));
+    body.querySelector('[data-save]').addEventListener('click',async()=>{
+      const msg=body.querySelector('#capitan-settings-msg'),button=body.querySelector('[data-save]');
+      try{
+        const vals={};
+        body.querySelectorAll('[data-rate]').forEach(i=>vals[i.dataset.rate]=Number(String(i.value).replace(',','.')));
+        for(const k of MARKET_RATE_FIELDS.filter(k=>k!=='fixedFee')){
+          if(!Number.isFinite(vals[k])||vals[k]<0||vals[k]>=100)throw Error('Percentuale non valida: '+k);
+        }
+        if(!Number.isFinite(vals.fixedFee)||vals.fixedFee<0)throw Error('Controlla eBay Fixed Fee.');
+        if(selected==='US'&&(!Number.isFinite(vals.discountRate)||vals.discountRate<=-1000||vals.discountRate>=100))throw Error('Controlla Riduzione prezzo.');
+        const selectedAtSave=selected;
+        button.disabled=true;msg.textContent='Salvataggio…';
+        if(selectedAtSave==='US'){
+          const params={
+            discountRate:String(vals.discountRate/100),
+            ...Object.fromEntries(MARKET_RATE_FIELDS.map(k=>[k,String(k==='fixedFee'?vals[k]:vals[k]/100)]))
+          };
+          const d=await jsonpAction('sell_like_pricing_save',params);
+          if(!d||!d.ok||!d.rates)throw Error(d?.error||'Il backend non ha confermato il salvataggio delle tariffe USA');
+          rates={...rates,...d.rates};
+          window.dispatchEvent(new CustomEvent('capitan-pricing-saved',{detail:{rates,marketplace:'US'}}));
+        }else{
+          const next=localProfiles();
+          next[selectedAtSave]=Object.fromEntries(MARKET_RATE_FIELDS.map(k=>[k,k==='fixedFee'?vals[k]:vals[k]/100]));
+          localStorage.setItem(MARKET_PRICING_KEY,JSON.stringify(next));
+          const verify=localProfiles()[selectedAtSave];
+          if(!verify||MARKET_RATE_FIELDS.some(k=>verify[k]!==next[selectedAtSave][k]))throw Error('Impossibile verificare il salvataggio locale '+selectedAtSave);
+          window.dispatchEvent(new CustomEvent('capitan-market-rates-updated',{detail:{marketplace:selectedAtSave,rates:verify}}));
+        }
+        msg.innerHTML='<span style="color:#137333;font-weight:700">Tariffe '+selectedAtSave+' salvate.</span>'
+      }catch(e){msg.innerHTML='<span style="color:#b42318;font-weight:700">'+esc(e.message||e)+'</span>'}
+      finally{button.disabled=false}
+    })
+  };
+  draw()
 }
+
 async function renderAli(body){
   body.innerHTML='<div style="font-size:16px;font-weight:700;color:#111;margin:0 0 14px">AliExpress Token</div><div style="font-size:12px;color:#666">Verifica configurazione in corso…</div>';
   let st;
