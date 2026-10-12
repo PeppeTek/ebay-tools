@@ -19,7 +19,20 @@ function savedMarketRates(){
     return stored&&FEE_KEYS.every(k=>Number.isFinite(Number(stored[k]))&&Number(stored[k])>=0)?stored:null
   }catch(_){return null}
 }
-function activeRates(){return {...rates,...(savedMarketRates()||{})}}
+let warnedProvisionalRates=false;
+function activeRates(){
+  const selected=savedMarketRates();
+  if(!selected&&!warnedProvisionalRates&&market()!=='US'){
+    warnedProvisionalRates=true;
+    const msg='Tariffe '+market()+' non configurate: applico provvisoriamente le tariffe USA; controllale in Impostazioni.';
+    console.warn('Sell Like',msg);
+    try{
+      if(typeof window.__capitanTestLog==='function')window.__capitanTestLog(msg,'warn');
+      else (window.__capitanPendingTestLogs=window.__capitanPendingTestLogs||[]).push({message:msg,state:'warn'});
+    }catch(_){}
+  }
+  return {...rates,...(selected||{})}
+}
 function fxRate(){
   const currency=String(window.__capitanSellLikeCurrency||'USD').toUpperCase();
   if(currency==='USD')return 1;
