@@ -21,7 +21,6 @@ function savedMarketRates(){
 }
 function activeRates(){return {...rates,...(savedMarketRates()||{})}}
 function fxRate(){
-  if(market()==='US')return 1;
   const currency=String(window.__capitanSellLikeCurrency||'USD').toUpperCase();
   if(currency==='USD')return 1;
   return window.__capitanSellLikeFxCurrency===currency&&Number(window.__capitanSellLikeFxCurrencyRateToUsd)>0?
@@ -103,6 +102,7 @@ window.addEventListener('capitan-pricing-saved',e=>{
 window.addEventListener('capitan-sale-price-updated',refresh);
 window.addEventListener('capitan-discount-updated',()=>setTimeout(refresh,0));
 window.addEventListener('capitan-purchase-cost-updated',refresh);
+window.addEventListener('capitan-market-rates-updated',e=>{if(String(e.detail?.marketplace||'')===market())refresh()});
 window.addEventListener('capitan-fx-rate-updated',refresh);
 let tries=0;const timer=setInterval(()=>{tries++;if(refresh()||tries>200)clearInterval(timer)},100);
 load();
