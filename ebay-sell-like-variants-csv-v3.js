@@ -350,7 +350,7 @@ function defaultPhotos(data,clone){
   for(const u of [...(clone.images||[]),...(data.images||[])]){
     const x=safeUrl(u);if(x&&!out.includes(x))out.push(x)
   }
-  return out.slice(0,12)
+  return out.slice(0,24)
 }
 function technicalSpecsFromDescription(){
   const out={};
