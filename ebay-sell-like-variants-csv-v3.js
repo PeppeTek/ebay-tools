@@ -701,6 +701,8 @@ function buildCsv(){
   if(idx['PicURL']!=null)parent[idx['PicURL']]=commonImages;
   fillAspects(parent,idx,headers,clone,dims);
   fillDirectTemplateFields(parent,idx,headers,clone);
+  // Business rule: always publish Brand as Unbranded, regardless of source listing value.
+  if(idx['C:Brand']!=null)parent[idx['C:Brand']]='Unbranded';
 
   const upc=clean(currentAspects.UPC||currentAspects.Upc||clone.upc||'');
   if(upc&&idx['P:UPC']!=null)parent[idx['P:UPC']]=upc;
