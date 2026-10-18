@@ -128,12 +128,12 @@ function replaceButton(oldBtn,kind){
 }
 for(let i=0;i<100;i++){
   const panel=document.getElementById(PANEL_ID);
-  const ali=panel&&panel.querySelector('#capitan-aliexpress-find');
-  const amazon=panel&&panel.querySelector('#capitan-amazon-find');
+  const ali=panel&&panel.querySelector('#capitan-aliexpress-best-match');
+  const amazon=panel&&panel.querySelector('#capitan-amazon-best-match');
   if(panel&&ali&&amazon){
     replaceButton(ali,'csv');
     replaceButton(amazon,'catalog');
-    // Variant CSV v3 used to repurpose Save for later and hide List it. New fixed left buttons own those actions.
+    // Keep the original left-side source buttons untouched; only the two right-side Best Match buttons are replaced.
     const list=panel.querySelector('[data-ebay-action="list"]');if(list)list.style.display='';
     const save=panel.querySelector('[data-ebay-action="csv"]');
     if(save){
@@ -146,5 +146,5 @@ for(let i=0;i<100;i++){
   }
   await sleep(100)
 }
-log('Catalogo online: pulsanti sorgente non trovati.','warn')
+log('Catalogo online: pulsanti destri non trovati.','warn')
 })();
