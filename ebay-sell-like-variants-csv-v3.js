@@ -736,7 +736,8 @@ function buildCsv(){
   }else{
     const price=currentSalePrice();
     if(!price)throw Error('Prezzo di vendita non disponibile');
-    parent[idx['Buy It Now price']]=price;
+    parent[idx['Start price']]=price;
+    parent[idx['Buy It Now price']]='';
     parent[idx['Quantity']]=qty
   }
 
