@@ -30,11 +30,23 @@ const SELL_LIKE_ALI_AUTH = Object.freeze({
   accountProp: 'SELL_LIKE_ALI_TOKEN_ACCOUNT'
 });
 
+const SELL_LIKE_CATALOG = Object.freeze({
+  spreadsheetId: '1cUfx_0gckyBSc5eWpqqIfVlUfzjHxDx-c3bTCQCf8s4',
+  indexSheet: '__CATALOG_INDEX',
+  sheets: Object.freeze({US:'Catalogo USA', CA:'Catalogo CA', AU:'Catalogo AU'}),
+  callbackPattern: /^[A-Za-z_$][A-Za-z0-9_$\.]{0,120}$/,
+  requestIdPattern: /^[A-Za-z0-9_-]{10,90}$/,
+  maxParts: 120,
+  maxChunkChars: 5000,
+  cacheSeconds: 600
+});
+
 // Override web-app GET while preserving the existing status page.
 function doGet(e) {
   const action = String(e && e.parameter && e.parameter.action || '').trim();
   if (action === SELL_LIKE_CLONE.action) return sellLikeCloneJsonp_(e);
   if (/^sell_like_aliexpress_auth_/.test(action)) return sellLikeAliAuthJsonp_(e);
+  if (action === 'sell_like_catalog_chunk' || action === 'sell_like_catalog_commit') return sellLikeCatalogJsonp_(e);
   if (String(e && e.parameter && e.parameter.code || '').trim()) return sellLikeAliOAuthCallbackHtml_(e);
 
   try {
@@ -51,6 +63,196 @@ function doGet(e) {
       '<p>Destinazione verificata: <b>EBAY_IMPORT</b>.</p><p>Questa pagina di controllo non modifica il foglio.</p></body></html>'
     );
   } catch (error) { return renderBookmarkletImportError_(error); }
+}
+
+
+function sellLikeCatalogJsonp_(e) {
+  const callback = String(e && e.parameter && e.parameter.callback || 'capitanCatalogCallback').trim();
+  if (!SELL_LIKE_CATALOG.callbackPattern.test(callback)) {
+    return ContentService.createTextOutput('/* callback non valido */').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  let payload;
+  try {
+    const action = String(e && e.parameter && e.parameter.action || '').trim();
+    if (action === 'sell_like_catalog_chunk') payload = sellLikeCatalogStoreChunk_(e);
+    else if (action === 'sell_like_catalog_commit') payload = sellLikeCatalogCommit_(e);
+    else payload = {ok:false,error:'Azione catalogo non supportata.'};
+  } catch (err) {
+    payload = {ok:false,error:String(err && err.message || err)};
+  }
+  return ContentService
+    .createTextOutput(callback + '(' + JSON.stringify(payload).replace(/<\//g, '<\\/') + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function sellLikeCatalogStoreChunk_(e) {
+  const p = e && e.parameter || {};
+  const requestId = String(p.requestId || '').trim();
+  const index = Number(p.index);
+  const total = Number(p.total);
+  const data = String(p.data || '');
+  if (!SELL_LIKE_CATALOG.requestIdPattern.test(requestId)) throw new Error('requestId catalogo non valido.');
+  if (!Number.isInteger(index) || index < 0) throw new Error('Indice chunk non valido.');
+  if (!Number.isInteger(total) || total < 1 || total > SELL_LIKE_CATALOG.maxParts || index >= total) throw new Error('Numero chunk non valido.');
+  if (!data || data.length > SELL_LIKE_CATALOG.maxChunkChars) throw new Error('Chunk catalogo non valido.');
+  CacheService.getScriptCache().put('SLCAT:' + requestId + ':' + index, data, SELL_LIKE_CATALOG.cacheSeconds);
+  return {ok:true,requestId:requestId,index:index,total:total};
+}
+
+function sellLikeCatalogCommit_(e) {
+  const p = e && e.parameter || {};
+  const requestId = String(p.requestId || '').trim();
+  const total = Number(p.total);
+  if (!SELL_LIKE_CATALOG.requestIdPattern.test(requestId)) throw new Error('requestId catalogo non valido.');
+  if (!Number.isInteger(total) || total < 1 || total > SELL_LIKE_CATALOG.maxParts) throw new Error('Numero chunk non valido.');
+  const cache = CacheService.getScriptCache();
+  const pieces = [];
+  for (let i = 0; i < total; i++) {
+    const value = cache.get('SLCAT:' + requestId + ':' + i);
+    if (!value) throw new Error('Payload catalogo incompleto: manca la parte ' + (i + 1) + '/' + total + '.');
+    pieces.push(value);
+  }
+  const encoded = pieces.join('');
+  const pad = encoded.length % 4 ? '='.repeat(4 - encoded.length % 4) : '';
+  const bytes = Utilities.base64DecodeWebSafe(encoded + pad);
+  const json = Utilities.newBlob(bytes).getDataAsString('UTF-8');
+  if (json.length > 600000) throw new Error('Payload catalogo troppo grande.');
+  let data;
+  try { data = JSON.parse(json); } catch (err) { throw new Error('Payload catalogo JSON non valido.'); }
+  const result = sellLikeCatalogWrite_(data);
+  for (let j = 0; j < total; j++) cache.remove('SLCAT:' + requestId + ':' + j);
+  return result;
+}
+
+function sellLikeCatalogWrite_(data) {
+  data = data || {};
+  const marketplace = String(data.marketplace || '').toUpperCase();
+  const sheetName = SELL_LIKE_CATALOG.sheets[marketplace];
+  const sourceItemId = String(data.sourceItemId || '').trim();
+  const groupId = String(data.groupId || '').trim().slice(0, 180);
+  const headers = Array.isArray(data.headers) ? data.headers.map(function(x){ return String(x == null ? '' : x).trim(); }) : [];
+  const rows = Array.isArray(data.rows) ? data.rows : [];
+  if (!sheetName) throw new Error('Marketplace catalogo non supportato: ' + marketplace);
+  if (!/^\d{9,12}$/.test(sourceItemId)) throw new Error('Source Item ID catalogo non valido.');
+  if (!headers.length || headers.length > 500) throw new Error('Header CSV catalogo non valido.');
+  if (!rows.length || rows.length > 500) throw new Error('Numero righe catalogo non valido.');
+  if (headers.some(function(h){ return !h || h.length > 180; })) throw new Error('Header CSV vuoto o troppo lungo.');
+  if (new Set(headers).size !== headers.length) throw new Error('Header CSV duplicati nel payload.');
+  rows.forEach(function(r, i){
+    if (!Array.isArray(r) || r.length !== headers.length) throw new Error('Riga catalogo ' + (i + 1) + ' non allineata agli header.');
+  });
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('Catalogo occupato. Riprova tra qualche secondo.');
+  try {
+    const ss = SpreadsheetApp.openById(SELL_LIKE_CATALOG.spreadsheetId);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) throw new Error('Scheda catalogo non trovata: ' + sheetName);
+    const indexSheet = sellLikeCatalogIndexSheet_(ss);
+
+    const duplicate = sellLikeCatalogFindDuplicate_(indexSheet, marketplace, sourceItemId);
+    if (duplicate) {
+      return {ok:true,duplicate:true,marketplace:marketplace,sheetName:sheetName,rowStart:duplicate.rowStart,rowCount:duplicate.rowCount||1,sourceItemId:sourceItemId};
+    }
+
+    const targetHeaders = sellLikeCatalogEnsureSheet_(sheet, headers);
+    const sourceIndex = {};
+    headers.forEach(function(h, i){ sourceIndex[h] = i; });
+    const aligned = rows.map(function(r){
+      return targetHeaders.map(function(h){
+        const i = sourceIndex[h];
+        return i == null ? '' : (r[i] == null ? '' : r[i]);
+      });
+    });
+
+    const startRow = Math.max(5, sheet.getLastRow() + 1);
+    sellLikeCatalogEnsureRows_(sheet, startRow + aligned.length - 1);
+    sheet.getRange(startRow, 1, aligned.length, targetHeaders.length).setValues(aligned);
+
+    try {
+      const created = new Date();
+      indexSheet.appendRow([
+        marketplace, sourceItemId, groupId, sheetName, startRow, aligned.length,
+        data.hasVariations ? 'PARENT+VARIANTS' : 'SINGLE', 'READY', created, '', ''
+      ]);
+    } catch (indexErr) {
+      sheet.getRange(startRow, 1, aligned.length, targetHeaders.length).clearContent();
+      throw indexErr;
+    }
+
+    SpreadsheetApp.flush();
+    return {ok:true,duplicate:false,marketplace:marketplace,sheetName:sheetName,rowStart:startRow,rowCount:aligned.length,sourceItemId:sourceItemId};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function sellLikeCatalogIndexSheet_(ss) {
+  let sh = ss.getSheetByName(SELL_LIKE_CATALOG.indexSheet);
+  if (!sh) {
+    sh = ss.insertSheet(SELL_LIKE_CATALOG.indexSheet);
+    sh.getRange(1,1,1,11).setValues([[
+      'MARKETPLACE','SOURCE_ITEM_ID','GROUP_ID','SHEET','ROW_START','ROW_COUNT',
+      'ROW_ROLE','STATUS','CREATED_AT','EXPORTED_AT','TARGET_STORE'
+    ]]);
+    sh.setFrozenRows(1);
+    try { sh.hideSheet(); } catch (ignored) {}
+  }
+  return sh;
+}
+
+function sellLikeCatalogFindDuplicate_(indexSheet, marketplace, sourceItemId) {
+  const last = indexSheet.getLastRow();
+  if (last < 2) return null;
+  const values = indexSheet.getRange(2,1,last-1,6).getValues();
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (String(values[i][0] || '').toUpperCase() === marketplace && String(values[i][1] || '') === sourceItemId) {
+      return {rowStart:Number(values[i][4]) || 0,rowCount:Number(values[i][5]) || 1,indexRow:i + 2};
+    }
+  }
+  return null;
+}
+
+function sellLikeCatalogEnsureSheet_(sheet, incomingHeaders) {
+  let current = [];
+  if (sheet.getLastRow() >= 4 && sheet.getLastColumn() > 0) {
+    current = sheet.getRange(4,1,1,sheet.getLastColumn()).getValues()[0].map(function(x){ return String(x == null ? '' : x).trim(); });
+    while (current.length && !current[current.length - 1]) current.pop();
+  }
+  if (!current.length) {
+    sellLikeCatalogEnsureColumns_(sheet, incomingHeaders.length);
+    const info1 = Array(incomingHeaders.length).fill('');
+    const info2 = Array(incomingHeaders.length).fill('');
+    const info3 = Array(incomingHeaders.length).fill('');
+    info1[0] = '#INFO'; if (info1.length > 1) info1[1] = 'Created=' + Date.now();
+    info2[0] = '#INFO'; if (info2.length > 1) info2[1] = 'Version=1.0'; if (info2.length > 3) info2[3] = 'Template=fx_category_template_EBAY_US';
+    info3[0] = '#INFO';
+    const schedule = incomingHeaders.indexOf('Schedule Time'); if (schedule >= 0) info3[schedule] = 'YYYY-MM-DD HH:MM:SS';
+    sheet.getRange(1,1,4,incomingHeaders.length).setValues([info1,info2,info3,incomingHeaders]);
+    sheet.setFrozenRows(4);
+    return incomingHeaders.slice();
+  }
+
+  const seen = {};
+  current.forEach(function(h){ if (h) seen[h.toLowerCase()] = h; });
+  const missing = incomingHeaders.filter(function(h){ return !seen[h.toLowerCase()]; });
+  if (missing.length) {
+    const start = current.length + 1;
+    sellLikeCatalogEnsureColumns_(sheet, current.length + missing.length);
+    sheet.getRange(4,start,1,missing.length).setValues([missing]);
+    current = current.concat(missing);
+  }
+  return current;
+}
+
+function sellLikeCatalogEnsureColumns_(sheet, needed) {
+  const max = sheet.getMaxColumns();
+  if (max < needed) sheet.insertColumnsAfter(max, needed - max);
+}
+
+function sellLikeCatalogEnsureRows_(sheet, neededLastRow) {
+  const max = sheet.getMaxRows();
+  if (max < neededLastRow) sheet.insertRowsAfter(max, neededLastRow - max);
 }
 
 function sellLikeCloneJsonp_(e) {
