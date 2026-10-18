@@ -666,7 +666,7 @@ function buildCsv(){
   const conditionId=currentConditionId();
   const location='Fort Pierce, FL';
   const qty=Number(clone.quantity||3)||3;
-  const discount=isFinite(Number(st&&st.discountRate))?Number(st.discountRate):.02;
+  const discount=st&&isFinite(Number(st.discountRate))?Number(st.discountRate):.02;
   const skuBase=currentSkuBase();
   const commonImages=defaultPhotos(data,clone).join('|');
   const currentAspects=currentItemSpecifics();
