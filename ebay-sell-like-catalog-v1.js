@@ -61,14 +61,19 @@ async function savePackage(pkg){
     rows:pkg.dataRows
   });
   const encoded=utf8Base64Url(raw);
-  const chunkSize=4200;
+  const chunkSize=1400;
   const total=Math.ceil(encoded.length/chunkSize);
-  if(total<1||total>120)throw Error('Payload catalogo troppo grande ('+total+' parti)');
+  if(total<1||total>600)throw Error('Payload catalogo troppo grande ('+total+' parti)');
   const requestId='cat_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,12);
   for(let i=0;i<total;i++){
     const part=encoded.slice(i*chunkSize,(i+1)*chunkSize);
-    const r=await jsonp('sell_like_catalog_chunk',{requestId,index:String(i),total:String(total),data:part},30000);
-    if(!r||!r.ok)throw Error(r&&r.error||('Upload catalogo fallito alla parte '+(i+1)))
+    let r;
+    try{
+      r=await jsonp('sell_like_catalog_chunk',{requestId,index:String(i),total:String(total),data:part},30000)
+    }catch(err){
+      throw Error('Trasferimento catalogo fallito alla parte '+(i+1)+'/'+total+': '+String(err&&err.message||err))
+    }
+    if(!r||!r.ok)throw Error((r&&r.error)||('Upload catalogo fallito alla parte '+(i+1)+'/'+total))
   }
   const result=await jsonp('sell_like_catalog_commit',{requestId,total:String(total)},60000);
   if(!result||!result.ok)throw Error(result&&result.error||'Scrittura catalogo non confermata');
