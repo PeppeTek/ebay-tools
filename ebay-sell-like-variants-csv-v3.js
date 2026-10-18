@@ -775,6 +775,19 @@ function download(res){
   const blob=new Blob(['\ufeff'+res.csv],{type:'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=res.fileName;document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},500)
 }
+function exposeCsvApi(){
+  window.__capitanBuildSellLikeCsv=buildCsv;
+  window.__capitanDownloadSellLikeCsv=()=>{
+    const fresh=buildCsv();
+    window.__capitanSellLikeCsv=fresh;
+    if(fresh.hasVariations)window.__capitanVariantCsv=fresh;
+    download(fresh);
+    return fresh
+  };
+  // Backward compatibility for callers of the old variants-only export.
+  window.__capitanDownloadVariantCsv=window.__capitanDownloadSellLikeCsv
+}
+exposeCsvApi();
 async function run(){
   for(let i=0;i<160;i++){
     const cl=cloneData(),st=variantState();
@@ -785,19 +798,10 @@ async function run(){
         const res=buildCsv();
         window.__capitanSellLikeCsv=res;
         if(res.hasVariations)window.__capitanVariantCsv=res;
-        window.__capitanBuildSellLikeCsv=buildCsv;
-        window.__capitanDownloadSellLikeCsv=()=>{
-          const fresh=buildCsv();
-          window.__capitanSellLikeCsv=fresh;
-          if(fresh.hasVariations)window.__capitanVariantCsv=fresh;
-          download(fresh)
-        };
-        // Backward compatibility for any external caller of the old variants-only export.
-        window.__capitanDownloadVariantCsv=window.__capitanDownloadSellLikeCsv;
         setStatus('CSV eBay pronto: '+res.rows+' righe, '+res.columns+' colonne mappate.');
       }catch(e){
         console.warn('Sell Like CSV',e);
-        setStatus('CSV non generato: '+String(e&&e.message||e),true)
+        setStatus('CSV non ancora pronto: '+String(e&&e.message||e),true)
       }
       return
     }
