@@ -48,18 +48,17 @@ function controlValue(el){
   return clean(el.innerText||el.textContent||el.getAttribute&&el.getAttribute('aria-label')||'')
 }
 function currentTitle(){
-  const d=cloneData()||{};
-  const source=clean(d.title).slice(0,80);
-  if(source)return source;
+  const direct=findControlByLabel(/^title$/i);
+  const current=clean(direct&&direct.value).slice(0,80);
+  if(current)return current;
   const input=[...document.querySelectorAll('input[type="text"],textarea')]
     .find(x=>/^title$/i.test(clean(x.getAttribute('aria-label')||x.name||x.id||'')));
-  return clean(input&&input.value).slice(0,80)
+  const fallbackCurrent=clean(input&&input.value).slice(0,80);
+  if(fallbackCurrent)return fallbackCurrent;
+  const d=cloneData()||{};
+  return clean(d.title).slice(0,80)
 }
 function currentDescription(){
-  const d=cloneData()||{};
-  const prepared=String(d.descriptionHtml||'').trim();
-  if(prepared)return prepared;
-
   const candidates=[...document.querySelectorAll('textarea,[contenteditable="true"]')];
   const descCandidates=candidates.filter(e=>{
     const meta=clean([e.name,e.id,e.placeholder,e.getAttribute&&e.getAttribute('aria-label')].join(' '));
@@ -76,7 +75,8 @@ function currentDescription(){
     if(e.matches('[contenteditable="true"]')){const html=String(e.innerHTML||'').trim();if(html&&html!=='<br>')return html}
     else{const v=String(e.value||'').trim();if(v)return v}
   }
-  return''
+  const d=cloneData()||{};
+  return String(d.descriptionHtml||'').trim()
 }
 function currentConditionId(){
   const direct=findControlByLabel(/condition/i);
@@ -664,7 +664,7 @@ function buildCsv(){
   const returns=normalizePolicyName(policyName('return'));
   const payment=normalizePolicyName(policyName('payment'));
   const conditionId=currentConditionId();
-  const location=locationValue(clone)||'Fort Pierce, FL';
+  const location='Fort Pierce, FL';
   const qty=Number(clone.quantity||3)||3;
   const discount=isFinite(Number(st&&st.discountRate))?Number(st.discountRate):.02;
   const skuBase=currentSkuBase();
