@@ -48,17 +48,18 @@ function controlValue(el){
   return clean(el.innerText||el.textContent||el.getAttribute&&el.getAttribute('aria-label')||'')
 }
 function currentTitle(){
-  const direct=findControlByLabel(/^title$/i);
-  const current=clean(direct&&direct.value).slice(0,80);
-  if(current)return current;
+  const d=cloneData()||{};
+  const source=clean(d.title).slice(0,80);
+  if(source)return source;
   const input=[...document.querySelectorAll('input[type="text"],textarea')]
     .find(x=>/^title$/i.test(clean(x.getAttribute('aria-label')||x.name||x.id||'')));
-  const fallbackCurrent=clean(input&&input.value).slice(0,80);
-  if(fallbackCurrent)return fallbackCurrent;
-  const d=cloneData()||{};
-  return clean(d.title).slice(0,80)
+  return clean(input&&input.value).slice(0,80)
 }
 function currentDescription(){
+  const d=cloneData()||{};
+  const prepared=String(d.descriptionHtml||'').trim();
+  if(prepared)return prepared;
+
   const candidates=[...document.querySelectorAll('textarea,[contenteditable="true"]')];
   const descCandidates=candidates.filter(e=>{
     const meta=clean([e.name,e.id,e.placeholder,e.getAttribute&&e.getAttribute('aria-label')].join(' '));
@@ -75,8 +76,7 @@ function currentDescription(){
     if(e.matches('[contenteditable="true"]')){const html=String(e.innerHTML||'').trim();if(html&&html!=='<br>')return html}
     else{const v=String(e.value||'').trim();if(v)return v}
   }
-  const d=cloneData()||{};
-  return String(d.descriptionHtml||'').trim()
+  return''
 }
 function currentConditionId(){
   const direct=findControlByLabel(/condition/i);
@@ -350,7 +350,7 @@ function defaultPhotos(data,clone){
   for(const u of [...(clone.images||[]),...(data.images||[])]){
     const x=safeUrl(u);if(x&&!out.includes(x))out.push(x)
   }
-  return out.slice(0,24)
+  return out.slice(0,12)
 }
 function technicalSpecsFromDescription(){
   const out={};
@@ -392,6 +392,7 @@ function currentItemSpecifics(){
       'country of origin':'Country of Origin',
       'band type':'Band Type',
       'band width':'Band Width',
+      'colour':'Color'
     };
     return aliases[n.toLowerCase()]||n
   };
@@ -409,13 +410,6 @@ function currentItemSpecifics(){
     name=canonicalName(name);value=clean(value);
     if(!name||!value||reserved.test(name)||name.length>90||value.length>1000)return;
     if(badValue(name,value))return;
-    if(overwrite){
-      const semantic=clean(name).toLowerCase().replace(/colour/g,'color').replace(/[^a-z0-9]/g,'');
-      for(const old of Object.keys(out)){
-        const oldSemantic=clean(old).toLowerCase().replace(/colour/g,'color').replace(/[^a-z0-9]/g,'');
-        if(old!==name&&oldSemantic===semantic)delete out[old]
-      }
-    }
     if(overwrite||!out[name])out[name]=value
   };
 
@@ -493,8 +487,6 @@ function dynamicAspectHeaders(dims,baseHeaders){
 
   for(const [k,v] of Object.entries(technicalSpecsFromDescription()))put(k,v);
   for(const [k,v] of Object.entries(clone.aspects||{}))put(k,v);
-  // Include exactly what the current eBay editor exposes, so new/localized C: fields become export columns automatically.
-  for(const [k,v] of Object.entries(currentItemSpecifics()))put(k,v);
 
   const blocked=new Set((dims||[]).map(d=>clean(d.name).toLowerCase().replace(/colour/g,'color')));
   const existing=new Set((baseHeaders||[]).map(h=>clean(h).toLowerCase()));
@@ -532,19 +524,6 @@ function countryCode(v){
     'AUSTRALIA':'AU','CANADA':'CA'
   };
   return byName[code]||''
-}
-function marketplaceConfig(){
-  const host=String(location.hostname||'').toLowerCase().replace(/^www\./,'');
-  if(/ebay\.com\.au$/.test(host))return {marketplace:'AU',sheetName:'Catalogo AU',currency:'AUD',action:'*Action(SiteID=Australia|Country=US|Currency=AUD|Version=1193)'};
-  if(/ebay\.ca$/.test(host))return {marketplace:'CA',sheetName:'Catalogo CA',currency:'CAD',action:'*Action(SiteID=Canada|Country=US|Currency=CAD|Version=1193|CC=UTF-8)'};
-  return {marketplace:'US',sheetName:'Catalogo USA',currency:'USD',action:'*Action(SiteID=US|Country=US|Currency=USD|Version=1193)'}
-}
-function currentSalePrice(){
-  const global=Number(window.__capitanSellLikeSalePrice);
-  if(isFinite(global)&&global>0)return global.toFixed(2);
-  const el=findControlByLabel(/^(item price|price|buy it now price|fixed price)$/i);
-  const n=Number(String(el&&el.value||'').replace(/[^0-9.,-]/g,'').replace(',','.'));
-  return isFinite(n)&&n>0?n.toFixed(2):''
 }
 function itemCountryCode(clone){
   const p=clone.itemLocationParts||{};
@@ -641,16 +620,17 @@ function fillDirectTemplateFields(row,idx,headers,clone){
 
 function buildCsv(){
   const st=variantState(),clone=cloneData();
+  if(!st||!st.data||!st.data.hasVariations)throw Error('Dati varianti non disponibili');
   if(!clone||!clone.ok)throw Error('Dati listing non ancora pronti');
 
-  const market=marketplaceConfig();
-  const data=st&&st.data&&st.data.hasVariations?st.data:clone;
-  const hasVariations=!!(st&&st.data&&st.data.hasVariations);
-  const dims=hasVariations&&Array.isArray(data.dimensions)?data.dimensions:[];
-  const variants=hasVariations&&Array.isArray(data.variants)?data.variants:[];
-  if(hasVariations&&(!dims.length||!variants.length))throw Error('Varianti incomplete nel payload');
+  const data=st.data,dims=Array.isArray(data.dimensions)?data.dimensions:[],variants=Array.isArray(data.variants)?data.variants:[];
+  if(!dims.length||!variants.length)throw Error('Varianti incomplete nel payload');
 
-  const baseHeaders=listingsExportHeaders().map(h=>/^\*Action\(/i.test(h)?market.action:h);
+  const itemCountry=itemCountryCode(clone);
+  const baseHeaders=listingsExportHeaders().map(h=>{
+    if(!/^\*Action\(/i.test(h))return h;
+    return h.replace(/\|Country=[^|)]+/i,'|Country='+itemCountry)
+  });
   const dynamicHeaders=dynamicAspectHeaders(dims,baseHeaders);
   const extraHeaders=['PicURL'].filter(h=>!baseHeaders.includes(h));
   const headers=[...baseHeaders,...dynamicHeaders,...extraHeaders];
@@ -664,12 +644,11 @@ function buildCsv(){
   const returns=normalizePolicyName(policyName('return'));
   const payment=normalizePolicyName(policyName('payment'));
   const conditionId=currentConditionId();
-  const location='Fort Pierce, FL';
+  const location=locationValue(clone);
   const qty=Number(clone.quantity||3)||3;
-  const discount=st&&isFinite(Number(st.discountRate))?Number(st.discountRate):.02;
+  const discount=isFinite(Number(st.discountRate))?Number(st.discountRate):.02;
   const skuBase=currentSkuBase();
   const commonImages=defaultPhotos(data,clone).join('|');
-  const currentAspects=currentItemSpecifics();
 
   const missing=[];
   if(!title)missing.push('Title');
@@ -691,6 +670,7 @@ function buildCsv(){
   parent[idx['Title']]=title;
   parent[idx['Item photo URL']]=commonImages;
   parent[idx['Description']]=description;
+  parent[idx['Relationship details']]=relationshipParent(dims);
   parent[idx['Shipping profile name']]=shipping;
   parent[idx['Return profile name']]=returns;
   parent[idx['Payment profile name']]=payment;
@@ -702,43 +682,33 @@ function buildCsv(){
   fillAspects(parent,idx,headers,clone,dims);
   fillDirectTemplateFields(parent,idx,headers,clone);
 
-  const upc=clean(currentAspects.UPC||currentAspects.Upc||clone.upc||'');
-  if(upc&&idx['P:UPC']!=null)parent[idx['P:UPC']]=upc;
-
   const rows=[parent];
+  const photoDim=dims[0]&&clean(dims[0].name);
+  const photoDone=new Set();
 
-  if(hasVariations){
-    parent[idx['Relationship details']]=relationshipParent(dims);
-    const photoDim=dims[0]&&clean(dims[0].name);
-    const photoDone=new Set();
-    variants.forEach((v,i)=>{
-      const r=row();
-      r[idx[actionHeader]]='Add';
-      r[idx['Custom label (SKU)']]=(skuBase+'-'+String(i+1).padStart(2,'0')).slice(0,50);
-      r[idx['Relationship']]='Variation';
-      r[idx['Relationship details']]=relationshipChild(v);
-      r[idx['Quantity']]=qty;
-      r[idx['Start price']]=salePrice(v,discount);
-      r[idx['Location']]=location;
-      const vUpc=identifier(v,['upc','UPC']);
-      if(vUpc&&idx['P:UPC']!=null)r[idx['P:UPC']]=vUpc;
-      const mpn=identifier(v,['mpn','MPN']);
-      if(mpn&&idx['C:MPN']!=null)r[idx['C:MPN']]=mpn;
-      if(photoDim){
-        const pv=firstSpecificValue(v,photoDim),key=pv.toLowerCase();
-        if(pv&&!photoDone.has(key)){
-          const urls=(v.images||[]).map(safeUrl).filter(Boolean).slice(0,12);
-          if(urls.length&&idx['PicURL']!=null){r[idx['PicURL']]=pv+'='+urls.join('|');photoDone.add(key)}
-        }
+  variants.forEach((v,i)=>{
+    const r=row();
+    r[idx[actionHeader]]='Add';
+    r[idx['Custom label (SKU)']]=(skuBase+'-'+String(i+1).padStart(2,'0')).slice(0,50);
+    r[idx['Relationship']]='Variation';
+    r[idx['Relationship details']]=relationshipChild(v);
+    r[idx['Quantity']]=qty;
+    r[idx['Start price']]=salePrice(v,discount);
+    r[idx['Location']]=location;
+    const upc=identifier(v,['upc','UPC']);
+    if(upc)r[idx['P:UPC']]=upc;
+    const mpn=identifier(v,['mpn','MPN']);
+    if(mpn&&idx['C:MPN']!=null)r[idx['C:MPN']]=mpn;
+
+    if(photoDim){
+      const pv=firstSpecificValue(v,photoDim),key=pv.toLowerCase();
+      if(pv&&!photoDone.has(key)){
+        const urls=(v.images||[]).map(safeUrl).filter(Boolean).slice(0,12);
+        if(urls.length&&idx['PicURL']!=null){r[idx['PicURL']]=pv+'='+urls.join('|');photoDone.add(key)}
       }
-      rows.push(r)
-    })
-  }else{
-    const price=currentSalePrice();
-    if(!price)throw Error('Prezzo di vendita non disponibile');
-    parent[idx['Buy It Now price']]=price;
-    parent[idx['Quantity']]=qty
-  }
+    }
+    rows.push(r)
+  });
 
   const info1=row(),info2=row(),info3=row();
   info1[0]='#INFO';
@@ -751,24 +721,14 @@ function buildCsv(){
 
   const output=[info1,info2,info3,headers,...rows];
   const csv=output.map(r=>r.map(escCsv).join(',')).join('\r\n');
-  const sourceItemId=clean(data.itemId||clone.itemId||window.__capitanSellLikeSourceItemId||'');
-  const groupId=market.marketplace+'-'+sourceItemId+'-'+categoryId;
   return {
     csv,
-    fileName:'sell-like-'+market.marketplace.toLowerCase()+'-'+(sourceItemId||Date.now())+'.csv',
-    rows:rows.length,
+    fileName:'sell-like-variants-'+clean(data.itemId||window.__capitanSellLikeSourceItemId||Date.now())+'.csv',
+    rows:variants.length,
     columns:headers.length,
     policies:{shipping,payment,returns},
     missingPolicies,
-    required:{title,categoryId,description,conditionId,location},
-    headers,
-    dataRows:rows,
-    sourceItemId,
-    groupId,
-    marketplace:market.marketplace,
-    sheetName:market.sheetName,
-    currency:market.currency,
-    hasVariations
+    required:{title,categoryId,description,conditionId,location}
   }
 }
 function download(res){
@@ -776,34 +736,65 @@ function download(res){
   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=res.fileName;document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},500)
 }
 async function run(){
-  for(let i=0;i<160;i++){
-    const cl=cloneData(),st=variantState();
-    const mode=String(window.__capitanSellLikeMode||'mono');
-    const ready=!!(cl&&cl.ok&&(mode!=='variants'||(st&&st.data&&st.data.hasVariations)));
-    if(ready){
+  for(let i=0;i<120;i++){
+    const st=variantState(),cl=cloneData();
+    if(st&&st.data&&st.data.hasVariations&&cl&&cl.ok){
       try{
+        const categoryId=currentCategoryId();
+        if(categoryId){
+          try{
+            const tax=await taxonomyCategoryLookup(categoryId);
+            if(tax&&tax.ok&&clean(tax.categoryName)){
+              window.__capitanTaxonomyCategoryId=categoryId;
+              window.__capitanTaxonomyCategoryName=clean(tax.categoryName)
+            }else if(tax&&tax.error){
+              console.warn('eBay Taxonomy category lookup',tax.error)
+            }
+          }catch(taxErr){
+            console.warn('eBay Taxonomy category lookup',taxErr)
+          }
+        }
         const res=buildCsv();
-        window.__capitanSellLikeCsv=res;
-        if(res.hasVariations)window.__capitanVariantCsv=res;
-        window.__capitanBuildSellLikeCsv=buildCsv;
-        window.__capitanDownloadSellLikeCsv=()=>{
+        window.__capitanVariantCsv=res;
+        const panel=document.getElementById('capitan-sell-like-clone');
+        const b=panel&&panel.querySelector('[data-ebay-action="csv"],[data-ebay-action="save"]');
+        window.__capitanDownloadVariantCsv=()=>{
           const fresh=buildCsv();
-          window.__capitanSellLikeCsv=fresh;
-          if(fresh.hasVariations)window.__capitanVariantCsv=fresh;
+          window.__capitanVariantCsv=fresh;
           download(fresh)
         };
-        // Backward compatibility for any external caller of the old variants-only export.
-        window.__capitanDownloadVariantCsv=window.__capitanDownloadSellLikeCsv;
-        setStatus('CSV eBay pronto: '+res.rows+' righe, '+res.columns+' colonne mappate.');
+        if(b){
+          b.dataset.ebayAction='csv';
+          b.textContent='Scarica CSV';
+          b.style.background='#16a34a';
+          b.style.color='#fff';
+          b.style.border='1px solid #12813a';
+          b.style.fontWeight='700';
+          b.style.cursor='pointer';
+          b.onclick=null
+        }
+        const list=panel&&panel.querySelector('[data-ebay-action="list"]');
+        if(list)list.style.display='none';
+        const mainStatus=document.querySelector('#capitan-sell-like-clone #st');
+        if(mainStatus)mainStatus.innerHTML='<span class="ok">Preparazione completata.</span> CSV eBay pronto.';
+        const staleStatus=document.querySelector('#capitan-variants-auto-status');
+        if(staleStatus){staleStatus.style.color='#137333';staleStatus.textContent='CSV eBay pronto.'}
+        setStatus('CSV eBay pronto: '+res.rows+' varianti, '+res.columns+' colonne mappate.');
+        try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
       }catch(e){
-        console.warn('Sell Like CSV',e);
-        setStatus('CSV non generato: '+String(e&&e.message||e),true)
+        console.warn('Variant CSV',e);
+        const msg=(e&&e.message?e.message:e);
+        setStatus('CSV varianti non generato: '+msg,true);
+        const mainStatus=document.querySelector('#capitan-sell-like-clone #st');
+        if(mainStatus)mainStatus.innerHTML='<span class="bad">Preparazione non completata.</span> '+String(msg);
+        try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
       }
       return
     }
-    await sleep(100)
+    await sleep(250)
   }
-  setStatus('CSV non generato: dati non pronti.',true)
+  setStatus('CSV varianti non generato: dati non pronti.',true);
+  try{if(typeof window.__capitanStopProcessTimer==='function')window.__capitanStopProcessTimer()}catch(_){};
 }
 run();
 })();
