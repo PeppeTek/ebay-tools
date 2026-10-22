@@ -111,11 +111,14 @@ async function addCurrent(btn){
   }catch(e){console.error(e);log('Aggiungi a catalogo: '+String(e&&e.message||e),'bad')}
   finally{btn.disabled=false;btn.textContent=old}
 }
-function replaceButton(oldBtn,kind){
-  if(!oldBtn||oldBtn.dataset.catalogAction)return null;
-  const btn=oldBtn.cloneNode(true);
-  btn.dataset.catalogAction=kind;
+function createCatalogButton(oldBtn,kind){
+  if(!oldBtn)return null;
+  const btn=oldBtn.cloneNode(false);
+  btn.removeAttribute('id');
   btn.removeAttribute('onclick');
+  btn.removeAttribute('aria-label');
+  btn.type='button';
+  btn.dataset.catalogAction=kind;
   btn.disabled=false;
   if(kind==='csv'){
     btn.textContent='Scarica CSV';
@@ -124,7 +127,7 @@ function replaceButton(oldBtn,kind){
     btn.textContent='Aggiungi a catalogo';
     btn.style.background='#16a34a';btn.style.color='#fff';btn.style.borderColor='#12813a';btn.style.fontWeight='700'
   }
-  oldBtn.replaceWith(btn);
+  btn.style.borderRadius='22px';
   btn.addEventListener('click',e=>{
     e.preventDefault();e.stopPropagation();
     kind==='csv'?downloadCurrent(btn):addCurrent(btn)
@@ -135,10 +138,17 @@ for(let i=0;i<100;i++){
   const panel=document.getElementById(PANEL_ID);
   const ali=panel&&panel.querySelector('#capitan-aliexpress-best-match');
   const amazon=panel&&panel.querySelector('#capitan-amazon-best-match');
-  if(panel&&ali&&amazon){
-    replaceButton(ali,'csv');
-    replaceButton(amazon,'catalog');
-    // Keep the original left-side source buttons untouched; only the two right-side Best Match buttons are replaced.
+  const actions=panel&&panel.querySelector('[data-ebay-actions]');
+  if(panel&&ali&&amazon&&actions){
+    if(!actions.querySelector('[data-catalog-actions-slot]')){
+      const slot=document.createElement('div');
+      slot.setAttribute('data-catalog-actions-slot','1');
+      slot.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px;width:100%;grid-column:1 / -1';
+      slot.appendChild(createCatalogButton(ali,'csv'));
+      slot.appendChild(createCatalogButton(amazon,'catalog'));
+      actions.appendChild(slot);
+    }
+    // Preserve both Best Match handlers and all existing source buttons.
     const list=panel.querySelector('[data-ebay-action="list"]');if(list)list.style.display='';
     const save=panel.querySelector('[data-ebay-action="csv"]');
     if(save){
