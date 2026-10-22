@@ -648,6 +648,8 @@ function fillDirectTemplateFields(row,idx,headers,clone){
 function buildCsv(){
   const st=variantState(),clone=cloneData();
   if(!clone||!clone.ok)throw Error('Dati listing non ancora pronti');
+  const probe=window.__capitanVariantProbe;
+  if(probe&&probe.mode==='unknown'&&probe.error)throw Error('Verifica varianti eBay non riuscita: '+String(probe.error));
 
   const market=marketplaceConfig();
   const data=st&&st.data&&st.data.hasVariations?st.data:clone;
