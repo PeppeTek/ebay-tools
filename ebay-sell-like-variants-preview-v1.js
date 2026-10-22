@@ -53,7 +53,7 @@ async function startAutomaticVariantFlow(){
   saveVariantState();
   applyVariantActionUi();
   const s=document.querySelector('#capitan-variants-auto-status');
-  if(s)s.textContent='Generazione automatica CSV varianti...'
+  if(s)s.textContent=currentData&&currentData.pricesConfirmed?'Prezzi e quantità confermati':'Conferma i prezzi e le quantità prima di aggiungere al catalogo'
 }
 let variantMode=false;
 function enforceVariantMode(){
