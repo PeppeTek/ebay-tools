@@ -333,8 +333,14 @@ function firstSpecificValue(v,name){
   return clean(s&&s.value)
 }
 function salePrice(v,discount){
+  // A confirmed per-variation manual price takes precedence over the global percentage.
+  const manual=v&&v.targetPrice;
+  if(manual!==undefined&&manual!==null&&String(manual).trim()!==''){
+    const n=Number(String(manual).replace(',','.'));
+    return isFinite(n)&&n>0?n.toFixed(2):'';
+  }
   const n=Number(v&&v.sourcePrice);if(!isFinite(n)||n<=0)return'';
-  return (Math.round(n*(1-discount)*100)/100).toFixed(2)
+  return (Math.round(n*(1+discount)*100)/100).toFixed(2)
 }
 function identifier(v,names){
   for(const n of names){
@@ -649,6 +655,7 @@ function buildCsv(){
   const dims=hasVariations&&Array.isArray(data.dimensions)?data.dimensions:[];
   const variants=hasVariations&&Array.isArray(data.variants)?data.variants:[];
   if(hasVariations&&(!dims.length||!variants.length))throw Error('Varianti incomplete nel payload');
+  if(hasVariations&&!data.pricesConfirmed)throw Error('Conferma prima prezzi e quantità delle varianti nel pannello Dropper');
 
   const baseHeaders=listingsExportHeaders().map(h=>/^\*Action\(/i.test(h)?market.action:h);
   const dynamicHeaders=dynamicAspectHeaders(dims,baseHeaders);
@@ -711,16 +718,21 @@ function buildCsv(){
 
   if(hasVariations){
     parent[idx['Relationship details']]=relationshipParent(dims);
-    const photoDim=dims[0]&&clean(dims[0].name);
+    const photoDim=clean((data.variationPictures||[]).find(p=>p&&p.name&&p.images&&p.images.length)?.name||'');
     const photoDone=new Set();
     variants.forEach((v,i)=>{
       const r=row();
-      r[idx[actionHeader]]='Add';
+      // eBay requires action only on the parent row of a multi-variation Add listing.
+      r[idx[actionHeader]]='';
       r[idx['Custom label (SKU)']]=(skuBase+'-'+String(i+1).padStart(2,'0')).slice(0,50);
       r[idx['Relationship']]='Variation';
       r[idx['Relationship details']]=relationshipChild(v);
-      r[idx['Quantity']]=qty;
-      r[idx['Start price']]=salePrice(v,discount);
+      const variantQty=v.targetQuantity===undefined||v.targetQuantity===null?qty:Number(v.targetQuantity);
+      if(!Number.isInteger(variantQty)||variantQty<=0)throw Error('Quantità non valida per variante: '+(v.title||v.index));
+      r[idx['Quantity']]=variantQty;
+      const variantPrice=salePrice(v,discount);
+      if(!variantPrice)throw Error('Prezzo non valido per variante: '+(v.title||v.index));
+      r[idx['Start price']]=variantPrice;
       r[idx['Location']]=location;
       const vUpc=identifier(v,['upc','UPC']);
       if(vUpc&&idx['P:UPC']!=null)r[idx['P:UPC']]=vUpc;
@@ -730,7 +742,7 @@ function buildCsv(){
         const pv=firstSpecificValue(v,photoDim),key=pv.toLowerCase();
         if(pv&&!photoDone.has(key)){
           const urls=(v.images||[]).map(safeUrl).filter(Boolean).slice(0,12);
-          if(urls.length&&idx['PicURL']!=null){r[idx['PicURL']]=pv+'='+urls.join('|');photoDone.add(key)}
+          if(urls.length&&idx['Item photo URL']!=null){r[idx['Item photo URL']]=pv+'='+urls.join('|');photoDone.add(key)}
         }
       }
       rows.push(r)
