@@ -50,7 +50,7 @@ async function waitDoc(win,re,ms=15000){
 async function injectEditor(win){
   try{
     try{const old=win.document&&win.document.querySelector('[id^="capitan-variants-editor-v"]');if(old)old.remove()}catch(_){}
-    const src='https://raw.githubusercontent.com/PeppeTek/ebay-tools/main/ebay-sell-like-variants-editor-v1.js?ts='+Date.now();
+    const src='https://raw.githubusercontent.com/PeppeTek/ebay-tools/test-variants-20261023/ebay-sell-like-variants-editor-v1.js?ts='+Date.now();
     const r=await fetch(src,{cache:'no-store'});if(!r.ok)throw Error('GitHub HTTP '+r.status);
     let code=(await r.text()).replace(/^\s*javascript\s*:/i,'');
     win.eval(code);
