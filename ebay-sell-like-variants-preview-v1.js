@@ -28,42 +28,37 @@ function closePreopenedHelper(){
   try{const w=window.__capitanPreopenedVariantWindow;if(w&&!w.closed)w.close()}catch(_){}
 }
 function applyVariantActionUi(){
-  const p=document.getElementById(PANEL_ID);if(!p)return;
-  const list=p.querySelector('[data-ebay-action="list"]');
-  const save=p.querySelector('[data-ebay-action="save"],[data-ebay-action="csv"]');
-  const pair=p.querySelector('[data-ebay-secondary-pair]');
-  if(list)list.style.display='none';
-  if(save){
-    if(window.__capitanVariantCsv){
-      save.style.display='';
-      save.dataset.ebayAction='csv';
-      save.textContent='Scarica CSV';
-      save.style.background='#16a34a';
-      save.style.color='#fff';
-      save.style.border='1px solid #12813a';
-      save.style.fontWeight='700';
-      save.style.cursor='pointer'
-    }else{
-      save.style.display='none'
+  // Keep every existing action in exactly its original position and styling.
+  const p=document.getElementById(PANEL_ID),list=p&&p.querySelector('[data-ebay-action="list"]');
+  if(!list||list.dataset.capitanVariantTestListGuard==='1')return;
+  list.dataset.capitanVariantTestListGuard='1';
+  list.addEventListener('click',e=>{
+    if(!variantMode)return;
+    e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+    if(!currentData||!currentData.pricesConfirmed){
+      alert('Varianti: conferma prima i prezzi e le quantità nella tabella Dropper Analytics.');
+      return
     }
-  }
-  if(pair)pair.style.gridTemplateColumns=window.__capitanVariantCsv?'1fr 1fr':'1fr'
+    if(typeof window.__capitanOpenVariantsWindow!=='function'){
+      alert('Editor varianti non pronto. Riapri Sell Like Clone TEST e riprova.');
+      return
+    }
+    // List it on a variant item first opens the existing native eBay variations editor.
+    // It must not publish an incomplete single-item listing.
+    void window.__capitanOpenVariantsWindow().then(ok=>{
+      if(!ok)alert('Editor eBay Variations non aperto: '+String(window.__capitanVariantsLastError||'controlla popup eBay'));
+    }).catch(err=>alert('Errore editor varianti: '+String(err&&err.message||err)))
+  },true)
 }
 async function startAutomaticVariantFlow(){
   saveVariantState();
   applyVariantActionUi();
   const s=document.querySelector('#capitan-variants-auto-status');
-  if(s)s.textContent='Generazione automatica CSV varianti...'
+  if(s)s.textContent=currentData&&currentData.pricesConfirmed?'Prezzi e quantità confermati':'Conferma i prezzi e le quantità prima di aggiungere al catalogo'
 }
 let variantMode=false;
 function enforceVariantMode(){
   if(!variantMode)return;
-  const ctx=targetContainer();if(!ctx)return;
-  [...ctx.steps.querySelectorAll('.row')].forEach(r=>{
-    const t=clean(r.innerText||r.textContent||'');
-    if(/^Prezzo(?: di vendita)?(?: \(-\d+(?:[.,]\d+)?%\))?:/i.test(t)&&r.id!=='capitan-variants-preview')r.style.display='none';
-  });
-  const be=ctx.p.querySelector('#capitan-break-even-row');if(be)be.style.display='none';
   applyVariantActionUi();
 }
 function variantPanelWidth(data){
@@ -72,35 +67,106 @@ function variantPanelWidth(data){
   if(maxLen>32)return 'min(720px,calc(100vw - 24px))';
   return 'min(620px,calc(100vw - 24px))';
 }
+function adjustedPrice(v,discountRate){
+  const n=Number(v&&v.sourcePrice);
+  return Number.isFinite(n)&&n>0?(Math.round(n*(1+discountRate)*100)/100).toFixed(2):'';
+}
+function ensureVariantDraft(data,discountRate){
+  if(!data||!Array.isArray(data.variants))return;
+  for(const v of data.variants){
+    if(v.targetPrice===undefined)v.targetPrice=adjustedPrice(v,discountRate);
+    if(v.targetQuantity===undefined)v.targetQuantity=3;
+    if(v.priceOverridden===undefined)v.priceOverridden=false;
+  }
+  if(data.pricesConfirmed===undefined)data.pricesConfirmed=false
+}
+function markVariantDraft(){
+  if(!currentData)return;
+  currentData.pricesConfirmed=false;
+  window.__capitanVariantCsv=null;
+  saveVariantState();
+  const status=document.getElementById('capitan-variants-auto-status');
+  if(status){status.textContent='Modifiche non confermate: controlla prezzi, quantità e immagini prima del catalogo.';status.style.color='#ac6500'}
+}
 function render(data,rates,discountRate){
   const ctx=targetContainer();if(!ctx||!data||!data.hasVariations||!Array.isArray(data.variants)||!data.variants.length)return;
+  ensureVariantDraft(data,discountRate);
   variantMode=true;
-  ctx.p.style.width=variantPanelWidth(data);
   enforceVariantMode();
   ctx.p.querySelector('#capitan-variants-preview')?.remove();
   const wrap=document.createElement('div');wrap.id='capitan-variants-preview';wrap.className='row';wrap.style.padding='7px 0';
-  const rows=data.variants.map(v=>{const source=Number(v.sourcePrice),sale=isFinite(source)&&source>0?Math.round(source*(1-Number(discountRate||0))*100)/100:null,be=calcBreakEven(sale,rates);return '<tr><td style="padding:7px 6px;border-bottom:1px solid #eee;vertical-align:top;overflow-wrap:anywhere;word-break:break-word">'+esc(v.title||('Variante '+v.index))+'</td><td style="padding:7px 6px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:#137333;font-weight:700">'+esc(money(sale,data.currency))+'</td><td style="padding:7px 6px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:#1668e8;font-weight:700">'+esc(money(be,data.currency))+'</td></tr>'}).join('');
-  wrap.innerHTML='<div style="font-weight:700;color:#111;padding:1px 0 8px">Varianti: <span style="color:#137333">'+data.variants.length+' rilevate</span></div><div style="max-height:300px;overflow-y:auto;overflow-x:hidden;border:1px solid #e2e5e9;border-radius:8px"><table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px"><colgroup><col style="width:52%"><col style="width:24%"><col style="width:24%"></colgroup><thead><tr style="position:sticky;top:0;background:#fafafa;z-index:1"><th style="padding:7px 6px;text-align:left">Variante</th><th style="padding:7px 6px;text-align:right">Prezzo di vendita</th><th style="padding:7px 6px;text-align:right">Break Even Price</th></tr></thead><tbody>'+rows+'</tbody></table></div><div id="capitan-variants-auto-status" style="font-size:10px;color:#777;padding:6px 1px 0">Generazione automatica CSV varianti...</div>';
+  const rows=data.variants.map((v,i)=>{
+    const price=Number(String(v.targetPrice??'').replace(',','.'));
+    const be=Number.isFinite(price)&&price>0?calcBreakEven(price,rates):null;
+    const image=Array.isArray(v.images)&&v.images.find(u=>/^https:\/\//i.test(String(u)))||'';
+    return '<tr><td style="padding:6px;border-bottom:1px solid #eee;overflow-wrap:anywhere">'+(image?'<img src="'+esc(image)+'" alt="Foto variante" style="width:33px;height:33px;object-fit:contain;vertical-align:middle;margin-right:5px">':'<span style="color:#b45309">Foto n.d. </span>')+esc(v.title||('Variante '+(i+1)))+'</td>'+
+      '<td style="padding:6px;border-bottom:1px solid #eee;text-align:right">'+esc(money(v.sourcePrice,data.currency))+'</td>'+
+      '<td style="padding:6px;border-bottom:1px solid #eee"><input data-var-price="'+i+'" aria-label="Prezzo variante '+(i+1)+'" value="'+esc(v.targetPrice??'')+'" style="width:100%;box-sizing:border-box;padding:5px 3px;border:1px solid #999;border-radius:4px;font-size:11px"></td>'+
+      '<td style="padding:6px;border-bottom:1px solid #eee"><input data-var-qty="'+i+'" type="number" min="1" step="1" aria-label="Quantità variante '+(i+1)+'" value="'+esc(v.targetQuantity??3)+'" style="width:100%;box-sizing:border-box;padding:5px 3px;border:1px solid #999;border-radius:4px;font-size:11px"></td>'+
+      '<td style="padding:6px;border-bottom:1px solid #eee;text-align:right">'+esc(money(be,data.currency))+'</td></tr>'
+  }).join('');
+  wrap.innerHTML='<div style="font-weight:700;padding:1px 0 8px;color:#111">Varianti: <span style="color:#137333">'+data.variants.length+' rilevate</span></div>'+
+    '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><label style="font-size:11px">Modifica tutte (%) <input id="capitan-variant-discount" type="text" value="'+esc((Number(discountRate)*100).toFixed(2))+'" style="width:64px;padding:5px;border:1px solid #999;border-radius:4px"></label><button id="capitan-variant-apply-all" style="padding:6px 9px;border:1px solid #999;border-radius:6px;cursor:pointer">Applica a tutte</button></div>'+
+    '<div style="max-height:300px;overflow:auto;border:1px solid #e2e5e9;border-radius:8px"><table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px"><colgroup><col style="width:39%"><col style="width:16%"><col style="width:17%"><col style="width:11%"><col style="width:17%"></colgroup><thead><tr style="position:sticky;top:0;background:#fafafa;z-index:1"><th style="padding:6px;text-align:left">Variante / foto</th><th>Concorrente</th><th>Mio prezzo</th><th>Q.tà</th><th>Break Even</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<button id="capitan-variant-confirm" style="width:100%;margin-top:8px;padding:8px;border:0;border-radius:6px;background:#1668e8;color:#fff;font-weight:700;cursor:pointer">Conferma prezzi e quantità</button>'+
+    '<div id="capitan-variants-auto-status" style="font-size:11px;padding:6px 1px 0;color:#ac6500">'+(data.pricesConfirmed?'Prezzi e quantità confermati':'Conferma i prezzi e le quantità prima di aggiungere al catalogo')+'</div>';
   const discount=ctx.p.querySelector('#capitan-discount-row');
   if(discount)discount.insertAdjacentElement('afterend',wrap);
   else ctx.steps.prepend(wrap);
-  setTimeout(()=>startAutomaticVariantFlow(),0);
+  wrap.querySelectorAll('[data-var-price]').forEach(input=>input.addEventListener('input',()=>{
+    const i=Number(input.dataset.varPrice);data.variants[i].targetPrice=clean(input.value).replace(',','.');
+    data.variants[i].priceOverridden=true;markVariantDraft();
+  }));
+  wrap.querySelectorAll('[data-var-qty]').forEach(input=>input.addEventListener('input',()=>{
+    const i=Number(input.dataset.varQty);data.variants[i].targetQuantity=clean(input.value);
+    markVariantDraft();
+  }));
+  wrap.querySelector('#capitan-variant-apply-all').addEventListener('click',()=>{
+    const raw=clean(wrap.querySelector('#capitan-variant-discount').value).replace(',','.');
+    const pct=Number(raw);
+    if(!raw||!Number.isFinite(pct)||pct<=-100||pct>1000){alert('Percentuale non valida. Usa -2 per diminuire o +2 per aumentare.');return}
+    currentDiscount=pct/100;
+    for(const v of data.variants){v.targetPrice=adjustedPrice(v,currentDiscount);v.priceOverridden=false}
+    markVariantDraft();render(data,rates,currentDiscount);
+  });
+  wrap.querySelector('#capitan-variant-confirm').addEventListener('click',()=>{
+    const bad=data.variants.find(v=>{
+      const price=Number(String(v.targetPrice??'').replace(',','.'));
+      const quantity=Number(v.targetQuantity);
+      return !Number.isFinite(price)||price<=0||!Number.isInteger(quantity)||quantity<=0
+    });
+    if(bad){alert('Prezzo o quantità non validi per la variante: '+(bad.title||bad.index));return}
+    data.pricesConfirmed=true;saveVariantState();
+    const status=wrap.querySelector('#capitan-variants-auto-status');
+    status.textContent='Prezzi e quantità confermati. Puoi aggiungere il prodotto al catalogo.';
+    status.style.color='#137333';
+    try{window.dispatchEvent(new CustomEvent('capitan-variant-prices-confirmed',{detail:window.__capitanSellLikeVariants}))}catch(_){}
+  });
   const obs=new MutationObserver(()=>enforceVariantMode());
   obs.observe(ctx.steps,{childList:true,subtree:true,characterData:true});
   let n=0;const timer=setInterval(()=>{n++;enforceVariantMode();if(n>120){clearInterval(timer);obs.disconnect()}},125);
 }
+
 window.addEventListener('capitan-pricing-saved',e=>{
   if(e.detail?.rates){
     currentRates=e.detail.rates;
     if(isFinite(Number(e.detail.rates.discountRate)))currentDiscount=Number(e.detail.rates.discountRate);
-    if(currentData){render(currentData,currentRates,currentDiscount);saveVariantState();}
+    if(currentData){
+      for(const v of currentData.variants||[])if(!v.priceOverridden)v.targetPrice=adjustedPrice(v,currentDiscount);
+      currentData.pricesConfirmed=false;
+      render(currentData,currentRates,currentDiscount);saveVariantState();
+    }
   }
 });
 function readStoredVariantStateForProbe_(){try{return JSON.parse(localStorage.getItem(VAR_STATE_KEY)||'null')}catch(_){return null}}
 window.addEventListener('capitan-discount-updated',e=>{
   if(isFinite(Number(e.detail?.discountRate))){
     currentDiscount=Number(e.detail.discountRate);
-    if(currentData){render(currentData,currentRates,currentDiscount);saveVariantState();}
+    if(currentData){
+      for(const v of currentData.variants||[])if(!v.priceOverridden)v.targetPrice=adjustedPrice(v,currentDiscount);
+      currentData.pricesConfirmed=false;
+      render(currentData,currentRates,currentDiscount);saveVariantState();
+    }
   }
 });
 
@@ -133,6 +199,7 @@ try{
   try{window.dispatchEvent(new CustomEvent('capitan-variants-probed',{detail:window.__capitanVariantProbe}))}catch(_){}
   currentData=data;currentRates=pricing&&pricing.ok?pricing.rates:null;
   if(currentRates&&isFinite(Number(currentRates.discountRate)))currentDiscount=Number(currentRates.discountRate);else if(isFinite(Number(data.discountRate)))currentDiscount=Number(data.discountRate);
+  ensureVariantDraft(currentData,currentDiscount);
   render(currentData,currentRates,currentDiscount);
   const savedState=saveVariantState();
   window.dispatchEvent(new CustomEvent('capitan-variants-ready',{detail:savedState}));
