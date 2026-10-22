@@ -158,6 +158,76 @@ window.addEventListener('capitan-pricing-saved',e=>{
     }
   }
 });
+// TEST only: fallback when Apps Script does not expose source variation details.
+function variantDiagnostic(msg,bad=false){
+  try{
+    if(typeof window.__capitanTestLog==='function')window.__capitanTestLog('Varianti: '+msg,bad?'bad':'warn');
+    else console.warn('Varianti TEST:',msg);
+  }catch(_){}
+}
+function parseSourceSelects(doc){
+  const found=[];
+  for(const sel of doc.querySelectorAll('select')){
+    const opts=[...sel.options].filter(o=>!o.disabled).map(o=>clean(o.textContent||o.label||o.value)).filter(v=>v&&!/^(?:select|choose|please select|pick one|select an option|[-–—]+)$/i.test(v));
+    const values=[...new Set(opts)];
+    if(values.length<2||values.length>120)continue;
+    const id=clean(sel.id||'');
+    const label=id?[...doc.querySelectorAll('label[for]')].find(l=>l.getAttribute('for')===id):null;
+    const area=sel.closest('[data-testid*="variation"],[data-testid*="msku"],[id*="msku"],[class*="msku"],[class*="variation"]');
+    const heading=clean(label&&label.textContent||sel.getAttribute('aria-label')||sel.getAttribute('data-label')||'');
+    const field=clean(sel.getAttribute('name')||id||'');
+    const isVariant=!!area||/msku|variation/i.test(field)||/^(?:colo(?:u)?r|size|style|material|pattern|model|type|length|width|capacity|pack size)\b/i.test(heading);
+    if(!isVariant)continue;
+    let name=heading.replace(/:\s*(?:select|choose).*$/i,'').replace(/:\s*$/,'').trim();
+    if(!name||/^(?:select|choose|variation)$/i.test(name)){
+      const title=area&&area.querySelector('label,legend,h3,h4');
+      name=clean(title&&title.textContent||'')||field.replace(/^.*(?:msku|variation)[_-]*/i,'').replace(/[-_0-9]+/g,' ').trim();
+    }
+    if(!name)continue;
+    name=name.replace(/:\s*(?:select|choose).*$/i,'').replace(/:\s*$/,'').trim();
+    if(name.length>55)continue;
+    if(found.some(x=>x.name.toLowerCase()===name.toLowerCase()))continue;
+    found.push({name,values});
+  }
+  return found;
+}
+async function recoverSourceVariations(id,backend){
+  const own=clean(window.__capitanSellLikeSourceOrigin||location.origin).replace(/\/+$/,'');
+  const origins=[own];
+  // When the source and editor use different eBay marketplaces, try the original US listing.
+  if(own!=='https://www.ebay.com')origins.push('https://www.ebay.com');
+  let dimensions=[],warning='';
+  for(const origin of origins){
+    const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),10000);
+    try{
+      const res=await fetch(origin+'/itm/'+encodeURIComponent(id),{credentials:origin===location.origin?'include':'omit',cache:'no-store',signal:ctl.signal});
+      if(!res.ok)throw Error('HTTP '+res.status);
+      const html=await res.text();
+      if(html.length<3000)throw Error('HTML pagina insufficiente');
+      dimensions=parseSourceSelects(new DOMParser().parseFromString(html,'text/html'));
+      if(dimensions.length)break;
+      warning='Nessun selettore varianti riconosciuto nella pagina sorgente';
+    }catch(e){warning=String(e&&e.message||e)}
+    finally{clearTimeout(timer)}
+  }
+  if(!dimensions.length){variantDiagnostic('verifica pagina sorgente non riuscita ('+warning+'). Risposta backend: '+(backend&&backend.ok?'nessuna variante':'non disponibile'));return null}
+  // Combinations from independent dropdowns are not necessarily all purchasable: do not invent them.
+  if(dimensions.length!==1){variantDiagnostic('trovati '+dimensions.length+' attributi ma non le combinazioni reali; verifica backend necessaria',true);return null}
+  const dim=dimensions[0];
+  const clone=window.__capitanSellLikeCloneData||{};
+  const n=Number(backend&&backend.sourcePrice||clone.sourcePrice);
+  const base=Number.isFinite(n)&&n>0?n:null;
+  const currency=clean(backend&&backend.currency||clone.currency||window.__capitanSellLikeCurrency||'USD');
+  const variants=dim.values.map((value,i)=>({
+    index:i+1,title:dim.name+': '+value,
+    specifics:[{name:dim.name,value}],
+    sourcePrice:base, // common listing reference only, not a verified variant-specific price
+    targetPrice:'',targetQuantity:3,priceOverridden:false,images:[]
+  }));
+  variantDiagnostic('recuperate '+variants.length+' opzioni '+dim.name+' dalla pagina eBay. Prezzi per variante da verificare e inserire manualmente.');
+  return {...(backend&&backend.ok?backend:{}),ok:true,itemId:id,currency,hasVariations:true,dimensions,variants,variationPictures:[],pricesConfirmed:false,source:'listing-html-fallback',sourcePriceIsCommon:true};
+}
+
 function readStoredVariantStateForProbe_(){try{return JSON.parse(localStorage.getItem(VAR_STATE_KEY)||'null')}catch(_){return null}}
 window.addEventListener('capitan-discount-updated',e=>{
   if(isFinite(Number(e.detail?.discountRate))){
@@ -185,10 +255,15 @@ try{
   if(!data){
     try{const mi=window.__capitanSellLikeModePromise?await window.__capitanSellLikeModePromise:null;if(mi&&mi.data&&mi.data.ok&&String(mi.data.itemId||'')===String(id))data=mi.data}catch(_){}
   }
-  const pricingPromise=jsonp('sell_like_pricing_get');
-  if(!data)data=await jsonp('sell_like_variants_get',{itemId:id});
+  const pricingPromise=jsonp('sell_like_pricing_get').catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!data){try{data=await jsonp('sell_like_variants_get',{itemId:id})}catch(e){variantDiagnostic('backend varianti non raggiungibile: '+String(e&&e.message||e))}}
+  if(data&&data.ok&&Array.isArray(data.variants)&&data.variants.length&&Array.isArray(data.dimensions)&&data.dimensions.length)data.hasVariations=true;
+  if(!data||!data.ok||!data.hasVariations){
+    const recovered=await recoverSourceVariations(id,data);
+    if(recovered)data=recovered;
+  }
   const pricing=await pricingPromise;
-  if(!data||!data.ok)throw Error(data&&data.error?data.error:'Varianti non disponibili');
+  if(!data||!data.ok){variantDiagnostic('nessun dato eBay attendibile per le varianti',true);window.__capitanVariantProbe={mode:'unknown',error:'Dati varianti sorgente non disponibili'};return}
   if(!data.hasVariations){
     window.__capitanVariantProbe={mode:'mono',data:data};
     try{window.dispatchEvent(new CustomEvent('capitan-variants-probed',{detail:window.__capitanVariantProbe}))}catch(_){}
@@ -197,6 +272,7 @@ try{
   }
   window.__capitanVariantProbe={mode:'variants',data:data};
   try{window.dispatchEvent(new CustomEvent('capitan-variants-probed',{detail:window.__capitanVariantProbe}))}catch(_){}
+  if(data.source==='listing-html-fallback')window.__capitanSellLikeMode='variants';
   currentData=data;currentRates=pricing&&pricing.ok?pricing.rates:null;
   if(currentRates&&isFinite(Number(currentRates.discountRate)))currentDiscount=Number(currentRates.discountRate);else if(isFinite(Number(data.discountRate)))currentDiscount=Number(data.discountRate);
   ensureVariantDraft(currentData,currentDiscount);
