@@ -34,7 +34,15 @@ function state(){
   return null
 }
 function payload(){const s=state();return s&&s.data||null}
-function saleFor(v){const st=state()||{};const d=Number(st.discountRate);const discount=isFinite(d)?d:.02;const source=Number(v&&v.sourcePrice);return isFinite(source)&&source>0?Math.round(source*(1-discount)*100)/100:null}
+function saleFor(v){
+  const manual=v&&v.targetPrice;
+  if(manual!==undefined&&manual!==null&&String(manual).trim()!==''){
+    const n=Number(String(manual).replace(',','.'));return Number.isFinite(n)&&n>0?Math.round(n*100)/100:null
+  }
+  const st=state()||{},d=Number(st.discountRate),rate=Number.isFinite(d)?d:.02,source=Number(v&&v.sourcePrice);
+  return Number.isFinite(source)&&source>0?Math.round(source*(1+rate)*100)/100:null
+}
+function quantityFor(v){const n=Number(v&&v.targetQuantity);return Number.isInteger(n)&&n>0?n:3}
 function setNative(el,value){
   if(!el)return false;
   const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
@@ -401,7 +409,7 @@ function fillRows(scope,data){
     const inputs=[...row.querySelectorAll('input')].filter(visible);
     const price=inputs.find(x=>/price/i.test(clean([x.name,x.id,x.placeholder,x.getAttribute('aria-label')].join(' '))))||inputs.find(x=>/price|usd|\$/i.test(clean(x.closest('td,div')&&x.closest('td,div').innerText||'')));
     const sale=saleFor(v);if(price&&sale!=null){setNative(price,sale.toFixed(2));prices++}
-    const qty=inputs.find(x=>/quantity|qty/i.test(clean([x.name,x.id,x.placeholder,x.getAttribute('aria-label')].join(' '))));if(qty)setNative(qty,'3')
+    const qty=inputs.find(x=>/quantity|qty/i.test(clean([x.name,x.id,x.placeholder,x.getAttribute('aria-label')].join(' '))));if(qty)setNative(qty,String(quantityFor(v)))
   }
   return prices
 }
@@ -439,7 +447,7 @@ function selectOptionNative(sel,value){
   sel.value=opt.value;sel.dispatchEvent(new Event('input',{bubbles:true}));sel.dispatchEvent(new Event('change',{bubbles:true}));return true
 }
 async function ensurePhotoAttribute(data){
-  const dim=clean((data.dimensions&&data.dimensions[0]&&data.dimensions[0].name)||'Color');
+  const dim=clean((data.variationPictures||[]).find(p=>p&&p.name)?.name||(data.dimensions&&data.dimensions[0]&&data.dimensions[0].name)||'Color');
   const labels=[...document.querySelectorAll('div,span,h2,h3,h4,label')].filter(visible).filter(x=>/Add variation photos/i.test(clean(x.innerText||x.textContent||'')));
   let root=labels[0]||document.body;
   for(let i=0;i<5&&root;i++,root=root.parentElement){
@@ -486,7 +494,7 @@ async function fillCombination(v){
   const price=inputs.find(x=>/price/i.test(clean([x.name,x.id,x.placeholder,x.getAttribute('aria-label')].join(' '))));
   const qty=inputs.find(x=>/quantity|qty/i.test(clean([x.name,x.id,x.placeholder,x.getAttribute('aria-label')].join(' '))));
   if(price&&sale!=null)setNative(price,sale.toFixed(2));
-  if(qty)setNative(qty,'3');
+  if(qty)setNative(qty,String(quantityFor(v)));
   if(price&&qty)return true;
 
   const check=row.querySelector('input[type="checkbox"]');
@@ -494,7 +502,7 @@ async function fillCombination(v){
   if(!check.checked){check.click();await sleep(120)}
   let ok=true;
   if(!price&&sale!=null)ok=(await commitBulkValue('Enter price',sale.toFixed(2)))&&ok;
-  if(!qty)ok=(await commitBulkValue('Enter quantity','3'))&&ok;
+  if(!qty)ok=(await commitBulkValue('Enter quantity',String(quantityFor(v))))&&ok;
   if(check.checked){check.click();await sleep(80)}
   return ok
 }
@@ -545,13 +553,17 @@ async function uploadFilesFallback(urls,prefix){
 async function assignVariationPhotosDedicated(data){
   await ensurePhotoAttribute(data);
   let done=0;
+  const photoDim=clean((data.variationPictures||[]).find(p=>p&&p.name)?.name||'');
+  const assigned=new Set();
   for(const v of data.variants||[]){
     if(!v.images||!v.images.length)continue;
-    const label=(v.specifics&&v.specifics[0]&&v.specifics[0].value)||clean(v.title).replace(/^.*?:\s*/,'');
+    const matching=(v.specifics||[]).find(x=>clean(x.name).toLowerCase()===photoDim.toLowerCase());
+    const label=clean(matching&&matching.value);
+    if(!label||assigned.has(label.toLowerCase()))continue;
     if(!await clickPhotoVariant(label))continue;
     let ok=await uploadUrlsFromWeb(v.images);
     if(!ok)ok=await uploadFilesFallback(v.images,'variant-'+v.index);
-    if(ok)done++;
+    if(ok){done++;assigned.add(label.toLowerCase())}
   }
   return done
 }
@@ -566,7 +578,7 @@ async function handleCombinationsPage(data){
 }
 
 async function run(data){
-  if(!data||!data.hasVariations)return;
+  if(!data||!data.hasVariations||!data.pricesConfirmed)return;
   status('Automazione varianti avviata...');
   if(isCombinationsPage()){await handleCombinationsPage(data);return}
   if(isCreateVariationsPage()){
