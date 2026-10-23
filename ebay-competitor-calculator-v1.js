@@ -55,7 +55,7 @@ const style=document.createElement('style');style.id=styleId;style.textContent=
 '#'+panelId+' .span2{grid-column:1/-1}#'+panelId+' .settings{display:none;background:#fafafa;padding:12px 14px;border-top:1px solid #ddd}'+
 '#'+panelId+' .settings.open{display:block}#'+panelId+' .feegrid{display:grid;grid-template-columns:1fr 90px;gap:7px;align-items:center}'+
 '#'+panelId+' .dc-tier-details{margin:5px 0;padding:8px;border:1px solid #e1e5ec;border-radius:7px;background:#fff}#'+panelId+' .dc-tier-details summary{font-size:11px;font-weight:700;line-height:1.5;cursor:pointer;list-style:revert}#'+panelId+' .dc-tier-details .feegrid{margin-top:9px}'+
-'#'+panelId+' .dc-fee-table{border:1px solid #e1e5ec;border-radius:7px;padding:9px 10px;margin:9px 0;background:#f8fafc;font-size:11px;line-height:1.45}#'+panelId+' .dc-fee-table .dc-fee-line{display:flex;justify-content:space-between;gap:14px;padding:4px 0;border-bottom:1px solid #e7ebf0}#'+panelId+' .dc-fee-table .dc-fee-line:last-child{border-bottom:0}#'+panelId+' .dc-fee-table .dc-fee-line b{text-align:right;white-space:nowrap}#'+panelId+' .dc-fee-table .dc-fee-emphasis{font-weight:700;color:#1d4ed8}'+
+'#'+panelId+' .dc-fee-table{border:1px solid #e1e5ec;border-radius:7px;padding:9px 10px;margin:9px 0;background:#f8fafc;font-size:11px;line-height:1.45}#'+panelId+' .dc-fee-table summary{cursor:pointer;list-style:revert;color:#111;font-weight:700}#'+panelId+' .dc-fee-table[open] summary{margin-bottom:5px}#'+panelId+' .dc-fee-table .dc-fee-line{display:flex;justify-content:space-between;gap:14px;padding:4px 0;border-bottom:1px solid #e7ebf0}#'+panelId+' .dc-fee-table .dc-fee-line:last-child{border-bottom:0}#'+panelId+' .dc-fee-table .dc-fee-line b{text-align:right;white-space:nowrap}#'+panelId+' .dc-fee-table .dc-fee-emphasis{font-weight:700;color:#1d4ed8}'+
 '#'+panelId+' .message{margin:0 14px 12px;padding:9px;border:1px solid #e2e5ec;background:#f8f9fb;border-radius:7px;font-size:11px;line-height:1.5;white-space:pre-wrap}'+
 '#'+panelId+' .message[data-status="bad"]{color:#b42318}#'+panelId+' .message[data-status="warn"]{color:#986000}#'+panelId+' .message[data-status="ok"]{color:#137333}'+
 '@media(max-width:420px){#'+panelId+' .row{grid-template-columns:minmax(0,1fr) 70px 90px;gap:4px}#'+panelId+' .main{padding:8px 10px}#'+panelId+' .hd{flex-wrap:wrap}#'+panelId+' .hd b{flex:1 0 100%}#'+panelId+' .hd select{flex:1 1 auto}}';
@@ -70,7 +70,7 @@ panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPP
 '<div class="row"><label>Riduzione rispetto al prezzo rilevato:</label><input data-el="discount" type="number" step=".01"><div class="val" data-el="source-local">—</div></div>'+
 '<div class="row"><label>Prezzo di vendita:</label><input data-el="sale" type="number" min=".01" step=".01"><div class="val" data-el="sale-view">—</div></div>'+
 '<div class="row"><label>Incasso al netto delle commissioni:</label><span></span><div class="val" data-el="net" style="color:#d97706">—</div></div>'+
-'<div class="row"><label>Costo d’acquisto:</label><input type="number" data-el="cost" step=".01" min="0" title="Inserisci costo acquisto in USD" placeholder="—"><div class="val" data-el="cost-view" style="color:#e3342f">—</div></div>'+
+'<div class="row"><label>Costo d’acquisto (USD):</label><input type="number" data-el="cost" step=".01" min="0" title="Inserisci costo acquisto in USD" placeholder="—"><div class="val" data-el="cost-view" style="color:#e3342f">—</div></div>'+
 '<div class="row"><label>Il mio utile netto:</label><span></span><div class="val" data-el="profit">—</div></div>'+
 '<div class="row"><label>Prezzo minimo di pareggio:</label><span></span><div class="val" data-el="break-even" style="color:#2563eb">—</div></div>'+
 '<div class="hint" data-el="fee-details"></div><div class="hint" data-el="fx-status"></div></div>'+
@@ -105,11 +105,15 @@ function recalc(){
  el('source-label').textContent=S.sourceMethod==='manuale'?'Modificabile':'Letto: '+S.sourceMethod;
 }
 function renderFeeDetails(st){
- const box=el('fee-details');box.replaceChildren();
+ const box=el('fee-details');
+ // Keep the detail open/closed state across recalc, country selection and cost edits.
+ const previous=box.querySelector('details.dc-fee-table');
+ const wasOpen=!!(previous&&previous.open);
+ box.replaceChildren();
  if(!st){box.textContent='Commissioni da calcolare: controlla quantità, prezzo e spedizione.';return}
- const wrapper=document.createElement('div');wrapper.className='dc-fee-table';
- const header=document.createElement('div');header.style.fontWeight='700';header.style.marginBottom='5px';
- header.style.color='#111';header.textContent='DETTAGLIO CALCOLO · '+cur();wrapper.appendChild(header);
+ const wrapper=document.createElement('details');wrapper.className='dc-fee-table';wrapper.open=wasOpen;
+ const header=document.createElement('summary');
+ header.textContent='DETTAGLIO CALCOLO · '+cur();wrapper.appendChild(header);
  function line(label,amount,strong=false){
   const row=document.createElement('div');row.className='dc-fee-line'+(strong?' dc-fee-emphasis':'');
   const left=document.createElement('span');left.textContent=label;
