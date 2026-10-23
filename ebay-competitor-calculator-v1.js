@@ -206,6 +206,12 @@ function renderSettings(){
   label.textContent=feeLabel(key);
   input.dataset.rate=key;input.type='number';input.min='0';input.step='.01';
   input.value=String(C.round(absolute?S.fees[S.market][key]:S.fees[S.market][key]*100));
+  if(key==='fixedFee'&&S.market!=='AU'){
+   label.textContent='Tariffa fissa a scaglioni ('+cur()+')';
+   input.type='text';input.value=Number(S.fees[S.market].fixedFeeLow).toFixed(2)+' / '+Number(S.fees[S.market].fixedFeeHigh).toFixed(2);
+   input.readOnly=true;input.disabled=true;
+   input.title='Modifica i valori in Scaglioni tariffa fissa qui sotto';
+  }
   container.append(label,input);
  }
  for(const key of [...fields,'sellerDiscountPct','shippingCharge'])makeFeeField(key,box);
@@ -224,6 +230,7 @@ el('gear').addEventListener('click',()=>{el('settings').classList.toggle('open')
 el('save-rates').addEventListener('click',()=>{
  const rates={...S.fees[S.market]};
  for(const input of el('feegrid').querySelectorAll('input')){
+   if(input.disabled)continue; // US/CA fixed-fee range summary is read-only; tiers are the editable source.
    const key=input.dataset.rate,v=C.num(input.value),abs=key==='fixedFee'||tierKeys.includes(key)||key==='shippingCharge'||key==='sellerDiscountPct';
    if(v===null||v<0||(!abs&&v>=100)||(key==='sellerDiscountPct'&&v>=100)||(key==='fixedFeeThreshold'&&v<=0)){message('Tariffa non valida: '+key,'bad');return}
    rates[key]=abs?v:v/100;
