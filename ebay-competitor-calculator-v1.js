@@ -64,6 +64,8 @@ panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPP
 '<div class="row"><label>Prezzo di vendita:</label><input data-el="sale" type="number" min=".01" step=".01"><div class="val" data-el="sale-view">—</div></div>'+
 '<div class="row"><label>Master Total commissionabile:</label><span></span><div class="val" data-el="master" style="color:#334155">—</div></div>'+ 
 '<div class="row"><label>Tariffe sul prezzo di vendita:</label><span></span><div class="val" data-el="fees" style="color:#e3342f">—</div></div>'+
+'<div class="row"><label>Ricavo venditore (senza Sales Tax):</label><span></span><div class="val" data-el="revenue">—</div></div>'+
+'<div class="row"><label>Incasso netto dopo commissioni:</label><span></span><div class="val" data-el="net">—</div></div>'+
 '<div class="row"><label>Costo totale d’acquisto:</label><span></span><div class="val" data-el="cost-view">—</div></div>'+
 '<div class="row"><label>Il mio utile netto:</label><span></span><div class="val" data-el="profit">—</div></div>'+
 '<div class="row"><label>Prezzo minimo di pareggio:</label><span></span><div class="val" data-el="break-even" style="color:#2563eb">—</div></div>'+
@@ -90,12 +92,14 @@ function recalc(){
  textMoney('sale-view',S.sale,S.sale!==null&&fx?C.round(S.sale*fx):null);
  textMoney('master',st?.masterTotal??null,st&&fx?C.round(st.masterTotal*fx):null);
  textMoney('fees',st?.fee??null,st&&fx?C.round(st.fee*fx):null);
+ textMoney('revenue',st?.buyerRevenue??null,st&&fx?C.round(st.buyerRevenue*fx):null);
+ textMoney('net',st?.net??null,st&&fx?C.round(st.net*fx):null);
  textMoney('cost-view',st?.costLocal??null,S.purchaseUsd);
  textMoney('profit',st?.profitLocal??null,st?.profitUSD??null);
  el('profit').style.color=st?.profitUSD<0?'#b42318':'#16803d';
  textMoney('break-even',st?.breakEven??null,st?.breakEven!=null&&fx?C.round(st.breakEven*fx):null);
  el('fx-status').textContent=(S.fxInfo||'Conversioni da verificare')+(S.provisional[S.market]?' · Tariffe '+S.market+' di riferimento: controlla ⚙ per categoria/account':'');
- el('fee-details').textContent=st?('Per unità: '+st.itemPrice.toFixed(2)+' − sconto '+st.discount.toFixed(2)+' + spedizione '+st.shipping.toFixed(2)+' + tax '+st.tax.toFixed(2)+' = '+st.masterPerUnit.toFixed(2)+' '+cur()+' · Q.tà '+st.quantity+' · eBay '+st.fvf.toFixed(2)+' + internazionale '+st.intl.toFixed(2)+' + fissa '+st.fixedLocal.toFixed(2)+' + marketing '+st.ads.toFixed(2)+' + IVA '+st.vat.toFixed(2)+' = '+st.fee.toFixed(2)+' '+cur()):'Commissioni da calcolare';
+ el('fee-details').textContent=st?('Per unità: '+st.itemPrice.toFixed(2)+' − sconto '+st.discount.toFixed(2)+' + spedizione '+st.shipping.toFixed(2)+' + tax '+st.tax.toFixed(2)+' = '+st.masterPerUnit.toFixed(2)+' '+cur()+' · Q.tà '+st.quantity+' · eBay '+st.fvf.toFixed(2)+' + internazionale '+st.intl.toFixed(2)+' + fissa ordine '+st.fixedLocal.toFixed(2)+' + marketing '+st.ads.toFixed(2)+' = commissioni prima IVA '+st.feeSubtotal.toFixed(2)+' + IVA '+st.vat.toFixed(2)+' = totale '+st.fee.toFixed(2)+' '+cur()):'Commissioni da calcolare';
  renderComparison();
  el('source-label').textContent=S.sourceMethod==='manuale'?'Modificabile':'Letto: '+S.sourceMethod;
 }
