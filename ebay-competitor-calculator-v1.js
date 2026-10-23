@@ -72,9 +72,9 @@ panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPP
 '<div class="hint" data-el="fee-details"></div><div class="hint" data-el="fx-status"></div></div>'+
 '<div class="settings" data-el="settings"><b>Tariffe per paese selezionato</b><p class="hint">Le tariffe fisse US e CA sono espresse direttamente nella valuta del paese, non convertite da 0,40 USD. L\'Australia usa il valore osservato nel tuo estratto, modificabile.</p><div class="feegrid" data-el="feegrid" style="margin-top:9px"></div><button data-el="save-rates" style="margin-top:9px;padding:8px;background:#2563eb;color:white;border:0;border-radius:7px;cursor:pointer">Salva tariffe per questo paese</button></div>'+
 '<div class="buttons"><button data-el="ali" style="background:#ff4747;color:white">Trova su AliExpress</button><button data-el="amazon" style="background:#ffa41c;color:#111">Trova su Amazon</button>'+
-'<button class="span2" data-el="save" style="background:#16a34a;color:white">Aggiungi a catalogo</button>'+
-'<button class="span2" data-el="export" style="background:white;color:#333;height:31px">Esporta catalogo rapido CSV (3 colonne)</button></div>'+
-'<div class="message" data-el="message">Avvio calcolatore…</div><p class="hint" style="padding:0 14px 12px">Catalogo eBay Services Upload (US / CA / AU): scrive soltanto SKU, Title e Start price. Una copia resta disponibile nel browser e nel CSV rapido.</p>';
+'<button data-el="save" style="background:#16a34a;color:white">Aggiungi a catalogo</button>'+
+'<button data-el="export" style="background:white;color:#333">Esporta catalogo rapido CSV (3 colonne)</button></div>'+
+'<div class="message" data-el="message">Avvio calcolatore…</div>';
 document.body.appendChild(panel);
 const el=k=>panel.querySelector('[data-el="'+k+'"]');
 const cur=()=>C.MARKETS[S.market].currency;
