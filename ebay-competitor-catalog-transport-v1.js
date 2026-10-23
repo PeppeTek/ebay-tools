@@ -20,6 +20,48 @@ function buildPackage(entry,marketplace){
  return {version:1,marketplace:mk,sheetName:'Catalogo '+(mk==='US'?'USA':mk),sourceItemId:id,
   groupId:mk+'-'+id+'-QUICK',hasVariations:false,currency:CURRENCY[mk],headers,rows:[row]};
 }
+
+function buildVariantPackage(entry,marketplace){
+ if(!Array.isArray(entry?.variants)||entry.variants.length<1)throw Error('Varianti assenti dal catalogo');
+ const pkg=buildPackage(entry,marketplace),clean=x=>String(x==null?'':x).replace(/\s+/g,' ').trim();
+ const safe=x=>{const v=clean(x);if(!v||/[|;=\r\n]/.test(v))throw Error('Attributo non adatto al CSV eBay: '+v);return v};
+ const dims=(Array.isArray(entry.dimensions)?entry.dimensions:[]).map(d=>({name:safe(d.name),values:(Array.isArray(d.values)?d.values:[]).map(safe)}));
+ if(!dims.length||dims.some(d=>!d.values.length))throw Error('Attributi e opzioni non completi');
+ const header=pkg.headers,idx=k=>header.indexOf(k),rows=pkg.rows;
+ rows[0][idx('Relationship details')]=dims.map(d=>d.name+'='+d.values.join(';')).join('|');
+ const seen=new Set();
+ for(const [i,v] of entry.variants.entries()){
+  const price=Number(v?.price),specifics=Array.isArray(v?.specifics)?v.specifics:[];
+  if(!Number.isFinite(price)||price<=0)throw Error('Prezzo mancante nella variante '+(i+1));
+  const rel=dims.map(d=>{
+   const sp=specifics.find(x=>clean(x.name).toLowerCase()===d.name.toLowerCase());
+   const val=safe(sp?.value);
+   if(!d.values.some(t=>t.toLowerCase()===val.toLowerCase()))throw Error('Opzione non prevista: '+d.name+'='+val);
+   return d.name+'='+val;
+  }).join('|');
+  if(seen.has(rel))throw Error('Variante duplicata: '+rel);
+  seen.add(rel);
+  const child=Array(header.length).fill('');
+  child[idx('Custom label (SKU)')]=(String(entry.itemId)+'-'+String(i+1).padStart(2,'0')).slice(0,50);
+  child[idx('Relationship')]='Variation';
+  child[idx('Relationship details')]=rel;
+  child[idx('Start price')]=price.toFixed(2);
+  // Do NOT manufacture Quantity, category, policies, condition, or UPC.
+  rows.push(child);
+ }
+ pkg.hasVariations=true;pkg.groupId=pkg.marketplace+'-'+pkg.sourceItemId+'-QUICK-VARIANTS';
+ return pkg
+}
+function toCsv(pkg){
+ const esc=x=>{const t=String(x==null?'':x);return /[,"\r\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t};
+ const info=[0,1,2].map(()=>Array(pkg.headers.length).fill(''));
+ info[0][0]='#INFO';info[0][1]='Created='+Date.now();
+ info[1][0]='#INFO';info[1][1]='Version=1.0';
+ info[2][0]='#INFO';
+ const schedule=pkg.headers.indexOf('Schedule Time');
+ if(schedule>=0)info[2][schedule]='YYYY-MM-DD HH:MM:SS';
+ return '\uFEFF'+[...info,pkg.headers,...pkg.rows].map(r=>r.map(esc).join(',')).join('\r\n');
+}
 function utf8Base64Url(txt){
  const bytes=new TextEncoder().encode(String(txt));let bin='';
  for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
@@ -44,7 +86,7 @@ async function save(entry,marketplace,endpoint){
  const ep=String(endpoint||'').replace(/\/+$/,'');
  if(!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(ep))
   throw Error('Endpoint Apps Script non configurato');
- const pkg=buildPackage(entry,marketplace);
+ const pkg=Array.isArray(entry?.variants)&&entry.variants.length?buildVariantPackage(entry,marketplace):buildPackage(entry,marketplace);
  const data=utf8Base64Url(JSON.stringify(pkg)),chunkSize=1400,total=Math.ceil(data.length/chunkSize);
  if(total<1||total>600)throw Error('Dimensione catalogo non valida');
  const requestId='cat_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,12);
@@ -58,6 +100,6 @@ async function save(entry,marketplace,endpoint){
   throw Error('Il backend non ha confermato le coordinate della riga');
  return {...result,marketplace:pkg.marketplace,sourceItemId:pkg.sourceItemId};
 }
-root.__dropperCompetitorCatalogTransport={buildPackage,save};
-if(typeof module==='object'&&module.exports)module.exports={buildPackage,save};
+root.__dropperCompetitorCatalogTransport={buildPackage,buildVariantPackage,toCsv,save};
+if(typeof module==='object'&&module.exports)module.exports={buildPackage,buildVariantPackage,toCsv,save};
 })(typeof globalThis==='object'?globalThis:this);
