@@ -192,12 +192,26 @@ async function probeVariants(reload=false){
   return
  }
  const seq=++S.variantRequest;
+ let remoteFailure=null;
+ const domResult=()=>{
+  if(typeof variantTools.inspectPage!=='function')return {hasSelects:false,hasVariations:false};
+  return variantTools.inspectPage(document,location.href,data.price?.value??null,data.price?.currency||C.currencyFromHost(hostname),id)
+ };
  try{
-  const result=await variantTools.probe({itemId:id,endpoint:existingSellLikeEndpoint,fallbackCurrency:data.price?.currency||C.currencyFromHost(hostname)});
+  let result,origin='backend';
+  try{result=await variantTools.probe({itemId:id,endpoint:existingSellLikeEndpoint,fallbackCurrency:data.price?.currency||C.currencyFromHost(hostname)})}
+  catch(error){remoteFailure=error}
   if(seq!==S.variantRequest||!panel.isConnected)return;
-  if(!result.hasVariations){
-   if(!S.variantMode)return;
-   message('Il backend non conferma più le varianti: mantengo i prezzi modificati finché non viene ricaricata la pagina.','warn');return
+  if(!result?.hasVariations){
+   const available=domResult();
+   if(available.hasVariations){result=available;origin='pagina'}
+   else if(available.hasSelects){
+    message('La pagina mostra selettori varianti, ma non è possibile ricostruire combinazioni e prezzi in modo affidabile: '+(available.reason||'dati insufficienti')+'.','warn');return
+   }else if(remoteFailure){
+    message('Verifica varianti non completata: '+String(remoteFailure?.message||remoteFailure)+'. Nessun prezzo inventato.','warn');return
+   }else if(S.variantMode){
+    message('Il backend non conferma più le varianti: mantengo le modifiche fino al prossimo caricamento.','warn');return
+   }else return;
   }
   const previous=new Map(S.variants.map(v=>[v.key,v]));
   const variants=result.variants.map(v=>{
@@ -205,17 +219,21 @@ async function probeVariants(reload=false){
    return {...v,byMarket:was?.byMarket||{}}
   });
   if(!variants.length)throw Error('Nessuna combinazione variante valida');
-  const oldMaster=S.masterKey,first=variants.find(v=>v.key===oldMaster)||variants.find(v=>v.sourcePrice!==null)||variants[0];
+  if(S.variantMode)saveMasterState();
+  const oldMaster=S.masterKey;
+  const first=variants.find(v=>v.key===oldMaster)||variants.find(v=>v.key===result.selectedKey)||variants.find(v=>v.selected)||variants.find(v=>v.sourcePrice!==null)||variants[0];
   if(!S.variantMode){
    const initial=variantMarketState(first);
    initial.discount=S.discount;initial.manualSale=S.manualSale;
    if(S.manualSale&&S.sale>0)initial.sale=S.sale;
-  }else saveMasterState();
-  S.variants=variants;S.dimensions=result.dimensions;S.variantMode=true;
+  }
+  S.variants=variants;S.dimensions=result.dimensions;S.variantMode=true;S.variantStatus=origin==='pagina'?'partial':'confirmed';
   el('variants-block').style.display='block';el('variants-count').textContent='('+variants.length+' rilevate)';
   chooseMaster(first.key,false);
   if(!(Number(S.fx[S.sourceCur])>0))void fxUpdate();
-  message('Varianti confermate: '+variants.length+'. Modifica Riduzione e Prezzo soltanto sulla Master selezionata.','ok');
+  const missing=variants.filter(v=>v.sourcePrice===null).length;
+  const note=origin==='pagina'?'Rilevate dalla pagina: '+variants.length+' varianti. '+missing+' prezzi non disponibili (n.d.); seleziona la Master e imposta il prezzo prima di salvare.':'Varianti confermate: '+variants.length+'. Modifica Riduzione e Prezzo soltanto sulla Master selezionata.';
+  message(note,origin==='pagina'?'warn':'ok');
  }catch(err){
   if(seq!==S.variantRequest||!panel.isConnected)return;
   console.warn('PriceMatch Pro probe varianti',err);
@@ -337,7 +355,7 @@ async function fxUpdate(){
  recalc();
  if(errors.length)message('Cambio mancante: utile e pareggio restano vuoti, senza inventare il tasso.','warn');
  else if(!data.price)message('Prezzo concorrente non rilevato. Inserisci prezzo e valuta manualmente.','warn');
- else if(S.variantMode)message('Varianti confermate: '+S.variants.length+'. È attiva soltanto la Master selezionata.','ok');
+ else if(S.variantMode)message(S.variantStatus==='partial'?'Attributi rilevati sulla pagina. I prezzi non disponibili restano n.d. finché non vengono impostati.':'Varianti confermate: '+S.variants.length+'. È attiva soltanto la Master selezionata.',S.variantStatus==='partial'?'warn':'ok');
  else if(data.hasPriceVariants)message('Prodotto con possibili varianti: controlla il prezzo selezionato e usa ↻ per aggiornarlo.','warn');
  else message('Calcolatore pronto: verifica prezzo e valuta originali prima del salvataggio.','ok')
 }
