@@ -85,12 +85,46 @@ function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
   if(choices.some(o=>!o.text))continue;
   parts.push({name,choices,select})
  }
- // A native eBay dropdown is reliable for its displayed options; two or more
+ // Current eBay item pages also use eBay Skin listbox-button components,
+ // not native <select>. Scope strictly to the MSKU area to avoid search/sort menus.
+ if(!parts.length){
+  const widgets=[...doc.querySelectorAll('.x-msku-evo .listbox-button, .x-msku .listbox-button, .x-msku-evo [aria-haspopup="listbox"], .x-msku [aria-haspopup="listbox"]')];
+  const seenWidgets=new Set();
+  for(const widget of widgets){
+   const container=widget.matches?.('.listbox-button')?widget:widget.closest?.('.listbox-button');
+   const box=container||widget;
+   if(seenWidgets.has(box))continue;seenWidgets.add(box);
+   const button=box.querySelector?.('button[aria-haspopup="listbox"],.listbox-button__control')||
+     (widget.matches?.('button[aria-haspopup="listbox"]')?widget:null);
+   if(!button)continue;
+   const group=box.closest?.('.x-sku, .x-msku__select, .x-msku__box')||box.parentElement||box;
+   const heading=clean(group.querySelector?.('label,.ux-labels-values__labels,.x-msku__label')?.textContent||'');
+   const buttonText=clean(button.textContent||button.getAttribute?.('aria-label')||'');
+   const aria=clean(button.getAttribute?.('aria-label')||'');
+   const labelled=(heading||buttonText||aria);
+   const match=(heading+' '+buttonText+' '+aria).match(/(?:^|\\s)(plug\\s*types?|colo(?:u)?r|size|capacity|style|material|pattern|model|type)\\s*:/i);
+   let name=clean((match&&match[1])||heading.split(':')[0]||buttonText.split(':')[0]).replace(/:$/,'');
+   if(!name||rejectHint.test(name)||(!allowHint.test(name)&&!allowHint.test(labelled)))continue;
+   const list=box.querySelector?.('.listbox-button__listbox, [role="listbox"]')||box;
+   const raw=[...(list.querySelectorAll?.('.listbox__option, [role="option"]')||[])];
+   const choices=raw.filter(o=>!o.disabled&&o.getAttribute?.('aria-disabled')!=='true').map(o=>{
+    const label=clean(o.querySelector?.('.listbox__value, .listbox__option-text, .btn__text')?.textContent||o.textContent||'')
+      .replace(/\\s+(?:most popular|out of stock)$/i,'').trim();
+    return {text:label,option:o,value:clean(o.getAttribute?.('data-value')||o.getAttribute?.('value')||label),
+     selected:o.getAttribute?.('aria-selected')==='true'||o.classList?.contains?.('listbox__option--selected')||false};
+   }).filter(x=>x.text&&!/^select(?:\\s+(?:an?|one))?(?:\\s+option)?$|^choose(?:\\s+(?:an?|one))?/i.test(x.text));
+   if(choices.length<2||choices.length>100)continue;
+   const selected=choices.find(o=>o.selected)||choices.find(o=>
+     buttonText.toLowerCase().endsWith(o.text.toLowerCase())||aria.toLowerCase().endsWith(o.text.toLowerCase()));
+   parts.push({name,choices,select:{value:selected?.value||'',__priceMatchCustom:true}})
+  }
+ }
+ // A native or Skin dropdown can confirm its displayed choices, but multiple
  // independent selectors cannot establish valid combinations without backend data.
  if(parts.length!==1)return {hasSelects:parts.length>0,hasVariations:false,reason:parts.length>1?'Attributi multipli: le combinazioni richiedono dati verificati da eBay':'Nessun selettore variante compatibile'};
  const part=parts[0],used=new Set(),variants=[];
  const requested=(String(href||'').match(/[?&]var=(\d+)/)||[])[1]||'';
- const selected=part.choices.find(x=>x.option.selected)||part.choices.find(x=>x.value===part.select.value);
+ const selected=part.choices.find(x=>x.selected||x.option.selected)||part.choices.find(x=>x.value===part.select.value);
  const active=part.choices.find(x=>requested&&x.value===requested)||selected;
  for(const option of part.choices){
   const label=option.text;
