@@ -29,6 +29,7 @@ function buildVariantPackage(entry,marketplace){
  if(!dims.length||dims.some(d=>!d.values.length))throw Error('Attributi e opzioni non completi');
  const header=pkg.headers,idx=k=>header.indexOf(k),rows=pkg.rows;
  rows[0][idx('Relationship details')]=dims.map(d=>d.name+'='+d.values.join(';')).join('|');
+ rows[0][idx('Start price')]=''; // eBay variation parent has no Start price; child rows own prices.
  const seen=new Set();
  for(const [i,v] of entry.variants.entries()){
   const price=Number(v?.price),specifics=Array.isArray(v?.specifics)?v.specifics:[];
@@ -98,6 +99,8 @@ async function save(entry,marketplace,endpoint){
  if(!result||result.ok!==true)throw Error(result&&result.error||'Scrittura catalogo non confermata');
  if(result.duplicate!==true&&(!(Number(result.rowStart)>0)||!(Number(result.rowCount)>0)))
   throw Error('Il backend non ha confermato le coordinate della riga');
+ if(pkg.hasVariations&&result.duplicate!==true&&Number(result.rowCount)!==pkg.rows.length)
+  throw Error('Catalogo: backend ha confermato '+result.rowCount+' righe, attese '+pkg.rows.length+' (padre + varianti)');
  return {...result,marketplace:pkg.marketplace,sourceItemId:pkg.sourceItemId};
 }
 root.__dropperCompetitorCatalogTransport={buildPackage,buildVariantPackage,toCsv,save};
