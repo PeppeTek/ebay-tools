@@ -101,9 +101,40 @@ function recalc(){
  el('profit').style.color=st?.profitUSD<0?'#b42318':'#16803d';
  textMoney('break-even',st?.breakEven??null,st?.breakEven!=null&&fx?C.round(st.breakEven*fx):null);
  el('fx-status').textContent=(S.fxInfo||'Conversioni da verificare')+(S.provisional[S.market]?' · Tariffe '+S.market+' di riferimento: controlla ⚙ per categoria/account':'');
- el('fee-details').textContent=st?('Per unità: '+st.itemPrice.toFixed(2)+' − sconto '+st.discount.toFixed(2)+' + spedizione '+st.shipping.toFixed(2)+' + tax '+st.tax.toFixed(2)+' = '+st.masterPerUnit.toFixed(2)+' '+cur()+' · Q.tà '+st.quantity+' · eBay '+st.fvf.toFixed(2)+' + internazionale '+st.intl.toFixed(2)+' + fissa ordine '+st.fixedLocal.toFixed(2)+' + marketing '+st.ads.toFixed(2)+' = commissioni prima IVA '+st.feeSubtotal.toFixed(2)+' + IVA '+st.vat.toFixed(2)+' = totale '+st.fee.toFixed(2)+' '+cur()):'Commissioni da calcolare';
+ renderFeeDetails(st);
  renderComparison();
  el('source-label').textContent=S.sourceMethod==='manuale'?'Modificabile':'Letto: '+S.sourceMethod;
+}
+function renderFeeDetails(st){
+ const box=el('fee-details');box.replaceChildren();
+ if(!st){box.textContent='Commissioni da calcolare: controlla quantità, prezzo e spedizione.';return}
+ const wrapper=document.createElement('div');wrapper.className='dc-fee-table';
+ const header=document.createElement('div');header.style.fontWeight='700';header.style.marginBottom='5px';
+ header.textContent='DETTAGLIO CALCOLO · '+cur();wrapper.appendChild(header);
+ function line(label,amount,strong=false){
+  const row=document.createElement('div');row.className='dc-fee-line'+(strong?' dc-fee-emphasis':'');
+  const left=document.createElement('span');left.textContent=label;
+  const right=document.createElement('b');right.textContent=Number(amount).toFixed(2)+' '+cur();
+  row.append(left,right);wrapper.appendChild(row)
+ }
+ line('Prezzo articolo / unità',st.itemPrice);
+ line('Sconto venditore / unità (−'+st.discountPct+'%)',-st.discount);
+ line('Spedizione cliente / unità',st.shipping);
+ line('Sales Tax / unità',st.tax);
+ line('Base commissionabile / unità',st.masterPerUnit,true);
+ const q=document.createElement('div');q.className='dc-fee-line';
+ const label=document.createElement('span');label.textContent='Quantità';
+ const val=document.createElement('b');val.textContent=String(st.quantity);
+ q.append(label,val);wrapper.appendChild(q);
+ line('Master Total ordine',st.masterTotal,true);
+ line('Final Value Fee ('+C.round(S.fees[S.market].ebayFee*100)+'%)',st.fvf);
+ line('International Fee ('+C.round(S.fees[S.market].internationalFee*100)+'%)',st.intl);
+ line('Tariffa fissa per ordine',st.fixedLocal);
+ line('Marketing General Ads ('+C.round(S.fees[S.market].marketingFee*100)+'%)',st.ads);
+ line('Commissioni prima IVA',st.feeSubtotal,true);
+ line('IVA sulle commissioni ('+C.round(S.fees[S.market].vatOnFees*100)+'%)',st.vat);
+ line('TOTALE COMMISSIONI',st.fee,true);
+ box.appendChild(wrapper)
 }
 function renderComparison(){
  const target=el('market-compare');if(!target)return;
