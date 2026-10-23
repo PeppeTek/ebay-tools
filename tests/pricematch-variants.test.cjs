@@ -72,3 +72,46 @@ test('unsafe separators in combination rejected',()=>{
  assert.throws(()=>T.buildVariantPackage({itemId:sample.itemId,title:'X',price:7,dimensions:[{name:'Color',values:['A|B']}],
  variants:[{specifics:[{name:'Color',value:'A|B'}],price:7}]},'US'),/non adatto/)
 });
+
+
+test('realistic eBay CA plug types selector enables variants despite a mono backend',()=>{
+ const options=[
+  ['','Select',false],['595327416100','1M Cable',false],
+  ['595327416101','EU Plug Yellow',false],['595327416102','US Plug Yellow',false],
+  ['595327416103','EU Plug Black',false],['595327416105','US Plug Black',true],
+  ['595327416106','EU Plug White',false],['595327416107','US Plug White',false]
+ ].map(([value,textContent,selected])=>({value,textContent,selected,disabled:false}));
+ const parent={textContent:'plug types: US Plug Black',querySelector(){return null}};
+ const select={id:'x-msku__select-box',name:'plugTypes',value:'595327416105',options,
+  getAttribute(k){return k==='data-testid'?'x-msku__select':''},
+  closest(k){return k==='label'?parent:null},parentElement:parent};
+ const page={querySelectorAll(q){return q==='select'?[select]:[]}};
+ const found=V.inspectPage(page,'https://www.ebay.ca/itm/298471057540?var=595327416105',6.87,'USD','298471057540');
+ assert.equal(found.hasVariations,true);assert.equal(found.variants.length,7);
+ const master=found.variants.find(v=>v.key===found.selectedKey);
+ assert.equal(master.label,'plug types: US Plug Black');
+ assert.equal(master.sourcePrice,6.87);
+ assert.ok(found.variants.filter(v=>v!==master).every(v=>v.sourcePrice===null));
+});
+test('a page without variant options still has no variant block',()=>{
+ const page={querySelectorAll(){return[]}};
+ const result=V.inspectPage(page,'https://www.ebay.ca/itm/298471057540',6.87,'USD','298471057540');
+ assert.equal(result.hasVariations,false);assert.equal(result.hasSelects,false)
+});
+test('multiple independent selector dimensions do not fabricate cartesian combinations',()=>{
+ const part=value=>({
+  id:'variation-'+value,name:value,value:'x',
+  options:[{value:'x',textContent:'X',selected:true,disabled:false},{value:'y',textContent:'Y',selected:false,disabled:false}],
+  getAttribute(){return''},closest(){return null},
+  parentElement:{textContent:value+': X',querySelector(){return null}}
+ });
+ const page={querySelectorAll(q){return q==='select'?[part('Color'),part('Size')]:[]}};
+ const result=V.inspectPage(page,'https://www.ebay.ca/itm/298471057540',6.87,'USD','298471057540');
+ assert.equal(result.hasVariations,false);assert.equal(result.hasSelects,true);
+ assert.ok(/combinazioni/.test(result.reason))
+});
+test('backend variant payload may omit itemId without being mislabeled',()=>{
+ const p={...sample};delete p.itemId;
+ const r=V.normalize(p,'USD','147603152307');
+ assert.equal(r.variants.length,2)
+});
