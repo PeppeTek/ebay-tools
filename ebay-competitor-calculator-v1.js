@@ -432,7 +432,15 @@ el('save').addEventListener('click',async()=>{
  const title=C.clean(el('title').value),price=S.sale,market=S.market;
  if(!title||!Number.isFinite(price)||price<=0){message('Non salvato: Title o Start price non valido.','bad');return}
  if(!S.fx[cur()]&&S.sourceCur!==cur()){message('Non salvato: cambio valuta non disponibile.','bad');return}
- const entry={itemId:id,title,price:C.round(price)};
+ let entry={itemId:id,title,price:C.round(price)};
+ if(S.variantMode){
+  try{
+   entry=variantCatalogEntry(entry);
+   const transport=await ensureCatalogTransport();
+   if(typeof transport.buildVariantPackage!=='function')throw Error('Modulo CSV varianti non disponibile');
+   transport.buildVariantPackage(entry,market);
+  }catch(err){message('Catalogo varianti non salvato: '+String(err?.message||err),'bad');return}
+ }
  // Preserve the existing local quick list / CSV, but never confuse that with online confirmation.
  const all=saved(catalogKey),rows=Array.isArray(all[market])?all[market]:[];
  const previous=rows.findIndex(r=>String(r.itemId)===id);
@@ -453,15 +461,29 @@ el('save').addEventListener('click',async()=>{
   const transport=await ensureCatalogTransport();
   const result=await transport.save(entry,market,existingSellLikeEndpoint);
   if(result.duplicate===true){
-   message('Già presente nel catalogo '+market+' · Source Item ID '+id+' · riga '+result.rowStart+'. Nessuna riga duplicata creata.','warn')
+   message('Item ID già presente nel catalogo '+market+' · '+id+'. Backend segnala duplicato: aggiornamento dei prezzi varianti NON confermato.','warn')
   }else{
-   message('Catalogo '+market+': scrittura confermata dal backend · SKU '+id+' · Title + Start price '+entry.price.toFixed(2)+' '+cur()+' · riga '+result.rowStart+'.','ok')
+   message('Catalogo '+market+': backend conferma '+(S.variantMode?'padre e '+entry.variants.length+' righe varianti':'SKU + Title + Start price')+' · Item ID '+id+' · riga '+result.rowStart+'.','ok')
   }
  }catch(e){console.error('Dropper catalogo concorrente',e);message('Copia LOCALE salvata, catalogo ONLINE non confermato: '+String(e&&e.message||e),'bad')}
  finally{btn.disabled=false;btn.textContent=oldLabel}
 });
 const csvEscape=x=>{const s=String(x??'');return /[,"\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
-el('export').addEventListener('click',()=>{
+el('export').addEventListener('click',async()=>{
+ if(S.variantMode){
+  try{
+   readEdits();
+   const entry=variantCatalogEntry({itemId:id,title:C.clean(el('title').value),price:C.round(S.sale)});
+   const transport=await ensureCatalogTransport();
+   if(typeof transport.buildVariantPackage!=='function'||typeof transport.toCsv!=='function')throw Error('Modulo CSV varianti non caricato');
+   const pkg=transport.buildVariantPackage(entry,S.market);
+   const blob=new Blob([transport.toCsv(pkg)],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+   a.href=url;a.download='pricematch-pro-varianti-'+S.market.toLowerCase()+'-'+id+'.csv';
+   panel.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2500);
+   message('CSV eBay padre + '+entry.variants.length+' varianti generato. Prima dell’importazione completare categoria, quantità, condizione, profili e ogni altro campo obbligatorio.','warn')
+  }catch(err){message('CSV varianti non generato: '+String(err?.message||err),'bad')}
+  return
+ }
  const rows=catalogRows();if(!rows.length){message('Catalogo rapido '+S.market+' vuoto.','warn');return}
  const content=['Item ID,Title,Price',...rows.map(r=>[r.itemId,r.title,r.price].map(csvEscape).join(','))].join('\r\n');
  const blob=new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
