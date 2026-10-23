@@ -50,6 +50,8 @@ const style=document.createElement('style');style.id=styleId;style.textContent=
 '#'+panelId+' .buttons button{height:42px;border:1px solid #aaa;border-radius:21px;cursor:pointer;font-size:13px;font-weight:700}'+
 '#'+panelId+' .span2{grid-column:1/-1}#'+panelId+' .settings{display:none;background:#fafafa;padding:12px 14px;border-top:1px solid #ddd}'+
 '#'+panelId+' .settings.open{display:block}#'+panelId+' .feegrid{display:grid;grid-template-columns:1fr 90px;gap:7px;align-items:center}'+
+'#'+panelId+' .dc-tier-details{margin:5px 0;padding:8px;border:1px solid #e1e5ec;border-radius:7px;background:#fff}#'+panelId+' .dc-tier-details summary{font-size:11px;font-weight:700;line-height:1.5;cursor:pointer;list-style:revert}#'+panelId+' .dc-tier-details .feegrid{margin-top:9px}'+
+'#'+panelId+' .dc-fee-table{border:1px solid #e1e5ec;border-radius:7px;padding:9px 10px;margin:9px 0;background:#f8fafc;font-size:11px;line-height:1.45}#'+panelId+' .dc-fee-table .dc-fee-line{display:flex;justify-content:space-between;gap:14px;padding:4px 0;border-bottom:1px solid #e7ebf0}#'+panelId+' .dc-fee-table .dc-fee-line:last-child{border-bottom:0}#'+panelId+' .dc-fee-table .dc-fee-line b{text-align:right;white-space:nowrap}#'+panelId+' .dc-fee-table .dc-fee-emphasis{font-weight:700;color:#1d4ed8}'+
 '#'+panelId+' .message{margin:0 14px 12px;padding:9px;border:1px solid #e2e5ec;background:#f8f9fb;border-radius:7px;font-size:11px;line-height:1.5;white-space:pre-wrap}'+
 '#'+panelId+' .message[data-status="bad"]{color:#b42318}#'+panelId+' .message[data-status="warn"]{color:#986000}#'+panelId+' .message[data-status="ok"]{color:#137333}'+
 '@media(max-width:420px){#'+panelId+' .row{grid-template-columns:minmax(0,1fr) 70px 90px;gap:4px}#'+panelId+' .main{padding:8px 10px}}';
@@ -156,16 +158,35 @@ async function fxUpdate(){
  else if(data.hasPriceVariants)message('Prodotto con possibili varianti: controlla il prezzo selezionato e usa ↻ per aggiornarlo.','warn');
  else message('Calcolatore pronto: verifica prezzo e valuta originali prima del salvataggio.','ok')
 }
-const labels={ebayFee:'Tariffa eBay (%)',internationalFee:'Tariffa internazionale (%)',marketingFee:'Marketing (%)',vatOnFees:'IVA sulle tariffe (%)',salesTaxEstimate:'Sales Tax stimata (%)',fixedFee:'Tariffa fissa ('+cur()+')',fixedFeeLow:'Fissa ordine fino a 10 '+cur(),fixedFeeHigh:'Fissa ordine oltre 10 '+cur(),fixedFeeThreshold:'Soglia fissa ('+cur()+')',sellerDiscountPct:'Discount from seller (%)',shippingCharge:'Shipping and handling (valuta locale)'};
+const labels={ebayFee:'Tariffa eBay (%)',internationalFee:'Tariffa internazionale (%)',marketingFee:'Marketing (%)',vatOnFees:'IVA sulle tariffe (%)',salesTaxEstimate:'Sales Tax stimata (%)',sellerDiscountPct:'Discount from seller (%)'};
+function feeLabel(key){
+ if(key==='fixedFee')return 'Tariffa fissa ('+cur()+')';
+ if(key==='shippingCharge')return 'Shipping and handling ('+cur()+')';
+ if(key==='fixedFeeLow')return 'Fissa fino alla soglia ('+cur()+')';
+ if(key==='fixedFeeHigh')return 'Fissa oltre la soglia ('+cur()+')';
+ if(key==='fixedFeeThreshold')return 'Soglia tariffa fissa ('+cur()+')';
+ return labels[key]||key;
+}
 function renderSettings(){
  const box=el('feegrid');box.replaceChildren();
- const keys=S.market==='AU'?[...fields,'sellerDiscountPct','shippingCharge']:[...fields,...tierKeys,'sellerDiscountPct','shippingCharge'];
- for(const key of keys){
-   const l=document.createElement('label'),v=document.createElement('input'),abs=key==='fixedFee'||tierKeys.includes(key);
-   l.textContent=tierKeys.includes(key)?(key==='fixedFeeLow'?'Fissa fino a '+S.fees[S.market].fixedFeeThreshold+' '+cur():key==='fixedFeeHigh'?'Fissa oltre '+S.fees[S.market].fixedFeeThreshold+' '+cur():'Soglia fissa ('+cur()+')'):labels[key];v.dataset.rate=key;v.type='number';v.min='0';v.step='.01';
-   if(key==='shippingCharge')l.textContent+=' ('+cur()+')';
-   v.value=String(C.round(abs||key==='shippingCharge'||key==='sellerDiscountPct'?S.fees[S.market][key]:S.fees[S.market][key]*100));
-   box.append(l,v);
+ function makeFeeField(key,container){
+  const label=document.createElement('label'),input=document.createElement('input');
+  const absolute=key==='fixedFee'||key==='shippingCharge'||key==='sellerDiscountPct'||tierKeys.includes(key);
+  label.textContent=feeLabel(key);
+  input.dataset.rate=key;input.type='number';input.min='0';input.step='.01';
+  input.value=String(C.round(absolute?S.fees[S.market][key]:S.fees[S.market][key]*100));
+  container.append(label,input);
+ }
+ for(const key of [...fields,'sellerDiscountPct','shippingCharge'])makeFeeField(key,box);
+ if(S.market!=='AU'){
+  const details=document.createElement('details');details.className='dc-tier-details';
+  details.style.gridColumn='1 / -1';
+  const summary=document.createElement('summary');
+  summary.textContent='Scaglioni tariffa fissa: '+S.fees[S.market].fixedFeeLow.toFixed(2)+' / '+S.fees[S.market].fixedFeeHigh.toFixed(2)+' '+cur()+' · soglia '+S.fees[S.market].fixedFeeThreshold.toFixed(2)+' '+cur();
+  details.appendChild(summary);
+  const group=document.createElement('div');group.className='feegrid';
+  for(const key of tierKeys)makeFeeField(key,group);
+  details.appendChild(group);box.appendChild(details);
  }
 }
 el('gear').addEventListener('click',()=>{el('settings').classList.toggle('open');if(el('settings').classList.contains('open'))renderSettings()});
