@@ -31,48 +31,85 @@ const MARKET_FEES={
  CA:{ebayFee:.136,internationalFee:.016,marketingFee:.02,vatOnFees:.22,salesTaxEstimate:.06,fixedFee:.40,fixedFeeLow:.30,fixedFeeHigh:.40,fixedFeeThreshold:10,feeSource:'Canada official CAD fee tiers; international/tax estimates'},
  AU:{ebayFee:.1218,internationalFee:.016,marketingFee:0,vatOnFees:.22,salesTaxEstimate:.09,fixedFee:.27,feeSource:'Actual AU screenshot, category-specific and account-specific'}
 };
-function perOrderFee(price,rates){
- const r={...DEFAULT_FEES,...(rates||{})},p=Number(price);
- const base=p*(1+Number(r.salesTaxEstimate||0));
- const hasTiers=Number.isFinite(Number(r.fixedFeeLow))&&Number.isFinite(Number(r.fixedFeeHigh))&&Number.isFinite(Number(r.fixedFeeThreshold))&&r.fixedFeeLow!==undefined;
- return hasTiers?(base<=Number(r.fixedFeeThreshold)+1e-9?Number(r.fixedFeeLow):Number(r.fixedFeeHigh)):Number(r.fixedFee);
-}
-function feeItems(price,rates){
+
+function transactionTotals(price,rates,options={}){
  const p=Number(price),r={...DEFAULT_FEES,...(rates||{})};
- if(!Number.isFinite(p)||p<=0||Object.keys(DEFAULT_FEES).some(k=>!Number.isFinite(Number(r[k]))||Number(r[k])<0))return null;
- const base=round(p*(1+Number(r.salesTaxEstimate))),fixedLocal=perOrderFee(p,r);
- const fvf=round(base*Number(r.ebayFee)),intl=round(base*Number(r.internationalFee)),ads=round(base*Number(r.marketingFee));
- const subtotal=round(fvf+intl+ads+fixedLocal),vat=round(subtotal*Number(r.vatOnFees)),total=round(subtotal+vat);
- const variable=(1+Number(r.salesTaxEstimate))*(Number(r.ebayFee)+Number(r.internationalFee)+Number(r.marketingFee))*(1+Number(r.vatOnFees));
- if(variable>=1||!Number.isFinite(total))return null;
- return {base,fvf,intl,ads,fixedLocal,vat,fee:total,net:round(p-total),variableRate:variable};
+ const quantity=options.quantity===undefined?1:Number(options.quantity);
+ const shipping=options.shipping===undefined?Number(r.shippingCharge||0):Number(options.shipping);
+ const discountPct=options.sellerDiscountPct===undefined?Number(r.sellerDiscountPct||0):Number(options.sellerDiscountPct);
+ if(!Number.isFinite(p)||p<=0||!Number.isInteger(quantity)||quantity<1||quantity>1000||
+    !Number.isFinite(shipping)||shipping<0||!Number.isFinite(discountPct)||discountPct<0||discountPct>=100||
+    Object.keys(DEFAULT_FEES).some(k=>!Number.isFinite(Number(r[k]))||Number(r[k])<0))return null;
+ const discount=round(p*discountPct/100),itemNet=round(p-discount);
+ const beforeTax=round(itemNet+shipping);
+ const tax=round(beforeTax*Number(r.salesTaxEstimate));
+ const masterPerUnit=round(beforeTax+tax),masterTotal=round(masterPerUnit*quantity);
+ return {quantity,itemPrice:p,discountPct,discount,shipping,itemNet,beforeTax,tax,masterPerUnit,masterTotal,
+    buyerRevenue:round(beforeTax*quantity),salesTaxTotal:round(tax*quantity)};
 }
-function breakEvenPrice(costUsd,fx,rates){
- if(!Number.isFinite(costUsd)||costUsd<0||!Number.isFinite(fx)||fx<=0)return null;
- const r={...DEFAULT_FEES,...(rates||{})},target=costUsd/fx;
- const valid=p=>{const f=feeItems(p,r);return !!f&&f.net+1e-8>=target;};
- const tier=Number(r.fixedFeeThreshold),tax=1+Number(r.salesTaxEstimate);
- function bisect(minCents,maxCents){
-   if(minCents>maxCents||!valid(maxCents/100))return null;
-   let lo=minCents,hi=maxCents;
-   while(lo<hi){const mid=Math.floor((lo+hi)/2);if(valid(mid/100))hi=mid;else lo=mid+1;}
+function perOrderFee(price,rates,options={}){
+ const r={...DEFAULT_FEES,...(rates||{})};
+ const t=transactionTotals(price,r,options);
+ if(!t)return null;
+ const hasTiers=r.fixedFeeLow!==undefined&&Number.isFinite(Number(r.fixedFeeLow))&&
+   Number.isFinite(Number(r.fixedFeeHigh))&&Number.isFinite(Number(r.fixedFeeThreshold));
+ return hasTiers?(t.masterTotal<=Number(r.fixedFeeThreshold)+.000001?Number(r.fixedFeeLow):Number(r.fixedFeeHigh)):Number(r.fixedFee);
+}
+function feeItems(price,rates,options={}){
+ const r={...DEFAULT_FEES,...(rates||{})},t=transactionTotals(price,r,options);
+ if(!t)return null;
+ const fixedLocal=perOrderFee(price,r,options);
+ const fvfPerUnit=round(t.masterPerUnit*Number(r.ebayFee));
+ const intlPerUnit=round(t.masterPerUnit*Number(r.internationalFee));
+ const adsPerUnit=round(t.masterPerUnit*Number(r.marketingFee));
+ const fvf=round(fvfPerUnit*t.quantity),intl=round(intlPerUnit*t.quantity),ads=round(adsPerUnit*t.quantity);
+ const subtotal=round(fvf+intl+ads+fixedLocal),vat=round(subtotal*Number(r.vatOnFees));
+ const total=round(subtotal+vat),net=round(t.buyerRevenue-total);
+ const variable=(1+Number(r.salesTaxEstimate))*(1-t.discountPct/100)*
+     (Number(r.ebayFee)+Number(r.internationalFee)+Number(r.marketingFee))*(1+Number(r.vatOnFees));
+ if(variable>=1||!Number.isFinite(total))return null;
+ return {...t,base:t.masterPerUnit,fvf,intl,ads,fixedLocal,vat,fee:total,net,variableRate:variable,
+    feeSubtotal:subtotal,fvfPerUnit,intlPerUnit,adsPerUnit};
+}
+function breakEvenPrice(costUsd,fx,rates,options={}){
+ const c=Number(costUsd),fxn=Number(fx);
+ if(!Number.isFinite(c)||c<0||!Number.isFinite(fxn)||fxn<=0)return null;
+ const r={...DEFAULT_FEES,...(rates||{})},qty=options.quantity===undefined?1:Number(options.quantity);
+ if(!Number.isInteger(qty)||qty<1||qty>1000)return null;
+ const target=c*qty/fxn;
+ const f=cent=>feeItems(cent/100,r,options);
+ const positive=cent=>{const x=f(cent);return !!x&&x.net+0.000001>=target};
+ const MAX=100000000;
+ function bisect(lo,hi){
+   if(lo>hi||!positive(hi))return null;
+   while(lo<hi){const mid=Math.floor((lo+hi)/2);if(positive(mid))hi=mid;else lo=mid+1;}
    return round(lo/100);
  }
- if(r.fixedFeeLow!==undefined&&Number.isFinite(tier)&&tier>0&&tax>0){
-   const limit=Math.floor((tier/tax)*100+1e-8),below=bisect(1,limit);
-   if(below!==null)return below;
-   return bisect(limit+1,100000000);
+ // Per-order fixed-fee thresholds create a small non-monotonic discontinuity.
+ // Search the low and high tier separately to find the true minimum price.
+ if(r.fixedFeeLow!==undefined&&Number.isFinite(Number(r.fixedFeeThreshold))){
+   const threshold=Number(r.fixedFeeThreshold);
+   let lo=1,hi=MAX,boundary=0;
+   while(lo<=hi){
+     const mid=Math.floor((lo+hi)/2),t=transactionTotals(mid/100,r,options);
+     if(t&&t.masterTotal<=threshold){boundary=mid;lo=mid+1}else hi=mid-1;
+   }
+   const low=bisect(1,boundary);
+   if(low!==null)return low;
+   return bisect(boundary+1,MAX);
  }
- return bisect(1,100000000);
+ return bisect(1,MAX);
 }
-function fees(price, rates, toUsd, purchaseUsd){
- const p=Number(price),parts=feeItems(p,rates);if(!parts)return null;
+function fees(price,rates,toUsd,purchaseUsd,options={}){
+ const p=Number(price),parts=feeItems(p,rates,options);if(!parts)return null;
  const fx=Number(toUsd)>0?Number(toUsd):null;
  const c=purchaseUsd==null||purchaseUsd===''?null:Number(purchaseUsd);
- const validCost=c!==null&&Number.isFinite(c)&&c>=0;
- const be=validCost&&fx?breakEvenPrice(c,fx,rates):null;
- const profitUSD=validCost&&fx?round(parts.net*fx-c):null;
- return {sale:p,...parts,netUsd:fx?round(parts.net*fx):null,costLocal:validCost&&fx?round(c/fx):null,costUsd:validCost?c:null,profitUSD,profitLocal:profitUSD!==null&&fx?round(profitUSD/fx):null,breakEven:be,marginPct:profitUSD!==null&&parts.net>0&&fx?round(100*profitUSD/(p*fx)):null};
+ const validCost=c!==null&&Number.isFinite(c)&&c>=0,extendedCost=validCost?round(c*parts.quantity):null;
+ const be=validCost&&fx?breakEvenPrice(c,fx,rates,options):null;
+ const profitUSD=validCost&&fx?round(parts.net*fx-extendedCost):null;
+ return {sale:p,...parts,netUsd:fx?round(parts.net*fx):null,costLocal:validCost&&fx?round(extendedCost/fx):null,
+   costUsd:extendedCost,profitUSD,profitLocal:profitUSD!==null&&fx?round(profitUSD/fx):null,
+   breakEven:be,marginPct:profitUSD!==null&&parts.buyerRevenue>0&&fx?round(100*profitUSD/(parts.buyerRevenue*fx)):null};
 }
 function adjusted(source,discountPct){const n=Number(source),d=Number(discountPct);return Number.isFinite(n)&&n>0&&Number.isFinite(d)&&d>-100&&d<=1000?round(n*(1+d/100)):null;}
 function readDocument(doc,host,href){
@@ -103,6 +140,6 @@ function readDocument(doc,host,href){
  const price=candidates[0]||null;
  return {id,title,price,sourceCurrency,hasPriceVariants:!!doc.querySelector('[id*="msku"],select[name*="variation"],.msku-sel,select[id*="msku"]'),error:price?null:'Prezzo non identificato: inseriscilo manualmente'};
 }
-root.DropperCalculatorCore={MARKETS,DEFAULT_FEES,MARKET_FEES,round,num,clean,money,perOrderFee,feeItems,fees,adjusted,countryFromHost,currencyFromHost,readDocument};
+root.DropperCalculatorCore={MARKETS,DEFAULT_FEES,MARKET_FEES,round,num,clean,money,transactionTotals,perOrderFee,feeItems,fees,adjusted,countryFromHost,currencyFromHost,readDocument};
 if(typeof module==='object'&&module.exports)module.exports=root.DropperCalculatorCore;
 })(typeof globalThis==='object'?globalThis:this);
