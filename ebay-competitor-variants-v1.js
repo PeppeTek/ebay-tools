@@ -5,7 +5,7 @@ const clean=x=>String(x==null?'':x).replace(/\s+/g,' ').trim();
 const realPrice=value=>{if(value===null||value===undefined||value==='')return null;const n=Number(value);return Number.isFinite(n)&&n>0?n:null};
 function normalize(payload,fallbackCurrency,sourceId){
  if(!payload||payload.ok!==true)throw Error(String(payload?.error||'Risposta varianti non valida'));
- if(String(payload.itemId||'')!==String(sourceId))throw Error('ID prodotto diverso nella risposta varianti');
+ if(payload.itemId!==undefined&&payload.itemId!==null&&String(payload.itemId)!==String(sourceId))throw Error('ID prodotto diverso nella risposta varianti');
  if(!payload.hasVariations)return{hasVariations:false,variants:[],dimensions:[]};
  const dimensions=Array.isArray(payload.dimensions)?payload.dimensions.map(d=>({
    name:clean(d?.name),values:Array.isArray(d?.values)?d.values.map(clean).filter(Boolean):[]
@@ -58,6 +58,61 @@ function marketPrice(v,fx,targetCurrency,round){
  const from=Number(fx?.[v.sourceCurrency]),to=Number(fx?.[targetCurrency]);
  return from>0&&to>0?round(v.sourcePrice*from/to):null;
 }
-root.__priceMatchVariantTools={normalize,probe,marketPrice};
+// Conservative fallback when the active eBay layout exposes selectors but the
+// legacy Sell Like Clone backend does not return a complete variant payload.
+function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
+ const selectors=[...doc.querySelectorAll('select')],parts=[];
+ const allowHint=/\b(msku|variation|variant|plug(?:\s*types?)?|colo(?:u)?r|size|capacity|style|material|pattern|type|model|option)\b/i;
+ const rejectHint=/\b(sort|search|quantity|qty|shipping|country|currency|language|category|condition|order by)\b/i;
+ for(const select of selectors){
+  const options=[...select.options||[]].filter(o=>!o.disabled&&clean(o.textContent||o.label)&&!/^select(?:\s+(?:an?|one))?(?:\s+option)?$|^choose(?:\s+(?:an?|one))?/i.test(clean(o.textContent||o.label)));
+  if(options.length<2||options.length>100)continue;
+  const identifier=clean([select.id,select.name,select.getAttribute('aria-label'),select.getAttribute('data-testid')].join(' '));
+  const parent=select.closest('label')||select.parentElement;
+  const surrounding=clean((parent?.textContent||'').slice(0,180));
+  const hint=clean(identifier+' '+surrounding);
+  if(rejectHint.test(identifier)||(!allowHint.test(hint)&&!/(?:\d{9,15}|plug)/i.test(options.map(o=>o.value).join(' '))))continue;
+  let name=clean(select.getAttribute('aria-label')||'');
+  if(!name)name=clean(parent?.querySelector('label,legend,.ux-labels-values__labels,.x-msku__label')?.textContent||'');
+  if(!name){
+   const m=surrounding.match(/(?:^|\s)(plug\s*types?|colo(?:u)?r|size|capacity|style|material|pattern|model|type)\s*:/i);
+   name=m?m[1]:clean(identifier.replace(/[_-]+/g,' ').replace(/\b(?:msku|variation|select|selector)\b/gi,''));
+  }
+  name=name.replace(/:\s*$/,'').trim();
+  if(!name||rejectHint.test(name)||!allowHint.test(name))continue;
+  const choices=options.map(o=>({text:clean(o.textContent||o.label).replace(/\s+(?:most popular|out of stock)$/i,'').trim(),
+      option:o,value:String(o.value||'')}));
+  if(choices.some(o=>!o.text))continue;
+  parts.push({name,choices,select})
+ }
+ // A native eBay dropdown is reliable for its displayed options; two or more
+ // independent selectors cannot establish valid combinations without backend data.
+ if(parts.length!==1)return {hasSelects:parts.length>0,hasVariations:false,reason:parts.length>1?'Attributi multipli: le combinazioni richiedono dati verificati da eBay':'Nessun selettore variante compatibile'};
+ const part=parts[0],used=new Set(),variants=[];
+ const requested=(String(href||'').match(/[?&]var=(\d+)/)||[])[1]||'';
+ const selected=part.choices.find(x=>x.option.selected)||part.choices.find(x=>x.value===part.select.value);
+ const active=part.choices.find(x=>requested&&x.value===requested)||selected;
+ for(const option of part.choices){
+  const label=option.text;
+  if(used.has(label.toLowerCase()))continue;
+  used.add(label.toLowerCase());
+  const isActive=!!(active&&option.value===active.value&&option.text===active.text);
+  // Only the currently selected option can safely use the visible listing price.
+  // Others retain null until the backend provides an individual price or user enters one.
+  variants.push({
+   key:part.name.toLowerCase()+'='+label.toLowerCase(),
+   label:part.name+': '+label,
+   specifics:[{name:part.name,value:label}],
+   sourcePrice:isActive?realPrice(selectedPrice):null,
+   sourceCurrency:String(fallbackCurrency||'USD').toUpperCase(),
+   sale:null,discount:0,manualSale:false,images:[],verifiedUpc:null,
+   selected:isActive
+  })
+ }
+ if(variants.length<2)return {hasSelects:true,hasVariations:false,reason:'Meno di due opzioni variante distinte'};
+ return{hasSelects:true,hasVariations:true,partial:true,sourceItemId:String(itemId),selectedKey:active?part.name.toLowerCase()+'='+active.text.toLowerCase():null,
+   dimensions:[{name:part.name,values:variants.map(v=>v.specifics[0].value)}],variants}
+}
+root.__priceMatchVariantTools={normalize,probe,marketPrice,inspectPage};
 if(typeof module==='object'&&module.exports)module.exports=root.__priceMatchVariantTools;
 })(typeof globalThis==='object'?globalThis:this);
