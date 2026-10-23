@@ -17,7 +17,7 @@ const feeKey='dropper-competitor-calculator-fees-v1',catalogKey='dropper-quick-c
 const savedFees=saved(feeKey),oldFees=saved('capitan-sell-like-market-pricing-v1');
 const S={market:C.countryFromHost(hostname),title:data.title,sourcePrice:data.price?.value??null,
  sourceCur:data.price?.currency||C.currencyFromHost(hostname),sourceMethod:data.price?.source||'manuale',
- discount:-2,sale:null,manualSale:false,purchaseUsd:null,fx:{USD:1},fees:{},provisional:{},fxInfo:'',fxSequence:0};
+ discount:-2,sale:null,manualSale:false,purchaseUsd:null,quantity:1,shipping:0,fx:{USD:1},fees:{},provisional:{},fxInfo:'',fxSequence:0};
 const priorDiscountText=localStorage.getItem('capitan-sell-like-discount-rate-v1');
 const prevDisc=priorDiscountText===null?NaN:Number(priorDiscountText);
 if(Number.isFinite(prevDisc)&&prevDisc>-1&&prevDisc<10)S.discount=C.round(prevDisc*100);
@@ -29,13 +29,14 @@ for(const mk of Object.keys(C.MARKETS)){
  // A new manually saved V2 profile may override the preset fee tiers.
  const customV2=!!savedLocal&&Number(savedLocal.feePresetVersion)>=2;
  const percentages=valid?Object.fromEntries(fields.filter(k=>k!=='fixedFee').map(k=>[k,Number(r[k])])):{};
- S.fees[mk]={...preset,...percentages};
+ S.fees[mk]={...preset,...percentages,sellerDiscountPct:Number(savedLocal?.sellerDiscountPct??0),shippingCharge:Number(savedLocal?.shippingCharge??0)};
  if(customV2){
    S.fees[mk].fixedFee=Number(savedLocal.fixedFee);
    for(const k of tierKeys)if(savedLocal[k]!==undefined)S.fees[mk][k]=Number(savedLocal[k]);
  }
  S.provisional[mk]=!customV2;
 }
+S.shipping=S.fees[S.market].shippingCharge;
 const style=document.createElement('style');style.id=styleId;style.textContent=
 '#'+panelId+'{position:fixed;top:12px;right:12px;z-index:2147483647;width:500px;max-width:calc(100vw - 16px);max-height:calc(100vh - 24px);overflow:auto;background:#fff;color:#111;font:12px Arial,sans-serif;border:1px solid #bbb;border-radius:12px;box-shadow:0 10px 32px #0004;box-sizing:border-box}'+
 '#'+panelId+' *{box-sizing:border-box}#'+panelId+' .hd{padding:12px;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:7px}'+
@@ -58,8 +59,10 @@ panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPP
 '<div class="main"><p><b>Source Item ID:</b> '+esc(id)+'</p><label> Titolo per catalogo <input data-el="title" maxlength="255" placeholder="Titolo eBay"></label>'+
 '<div class="split"><label>Paese di vendita<select data-el="market"><option value="US">USA (USD)</option><option value="CA">Canada (CAD)</option><option value="AU">Australia (AUD)</option></select></label><label>Costo acquisto (USD)<input type="number" data-el="cost" step=".01" min="0" placeholder="—"></label></div>'+
 '<label>Prezzo originale concorrente</label><div class="source"><span class="hint" data-el="source-label">Da pagina eBay</span><input type="number" data-el="source" min=".01" step=".01" placeholder="Prezzo"><select data-el="source-currency"><option>USD</option><option>CAD</option><option>AUD</option><option>EUR</option><option>GBP</option><option>CHF</option><option>SGD</option><option>HKD</option><option>MYR</option></select></div>'+
+'<div class="split"><label>Spedizione addebitata cliente ('+C.MARKETS[S.market].currency+')<input data-el="shipping" type="number" step=".01" min="0" placeholder="0.00"></label><label>Quantità vendute per ordine<input data-el="quantity" type="number" step="1" min="1" max="1000" value="1"></label></div>'+ 
 '<div class="row"><label>Riduzione rispetto alla concorrenza:</label><input data-el="discount" type="number" step=".01"><div class="val" data-el="source-local">—</div></div>'+
 '<div class="row"><label>Prezzo di vendita:</label><input data-el="sale" type="number" min=".01" step=".01"><div class="val" data-el="sale-view">—</div></div>'+
+'<div class="row"><label>Master Total commissionabile:</label><span></span><div class="val" data-el="master" style="color:#334155">—</div></div>'+ 
 '<div class="row"><label>Tariffe sul prezzo di vendita:</label><span></span><div class="val" data-el="fees" style="color:#e3342f">—</div></div>'+
 '<div class="row"><label>Costo totale d’acquisto:</label><span></span><div class="val" data-el="cost-view">—</div></div>'+
 '<div class="row"><label>Il mio utile netto:</label><span></span><div class="val" data-el="profit">—</div></div>'+
@@ -82,16 +85,17 @@ function localBase(){const a=S.fx[S.sourceCur],b=S.fx[cur()];if(S.sourcePrice===
 function recalc(){
  const b=localBase();
  if(!S.manualSale){S.sale=b===null?null:C.adjusted(b,S.discount);el('sale').value=S.sale??''}
- const fx=S.fx[cur()]||null,st=C.fees(S.sale,S.fees[S.market],fx,S.purchaseUsd);
+ const fx=S.fx[cur()]||null,st=C.fees(S.sale,S.fees[S.market],fx,S.purchaseUsd,{shipping:S.shipping,quantity:S.quantity});
  textMoney('source-local',b,b!==null&&fx?C.round(b*fx):null);
  textMoney('sale-view',S.sale,S.sale!==null&&fx?C.round(S.sale*fx):null);
+ textMoney('master',st?.masterTotal??null,st&&fx?C.round(st.masterTotal*fx):null);
  textMoney('fees',st?.fee??null,st&&fx?C.round(st.fee*fx):null);
  textMoney('cost-view',st?.costLocal??null,S.purchaseUsd);
  textMoney('profit',st?.profitLocal??null,st?.profitUSD??null);
  el('profit').style.color=st?.profitUSD<0?'#b42318':'#16803d';
  textMoney('break-even',st?.breakEven??null,st?.breakEven!=null&&fx?C.round(st.breakEven*fx):null);
  el('fx-status').textContent=(S.fxInfo||'Conversioni da verificare')+(S.provisional[S.market]?' · Tariffe '+S.market+' di riferimento: controlla ⚙ per categoria/account':'');
- el('fee-details').textContent=st?'Base commissioni stimata: '+st.base.toFixed(2)+' '+cur()+' · fissa applicata: '+st.fixedLocal.toFixed(2)+' '+cur()+' · IVA tariffe: '+st.vat.toFixed(2)+' '+cur()+(S.market==='AU'?' (esempio AU fornito)':' (scaglioni eBay fino/oltre 10)'):'Commissioni da calcolare';
+ el('fee-details').textContent=st?('Per unità: '+st.itemPrice.toFixed(2)+' − sconto '+st.discount.toFixed(2)+' + spedizione '+st.shipping.toFixed(2)+' + tax '+st.tax.toFixed(2)+' = '+st.masterPerUnit.toFixed(2)+' '+cur()+' · Q.tà '+st.quantity+' · eBay '+st.fvf.toFixed(2)+' + internazionale '+st.intl.toFixed(2)+' + fissa '+st.fixedLocal.toFixed(2)+' + marketing '+st.ads.toFixed(2)+' + IVA '+st.vat.toFixed(2)+' = '+st.fee.toFixed(2)+' '+cur()):'Commissioni da calcolare';
  renderComparison();
  el('source-label').textContent=S.sourceMethod==='manuale'?'Modificabile':'Letto: '+S.sourceMethod;
 }
@@ -103,7 +107,7 @@ function renderComparison(){
  for(const mk of ['US','CA','AU']){
    const cc=C.MARKETS[mk].currency,rate=S.fx[cc];
    if(!(rate>0)){target.textContent='Confronto US / CA / AU in attesa dei cambi CAD e AUD.';return}
-   const candidate=C.fees(C.round(usd/rate),{...S.fees[mk],salesTaxEstimate:0},rate,S.purchaseUsd);
+   const candidate=C.fees(C.round(usd/rate),{...S.fees[mk],salesTaxEstimate:0},rate,S.purchaseUsd,{quantity:S.quantity,shipping:Number(S.fees[mk].shippingCharge||0)});
    if(!candidate){target.textContent='Confronto non disponibile: verifica le tariffe.';return}
    outcome.push({mk,amount:S.purchaseUsd===null?candidate.netUsd:candidate.profitUSD});
  }
@@ -118,6 +122,8 @@ function readEdits(){
  S.sourceCur=el('source-currency').value;
  S.title=C.clean(el('title').value);
  const y=C.num(el('cost').value);S.purchaseUsd=el('cost').value.trim()===''?null:y;
+ const ship=C.num(el('shipping').value),q=C.num(el('quantity').value);
+ S.shipping=ship===null?NaN:ship;S.quantity=q===null?NaN:q;
 }
 async function getToUSD(code){
  if(code==='USD')return 1;
