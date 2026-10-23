@@ -44,6 +44,7 @@ const style=document.createElement('style');style.id=styleId;style.textContent=
 '#'+panelId+' *{box-sizing:border-box}#'+panelId+' .hd{padding:12px;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:7px}'+
 '#'+panelId+' .hd b{flex:1;min-width:0}#'+panelId+' .hd button{width:32px;height:30px;border:1px solid #bbb;border-radius:7px;background:#fff;font-size:18px;cursor:pointer;flex:0 0 32px}'+
 '#'+panelId+' .hd select{flex:0 1 138px;width:138px;min-width:110px;height:30px;padding:0 7px;border:1px solid #bbb;border-radius:7px;background:#fff;color:#111;font:11px Arial,sans-serif;cursor:pointer}'+
+'#'+panelId+' .dc-source-id{margin:3px 0 11px;line-height:1.4}#'+panelId+' .dc-title-label{display:block;margin-bottom:12px}#'+panelId+' .dc-title-label input{display:block;margin-top:5px}'+
 '#'+panelId+' .main{padding:9px 14px}#'+panelId+' input,#'+panelId+' select{width:100%;min-width:0;border:1px solid #c5c9cf;background:#fff;color:#111;border-radius:7px;padding:6px;font:12px Arial,sans-serif}'+
 '#'+panelId+' label{font-weight:700}#'+panelId+' .split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}'+
 '#'+panelId+' .source{display:grid;grid-template-columns:1fr 115px 70px;gap:8px;align-items:center;margin:7px 0}'+
@@ -61,21 +62,22 @@ const style=document.createElement('style');style.id=styleId;style.textContent=
 document.head.appendChild(style);
 const panel=document.createElement('section');panel.id=panelId;
 panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPPER ANALYTICS<br><small>PriceMatch Pro</small></b><select data-el="market" aria-label="Paese di vendita" title="Paese di vendita"><option value="US">USA (USD)</option><option value="CA">Canada (CAD)</option><option value="AU">Australia (AUD)</option></select><button data-el="refresh" title="Aggiorna prezzo dalla pagina">↻</button><button data-el="gear" title="Tariffe">⚙</button><button data-el="close" title="Chiudi">×</button></div>'+
-'<div class="main"><p><b>Source Item ID:</b> '+esc(id)+'</p><label> Titolo per catalogo <input data-el="title" maxlength="255" placeholder="Titolo eBay"></label>'+
+'<div class="main"><p class="dc-source-id"><b>Source Item ID:</b> '+esc(id)+'</p><label class="dc-title-label">Titolo per catalogo<input data-el="title" maxlength="255" placeholder="Titolo eBay"></label>'+
 
-'<label>Prezzo originale concorrente</label><div class="source"><span class="hint" data-el="source-label">Da pagina eBay</span><input type="number" data-el="source" min=".01" step=".01" placeholder="Prezzo"><select data-el="source-currency"><option>USD</option><option>CAD</option><option>AUD</option><option>EUR</option><option>GBP</option><option>CHF</option><option>SGD</option><option>HKD</option><option>MYR</option></select></div>'+
+// Hidden state fields preserve eBay price detection, currency conversions and Refresh without showing the removed original-price section.
+'<div style="display:none" aria-hidden="true"><span data-el="source-label"></span><input type="number" data-el="source" min=".01" step=".01"><select data-el="source-currency"><option>USD</option><option>CAD</option><option>AUD</option><option>EUR</option><option>GBP</option><option>CHF</option><option>SGD</option><option>HKD</option><option>MYR</option></select></div>'+
 '<div class="split"><label>Spedizione cliente per unità (<span data-el="shipping-currency">'+C.MARKETS[S.market].currency+'</span>)<input data-el="shipping" type="number" step=".01" min="0" placeholder="0.00"></label><label>Quantità vendute per ordine<input data-el="quantity" type="number" step="1" min="1" max="1000" value="1"></label></div>'+ 
-'<div class="row"><label>Riduzione rispetto alla concorrenza:</label><input data-el="discount" type="number" step=".01"><div class="val" data-el="source-local">—</div></div>'+
+'<div class="row"><label>Riduzione rispetto al prezzo rilevato:</label><input data-el="discount" type="number" step=".01"><div class="val" data-el="source-local">—</div></div>'+
 '<div class="row"><label>Prezzo di vendita:</label><input data-el="sale" type="number" min=".01" step=".01"><div class="val" data-el="sale-view">—</div></div>'+
-'<div class="row"><label>Incasso al netto delle commissioni:</label><span></span><div class="val" data-el="net">—</div></div>'+
-'<div class="row"><label>Costo d’acquisto (USD):</label><input type="number" data-el="cost" step=".01" min="0" placeholder="—"><div class="val" data-el="cost-view" style="color:#e3342f">—</div></div>'+
+'<div class="row"><label>Incasso al netto delle commissioni:</label><span></span><div class="val" data-el="net" style="color:#d97706">—</div></div>'+
+'<div class="row"><label>Costo d’acquisto:</label><input type="number" data-el="cost" step=".01" min="0" title="Inserisci costo acquisto in USD" placeholder="—"><div class="val" data-el="cost-view" style="color:#e3342f">—</div></div>'+
 '<div class="row"><label>Il mio utile netto:</label><span></span><div class="val" data-el="profit">—</div></div>'+
 '<div class="row"><label>Prezzo minimo di pareggio:</label><span></span><div class="val" data-el="break-even" style="color:#2563eb">—</div></div>'+
 '<div class="hint" data-el="fee-details"></div><div class="hint" data-el="fx-status"></div></div>'+
 '<div class="settings" data-el="settings"><b>Tariffe per paese selezionato</b><p class="hint">Le tariffe fisse US e CA sono espresse direttamente nella valuta del paese, non convertite da 0,40 USD. L\'Australia usa il valore osservato nel tuo estratto, modificabile.</p><div class="feegrid" data-el="feegrid" style="margin-top:9px"></div><button data-el="save-rates" style="margin-top:9px;padding:8px;background:#2563eb;color:white;border:0;border-radius:7px;cursor:pointer">Salva tariffe per questo paese</button></div>'+
 '<div class="buttons"><button data-el="ali" style="background:#ff4747;color:white">Trova su AliExpress</button><button data-el="amazon" style="background:#ffa41c;color:#111">Trova su Amazon</button>'+
 '<button data-el="save" style="background:#16a34a;color:white">Aggiungi a catalogo</button>'+
-'<button data-el="export" style="background:white;color:#333">Esporta catalogo rapido CSV (3 colonne)</button></div>'+
+'<button data-el="export" style="background:white;color:#333">Esporta catalogo CSV</button></div>'+
 '<div class="message" data-el="message">Avvio calcolatore…</div>';
 document.body.appendChild(panel);
 const el=k=>panel.querySelector('[data-el="'+k+'"]');
@@ -107,7 +109,7 @@ function renderFeeDetails(st){
  if(!st){box.textContent='Commissioni da calcolare: controlla quantità, prezzo e spedizione.';return}
  const wrapper=document.createElement('div');wrapper.className='dc-fee-table';
  const header=document.createElement('div');header.style.fontWeight='700';header.style.marginBottom='5px';
- header.textContent='DETTAGLIO CALCOLO · '+cur();wrapper.appendChild(header);
+ header.style.color='#111';header.textContent='DETTAGLIO CALCOLO · '+cur();wrapper.appendChild(header);
  function line(label,amount,strong=false){
   const row=document.createElement('div');row.className='dc-fee-line'+(strong?' dc-fee-emphasis':'');
   const left=document.createElement('span');left.textContent=label;
