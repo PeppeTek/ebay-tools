@@ -33,6 +33,7 @@ const SELL_LIKE_ALI_AUTH = Object.freeze({
 // Override web-app GET while preserving the existing status page.
 function doGet(e) {
   const action = String(e && e.parameter && e.parameter.action || '').trim();
+  if (action === 'quick_catalog_upsert') return dropperQuickCatalogHandleGet_(e);
   if (action === SELL_LIKE_CLONE.action) return sellLikeCloneJsonp_(e);
   if (/^sell_like_aliexpress_auth_/.test(action)) return sellLikeAliAuthJsonp_(e);
   if (String(e && e.parameter && e.parameter.code || '').trim()) return sellLikeAliOAuthCallbackHtml_(e);
