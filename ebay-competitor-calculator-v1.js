@@ -59,7 +59,7 @@ panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPP
 '<div class="main"><p><b>Source Item ID:</b> '+esc(id)+'</p><label> Titolo per catalogo <input data-el="title" maxlength="255" placeholder="Titolo eBay"></label>'+
 '<div class="split"><label>Paese di vendita<select data-el="market"><option value="US">USA (USD)</option><option value="CA">Canada (CAD)</option><option value="AU">Australia (AUD)</option></select></label><label>Costo acquisto (USD)<input type="number" data-el="cost" step=".01" min="0" placeholder="—"></label></div>'+
 '<label>Prezzo originale concorrente</label><div class="source"><span class="hint" data-el="source-label">Da pagina eBay</span><input type="number" data-el="source" min=".01" step=".01" placeholder="Prezzo"><select data-el="source-currency"><option>USD</option><option>CAD</option><option>AUD</option><option>EUR</option><option>GBP</option><option>CHF</option><option>SGD</option><option>HKD</option><option>MYR</option></select></div>'+
-'<div class="split"><label>Spedizione addebitata cliente ('+C.MARKETS[S.market].currency+')<input data-el="shipping" type="number" step=".01" min="0" placeholder="0.00"></label><label>Quantità vendute per ordine<input data-el="quantity" type="number" step="1" min="1" max="1000" value="1"></label></div>'+ 
+'<div class="split"><label>Spedizione cliente per unità (<span data-el="shipping-currency">'+C.MARKETS[S.market].currency+'</span>)<input data-el="shipping" type="number" step=".01" min="0" placeholder="0.00"></label><label>Quantità vendute per ordine<input data-el="quantity" type="number" step="1" min="1" max="1000" value="1"></label></div>'+ 
 '<div class="row"><label>Riduzione rispetto alla concorrenza:</label><input data-el="discount" type="number" step=".01"><div class="val" data-el="source-local">—</div></div>'+
 '<div class="row"><label>Prezzo di vendita:</label><input data-el="sale" type="number" min=".01" step=".01"><div class="val" data-el="sale-view">—</div></div>'+
 '<div class="row"><label>Master Total commissionabile:</label><span></span><div class="val" data-el="master" style="color:#334155">—</div></div>'+ 
@@ -177,7 +177,7 @@ el('save-rates').addEventListener('click',()=>{
  try{write(feeKey,all)}catch(e){message('Errore memoria browser: '+e.message,'bad');return}
  S.fees[S.market]=rates;S.provisional[S.market]=false;S.shipping=rates.shippingCharge;el('shipping').value=S.shipping;recalc();message('Tariffe, sconto venditore e spedizione '+S.market+' salvati solo nel calcolatore.','ok')
 });
-el('market').addEventListener('change',()=>{readEdits();S.market=el('market').value;S.shipping=Number(S.fees[S.market].shippingCharge||0);el('shipping').value=S.shipping;S.manualSale=false;recalc();if(el('settings').classList.contains('open'))renderSettings();void fxUpdate()});
+el('market').addEventListener('change',()=>{readEdits();S.market=el('market').value;S.shipping=Number(S.fees[S.market].shippingCharge||0);el('shipping').value=S.shipping;el('shipping-currency').textContent=cur();S.manualSale=false;recalc();if(el('settings').classList.contains('open'))renderSettings();void fxUpdate()});
 el('source').addEventListener('input',()=>{readEdits();S.sourceMethod='manuale';S.manualSale=false;recalc()});
 el('source-currency').addEventListener('change',()=>{readEdits();S.sourceMethod='manuale';S.manualSale=false;recalc();void fxUpdate()});
 el('title').addEventListener('input',()=>{S.title=C.clean(el('title').value)});
