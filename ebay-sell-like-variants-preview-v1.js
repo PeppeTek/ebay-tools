@@ -103,7 +103,7 @@ function render(data,rates,discountRate){
       '<td style="padding:6px;border-bottom:1px solid #eee;text-align:right">'+esc(money(v.sourcePrice,data.currency))+'</td>'+
       '<td style="padding:6px;border-bottom:1px solid #eee"><input data-var-price="'+i+'" aria-label="Prezzo variante '+(i+1)+'" value="'+esc(v.targetPrice??'')+'" style="width:100%;box-sizing:border-box;padding:5px 3px;border:1px solid #999;border-radius:4px;font-size:11px"></td>'+
       '<td style="padding:6px;border-bottom:1px solid #eee"><input data-var-qty="'+i+'" type="number" min="1" step="1" aria-label="Quantità variante '+(i+1)+'" value="'+esc(v.targetQuantity??3)+'" style="width:100%;box-sizing:border-box;padding:5px 3px;border:1px solid #999;border-radius:4px;font-size:11px"></td>'+
-      '<td style="padding:6px;border-bottom:1px solid #eee;text-align:right">'+esc(money(be,data.currency))+'</td></tr>'
+      '<td data-variant-break-even="'+i+'" style="padding:6px;border-bottom:1px solid #eee;text-align:right">'+esc(money(be,data.currency))+'</td></tr>'
   }).join('');
   wrap.innerHTML='<div style="font-weight:700;padding:1px 0 8px;color:#111">Varianti: <span style="color:#137333">'+data.variants.length+' rilevate</span></div>'+
     '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><label style="font-size:11px">Modifica tutte (%) <input id="capitan-variant-discount" type="text" value="'+esc((Number(discountRate)*100).toFixed(2))+'" style="width:64px;padding:5px;border:1px solid #999;border-radius:4px"></label><button id="capitan-variant-apply-all" style="padding:6px 9px;border:1px solid #999;border-radius:6px;cursor:pointer">Applica a tutte</button></div>'+
@@ -280,7 +280,7 @@ try{
   if(data.source==='listing-html-fallback')window.__capitanSellLikeMode='variants';
   currentData=data;currentRates=pricing&&pricing.ok?pricing.rates:null;
   if(!currentRates)variantDiagnostic('tariffe non pronte: break-even sospeso, campi prezzi comunque disponibili');
-  pricingPromise.then(late=>{if(late&&late.ok&&late.rates&&currentData===data&&!currentRates){currentRates=late.rates;const table=document.getElementById('capitan-variants-preview');if(table&&!data.pricesConfirmed&&!table.querySelector('input:focus'))render(data,currentRates,currentDiscount);variantDiagnostic('tariffe ricevute: break-even aggiornabile')}});
+  pricingPromise.then(late=>{if(late&&late.ok&&late.rates&&currentData===data&&!currentRates){currentRates=late.rates;const table=document.getElementById('capitan-variants-preview');if(table)table.querySelectorAll('[data-variant-break-even]').forEach(cell=>{const v=data.variants[Number(cell.dataset.variantBreakEven)];if(v){const price=Number(String(v.targetPrice??'').replace(',','.'));cell.textContent=money(Number.isFinite(price)&&price>0?calcBreakEven(price,currentRates):null,data.currency)}});variantDiagnostic('tariffe ricevute: break-even aggiornato')}});
   if(currentRates&&isFinite(Number(currentRates.discountRate)))currentDiscount=Number(currentRates.discountRate);else if(isFinite(Number(data.discountRate)))currentDiscount=Number(data.discountRate);
   ensureVariantDraft(currentData,currentDiscount);
   render(currentData,currentRates,currentDiscount);
