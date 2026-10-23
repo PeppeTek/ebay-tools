@@ -1,9 +1,12 @@
 /**
- * Dropper Analytics Quick Catalog · STANDALONE Apps Script web app.
+ * Dropper Analytics Quick Catalog · existing Sell Like Clone Apps Script deployment.
  *
- * IMPORTANT: deploy this file as a NEW separate Apps Script project.
- * Do NOT paste it into the current Sell Like Clone project: it declares doGet().
- * Requires Script Properties:
+ * Add this helper as a separate .gs file INSIDE the existing active Apps Script project.
+ * The only doGet() routing change required is:
+ * if (action === 'quick_catalog_upsert') return dropperQuickCatalogHandleGet_(e);
+ * Do not replace existing doGet() routes or other catalog handlers.
+ * Uses the same deployed /exec URL and JSONP transport as Sell Like Clone.
+ * Requires a separate Script Property:
  *   DROPPER_QUICK_CATALOG_TOKEN = long random secret chosen by the owner.
  *
  * This writes ONLY [Item ID, Title, Price] to one of three dedicated quick tabs.
@@ -14,7 +17,7 @@ const DROPPER_QUICK_CATALOG = Object.freeze({
   headers: ['Item ID','Title','Price'],
   authKey: 'DROPPER_QUICK_CATALOG_TOKEN'
 });
-function doGet(e) {
+function dropperQuickCatalogHandleGet_(e) {
   const q=(e&&e.parameter)||{};
   const callback=String(q.callback||'').trim();
   if(!/^[A-Za-z_$][\w$]{0,90}$/.test(callback)){
