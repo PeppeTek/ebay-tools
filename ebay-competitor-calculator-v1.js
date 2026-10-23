@@ -99,6 +99,140 @@ function textMoney(k,value,us){
  const e=el(k),span=document.createElement('span');e.replaceChildren();span.textContent=value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toFixed(2)+' '+cur();e.appendChild(span);
  if(us!==null&&us!==undefined&&Number.isFinite(Number(us))&&cur()!=='USD'){const small=document.createElement('small');small.textContent=Number(us).toFixed(2)+' USD';e.appendChild(small)}
 }
+
+const variantTools=globalThis.__priceMatchVariantTools;
+function masterVariant(){return S.variants.find(v=>v.key===S.masterKey)||null}
+function variantMarketState(v,market=S.market){
+ if(!v.byMarket)v.byMarket={};
+ if(!v.byMarket[market])v.byMarket[market]={sale:null,discount:0,manualSale:false};
+ return v.byMarket[market]
+}
+function derivedVariantPrice(v,market=S.market){
+ const state=variantMarketState(v,market),target=C.MARKETS[market].currency;
+ const observed=variantTools.marketPrice(v,S.fx,target,C.round);
+ return state.manualSale?state.sale:observed===null?null:C.adjusted(observed,state.discount)
+}
+function saveMasterState(){
+ if(!S.variantMode)return;
+ const v=masterVariant();if(!v)return;
+ v.byMarket[S.market]={discount:S.discount,manualSale:S.manualSale,sale:S.sale};
+}
+function chooseMaster(key,savePrevious=true){
+ if(savePrevious)saveMasterState();
+ const variant=S.variants.find(v=>v.key===key);
+ if(!variant)return;
+ S.masterKey=key;
+ const current=variantMarketState(variant);
+ S.sourcePrice=variant.sourcePrice;
+ S.sourceCur=variant.sourceCurrency;
+ S.sourceMethod='variante eBay';
+ S.discount=current.discount;
+ S.manualSale=current.manualSale;
+ S.sale=current.sale;
+ el('source').value=S.sourcePrice??'';
+ // All source currencies from the probe remain usable even when not in the static currency list.
+ const select=el('source-currency');
+ if(![...select.options].some(o=>o.value===S.sourceCur)){
+  const opt=document.createElement('option');opt.value=S.sourceCur;opt.textContent=S.sourceCur;select.appendChild(opt);
+ }
+ select.value=S.sourceCur;
+ el('discount').value=S.discount;
+ el('sale').value=S.sale??'';
+ recalc();
+}
+function renderVariantRows(){
+ if(!S.variantMode)return;
+ const list=el('variants-list');
+ list.replaceChildren();
+ const target=cur(),rate=Number(S.fx[target]);
+ function cellAmount(local,sourceCurrency){
+  const node=document.createElement('div');node.className='dc-price';
+  const heading=document.createElement('span');
+  heading.textContent=local===null?'n.d.':local.toFixed(2)+' '+target;
+  node.appendChild(heading);
+  if(target!=='USD'&&local!==null&&rate>0){
+   const small=document.createElement('small');small.textContent=C.round(local*rate).toFixed(2)+' USD';node.appendChild(small);
+  }else if(local===null&&sourceCurrency){
+   const small=document.createElement('small');small.textContent=sourceCurrency;node.appendChild(small)
+  }
+  return node
+ }
+ for(const v of S.variants){
+  const selected=v.key===S.masterKey,state=variantMarketState(v);
+  const base=variantTools.marketPrice(v,S.fx,target,C.round);
+  const price=selected?S.sale:derivedVariantPrice(v);
+  const row=document.createElement('div');row.className='dc-variant-item'+(selected?' active':'');
+  const label=document.createElement('label');label.className='dc-label';
+  const radio=document.createElement('input');radio.type='radio';radio.name='dc-price-match-master';radio.checked=selected;radio.title='Seleziona variante Master';
+  radio.addEventListener('change',()=>{if(radio.checked)chooseMaster(v.key)});
+  const name=document.createElement('span');name.textContent=v.label;
+  label.append(radio,name);row.appendChild(label);
+  row.appendChild(cellAmount(base,v.sourceCurrency));
+  const edit=document.createElement('input');edit.className='dc-sale-input';edit.type='number';edit.min='.01';edit.step='.01';
+  edit.title=selected?'Prezzo della variante Master':'Seleziona prima la variante Master';
+  edit.disabled=!selected;
+  edit.value=price===null?'':String(price);
+  edit.addEventListener('change',()=>{
+   if(!selected)return;
+   const val=C.num(edit.value);
+   if(val===null||val<=0){message('Prezzo Master non valido, modifica annullata.','warn');renderVariantRows();return}
+   S.sale=C.round(val);S.manualSale=true;
+   const reference=localBase();
+   if(reference>0){S.discount=C.round((S.sale/reference-1)*100);el('discount').value=S.discount}
+   el('sale').value=S.sale;recalc()
+  });
+  row.appendChild(edit);
+  row.appendChild(cellAmount(price,v.sourceCurrency));
+  list.appendChild(row);
+ }
+}
+async function probeVariants(reload=false){
+ if(!variantTools||typeof variantTools.probe!=='function'){
+  if(data.hasPriceVariants)message('Modulo varianti non caricato: prezzo corrente preservato.','warn');
+  return
+ }
+ const seq=++S.variantRequest;
+ try{
+  const result=await variantTools.probe({itemId:id,endpoint:existingSellLikeEndpoint,fallbackCurrency:data.price?.currency||C.currencyFromHost(hostname)});
+  if(seq!==S.variantRequest||!panel.isConnected)return;
+  if(!result.hasVariations){
+   if(!S.variantMode)return;
+   message('Il backend non conferma più le varianti: mantengo i prezzi modificati finché non viene ricaricata la pagina.','warn');return
+  }
+  const previous=new Map(S.variants.map(v=>[v.key,v]));
+  const variants=result.variants.map(v=>{
+   const was=previous.get(v.key);
+   return {...v,byMarket:was?.byMarket||{}}
+  });
+  if(!variants.length)throw Error('Nessuna combinazione variante valida');
+  const oldMaster=S.masterKey,first=variants.find(v=>v.key===oldMaster)||variants.find(v=>v.sourcePrice!==null)||variants[0];
+  if(!S.variantMode){
+   const initial=variantMarketState(first);
+   initial.discount=S.discount;initial.manualSale=S.manualSale;
+   if(S.manualSale&&S.sale>0)initial.sale=S.sale;
+  }else saveMasterState();
+  S.variants=variants;S.dimensions=result.dimensions;S.variantMode=true;
+  el('variants-block').style.display='block';el('variants-count').textContent='('+variants.length+' rilevate)';
+  chooseMaster(first.key,false);
+  void fxUpdate();
+  message('Varianti confermate: '+variants.length+'. Modifica Riduzione e Prezzo soltanto sulla Master selezionata.','ok');
+ }catch(err){
+  if(seq!==S.variantRequest||!panel.isConnected)return;
+  console.warn('PriceMatch Pro probe varianti',err);
+  message('Rilevamento varianti non verificato: '+String(err?.message||err)+'. Prezzi e calcoli correnti preservati.','warn')
+ }
+}
+function variantCatalogEntry(entry){
+ if(!S.variantMode)return entry;
+ saveMasterState();
+ if(!S.dimensions.length||!S.variants.length)throw Error('Varianti incomplete, catalogo non aggiornato');
+ const variants=S.variants.map(v=>({
+  specifics:v.specifics.map(x=>({name:x.name,value:x.value})),
+  price:derivedVariantPrice(v)
+ }));
+ if(variants.some(v=>v.price===null||!(v.price>0)))throw Error('Completa i prezzi di tutte le varianti prima di esportare/salvare il catalogo');
+ return {...entry,dimensions:S.dimensions.map(d=>({name:d.name,values:d.values.slice()})),variants};
+}
 function localBase(){const a=S.fx[S.sourceCur],b=S.fx[cur()];if(S.sourcePrice===null)return null;if(S.sourceCur===cur())return S.sourcePrice;return a>0&&b>0?C.round(S.sourcePrice*a/b):null}
 function recalc(){
  const b=localBase();
@@ -115,6 +249,7 @@ function recalc(){
  el('fx-status').textContent=ratesAtOpening?('Cambio caricato all’avvio (Frankfurter · cache max 24 ore): 1 USD = '+(1/ratesAtOpening.CAD).toFixed(4)+' CAD · 1 USD = '+(1/ratesAtOpening.AUD).toFixed(4)+' AUD'):'Cambio all’avvio: in attesa di CAD e AUD';
  renderFeeDetails(st);
  el('source-label').textContent=S.sourceMethod==='manuale'?'Modificabile':'Letto: '+S.sourceMethod;
+ if(S.variantMode){saveMasterState();renderVariantRows()}
 }
 function renderFeeDetails(st){
  const box=el('fee-details');
@@ -256,7 +391,7 @@ el('save-rates').addEventListener('click',()=>{
  try{write(feeKey,all)}catch(e){message('Errore memoria browser: '+e.message,'bad');return}
  S.fees[S.market]=rates;S.provisional[S.market]=false;S.shipping=rates.shippingCharge;el('shipping').value=S.shipping;recalc();el('settings').classList.remove('open');message('Tariffe '+S.market+' salvate.','ok')
 });
-el('market').addEventListener('change',()=>{readEdits();S.market=el('market').value;S.shipping=Number(S.fees[S.market].shippingCharge||0);el('shipping').value=S.shipping;el('shipping-currency').textContent=cur();S.manualSale=false;recalc();if(el('settings').classList.contains('open'))renderSettings();void fxUpdate()});
+el('market').addEventListener('change',()=>{readEdits();if(S.variantMode)saveMasterState();S.market=el('market').value;S.shipping=Number(S.fees[S.market].shippingCharge||0);el('shipping').value=S.shipping;el('shipping-currency').textContent=cur();if(S.variantMode)chooseMaster(S.masterKey,false);else{S.manualSale=false;recalc()}if(el('settings').classList.contains('open'))renderSettings();void fxUpdate()});
 el('source').addEventListener('input',()=>{readEdits();S.sourceMethod='manuale';S.manualSale=false;recalc()});
 el('source-currency').addEventListener('change',()=>{readEdits();S.sourceMethod='manuale';S.manualSale=false;recalc();void fxUpdate()});
 el('title').addEventListener('input',()=>{S.title=C.clean(el('title').value)});
@@ -265,7 +400,7 @@ el('shipping').addEventListener('input',()=>{readEdits();recalc()});
 el('quantity').addEventListener('input',()=>{readEdits();recalc()});
 el('discount').addEventListener('input',()=>{const x=C.num(el('discount').value);if(x===null||x<=-100||x>1000){message('Percentuale non valida: -2 diminuisce, +2 aumenta.','warn');return}S.discount=x;S.manualSale=false;recalc()});
 el('sale').addEventListener('input',()=>{const x=C.num(el('sale').value);S.sale=x>0?x:null;S.manualSale=true;const b=localBase();if(b>0&&S.sale>0){S.discount=C.round((S.sale/b-1)*100);el('discount').value=S.discount}recalc()});
-el('refresh').addEventListener('click',()=>{const again=C.readDocument(document,hostname,location.href);if(!again.price){message('Prezzo eBay non disponibile. Il valore manuale resta invariato.','warn');return}S.sourcePrice=again.price.value;S.sourceCur=again.price.currency;S.sourceMethod=again.price.source;el('source').value=S.sourcePrice;el('source-currency').value=S.sourceCur;S.manualSale=false;recalc();void fxUpdate()});
+el('refresh').addEventListener('click',()=>{if(S.variantMode){void probeVariants(true);return}const again=C.readDocument(document,hostname,location.href);if(!again.price){message('Prezzo eBay non disponibile. Il valore manuale resta invariato.','warn');return}S.sourcePrice=again.price.value;S.sourceCur=again.price.currency;S.sourceMethod=again.price.source;el('source').value=S.sourcePrice;el('source-currency').value=S.sourceCur;S.manualSale=false;recalc();void fxUpdate()});
 function search(kind){
  const title=C.clean(el('title').value);if(!title){message('Titolo mancante, ricerca non avviata.','bad');return}
  const slug=title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,120);
@@ -333,7 +468,7 @@ el('export').addEventListener('click',()=>{
  a.href=url;a.download='dropper-catalogo-rapido-'+S.market.toLowerCase()+'.csv';panel.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2500);
  message('CSV generato: '+rows.length+' prodotti, solo Item ID, titolo e prezzo.','ok')
 });
-el('close').addEventListener('click',()=>{S.fxSequence++;panel.remove();style.remove()});
+el('close').addEventListener('click',()=>{S.fxSequence++;S.variantRequest++;panel.remove();style.remove()});
 el('title').value=S.title;el('market').value=S.market;el('source').value=S.sourcePrice??'';el('source-currency').value=S.sourceCur;el('discount').value=S.discount;el('shipping').value=S.shipping;el('quantity').value=S.quantity;
-recalc();void fxUpdate();
+recalc();void fxUpdate();void probeVariants(false);
 })();
