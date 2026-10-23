@@ -42,9 +42,13 @@ function transactionTotals(price,rates,options={}){
     Object.keys(DEFAULT_FEES).some(k=>!Number.isFinite(Number(r[k]))||Number(r[k])<0))return null;
  const discount=round(p*discountPct/100),itemNet=round(p-discount);
  const beforeTax=round(itemNet+shipping);
- const tax=round(beforeTax*Number(r.salesTaxEstimate));
+ // Default: destination taxes both discounted item and buyer-paid shipping.
+ // Optional future policy: {taxShipping:false} leaves shipping outside the tax base,
+ // but never removes it from the eBay fee base or seller revenue.
+ const taxableBase=options.taxShipping===false?itemNet:beforeTax;
+ const tax=round(taxableBase*Number(r.salesTaxEstimate));
  const masterPerUnit=round(beforeTax+tax),masterTotal=round(masterPerUnit*quantity);
- return {quantity,itemPrice:p,discountPct,discount,shipping,itemNet,beforeTax,tax,masterPerUnit,masterTotal,
+ return {quantity,itemPrice:p,discountPct,discount,shipping,itemNet,beforeTax,tax,taxableBase,masterPerUnit,masterTotal,
     buyerRevenue:round(beforeTax*quantity),salesTaxTotal:round(tax*quantity)};
 }
 function perOrderFee(price,rates,options={}){
