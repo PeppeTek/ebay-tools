@@ -14,7 +14,7 @@ let currentData=null,currentRates=null,currentDiscount=.02;
 function endpoint(){return String(localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}
 function itemId(){const p=document.getElementById(PANEL_ID);const t=clean(p?.innerText||'');const m=t.match(/Source Item ID:\s*(\d{9,12})/i);return m?m[1]:String(localStorage.getItem('capitan-sell-like-last-source-item')||'')}
 function jsonp(action,params){const ep=endpoint();return new Promise((resolve,reject)=>{if(!ep)return reject(Error('Endpoint Apps Script non configurato'));const cb='__capitanVariantsCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),timer=setTimeout(()=>done(Error('Timeout backend')),45000);function done(err,val){clearTimeout(timer);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:String(Date.now()),...(params||{})});s.src=ep+(ep.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
-function calcBreakEven(s,r){s=Number(s);if(!isFinite(s)||s<=0)return null;r=r||{};const feeRate=Number(r.ebayFee||0)+Number(r.internationalFee||0)+Number(r.marketingFee||0);const variable=(1+Number(r.salesTaxEstimate||0))*feeRate*(1+Number(r.vatOnFees||0));const fixed=Number(r.fixedFee||0)*(1+Number(r.vatOnFees||0));const v=s*(1-variable)-fixed;return isFinite(v)?Math.round(v*100)/100:null}
+function calcBreakEven(s,r){s=Number(s);if(!isFinite(s)||s<=0||!r||typeof r!=='object')return null;const feeRate=Number(r.ebayFee||0)+Number(r.internationalFee||0)+Number(r.marketingFee||0);const variable=(1+Number(r.salesTaxEstimate||0))*feeRate*(1+Number(r.vatOnFees||0));const fixed=Number(r.fixedFee||0)*(1+Number(r.vatOnFees||0));const v=s*(1-variable)-fixed;return isFinite(v)?Math.round(v*100)/100:null}
 function money(v,c){return v==null||!isFinite(Number(v))?'—':Number(v).toFixed(2)+' '+(c||'USD')}
 function targetContainer(){const p=document.getElementById(PANEL_ID),steps=p?.querySelector('#steps');if(!steps)return null;return {p,steps}}
 function saveVariantState(){
@@ -241,7 +241,8 @@ window.addEventListener('capitan-discount-updated',e=>{
 });
 
 try{
-  const id=itemId();if(!/^\d{9,12}$/.test(id)){window.__capitanVariantProbe={mode:'unknown',reason:'item-id'};return}
+  const id=itemId();if(!/^\d{9,12}$/.test(id)){window.__capitanVariantProbe={mode:'unknown',reason:'item-id'};variantDiagnostic('ID sorgente non riconosciuto: controllo interrotto',true);return}
+  variantDiagnostic('avvio verifica sorgente ID '+id+' · marketplace '+location.hostname);
   try{
     const old=readStoredVariantStateForProbe_();
     if(old&&old.data&&String(old.data.itemId||'')!==String(id)){
@@ -255,30 +256,37 @@ try{
   if(!data){
     try{const mi=window.__capitanSellLikeModePromise?await window.__capitanSellLikeModePromise:null;if(mi&&mi.data&&mi.data.ok&&String(mi.data.itemId||'')===String(id))data=mi.data}catch(_){}
   }
+  // Pricing is optional for rendering. Never wait up to 45 seconds before showing detected variants.
   const pricingPromise=jsonp('sell_like_pricing_get').catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  const pricingWindow=Promise.race([pricingPromise,sleep(2500).then(()=>({ok:false,timeout:true}))]);
   if(!data){try{data=await jsonp('sell_like_variants_get',{itemId:id})}catch(e){variantDiagnostic('backend varianti non raggiungibile: '+String(e&&e.message||e))}}
   if(data&&data.ok&&Array.isArray(data.variants)&&data.variants.length&&Array.isArray(data.dimensions)&&data.dimensions.length)data.hasVariations=true;
+  variantDiagnostic('backend ID '+id+' → '+(!data||!data.ok?'risposta assente/errore':data.hasVariations?'varianti '+(Array.isArray(data.variants)?data.variants.length:'non dettagliate'):'prodotto singolo')+'; controllo finale sorgente');
   if(!data||!data.ok||!data.hasVariations){
     const recovered=await recoverSourceVariations(id,data);
     if(recovered)data=recovered;
   }
-  const pricing=await pricingPromise;
-  if(!data||!data.ok){variantDiagnostic('nessun dato eBay attendibile per le varianti',true);window.__capitanVariantProbe={mode:'unknown',error:'Dati varianti sorgente non disponibili'};return}
+  const pricing=await pricingWindow;
+  if(!data||!data.ok){variantDiagnostic('nessun dato eBay attendibile per le varianti · ID '+id,true);window.__capitanVariantProbe={mode:'unknown',error:'Dati varianti sorgente non disponibili'};return}
   if(!data.hasVariations){
+    variantDiagnostic('ID '+id+': nessuna variante confermata. Tabella non mostrata per evitare dati inventati.');
     window.__capitanVariantProbe={mode:'mono',data:data};
     try{window.dispatchEvent(new CustomEvent('capitan-variants-probed',{detail:window.__capitanVariantProbe}))}catch(_){}
     closePreopenedHelper();
     return;
   }
+  variantDiagnostic('ID '+id+': rilevate '+(Array.isArray(data.variants)?data.variants.length:0)+' varianti da '+String(data.source||'backend'));
   window.__capitanVariantProbe={mode:'variants',data:data};
   try{window.dispatchEvent(new CustomEvent('capitan-variants-probed',{detail:window.__capitanVariantProbe}))}catch(_){}
   if(data.source==='listing-html-fallback')window.__capitanSellLikeMode='variants';
   currentData=data;currentRates=pricing&&pricing.ok?pricing.rates:null;
+  if(!currentRates)variantDiagnostic('tariffe non pronte: break-even sospeso, campi prezzi comunque disponibili');
+  pricingPromise.then(late=>{if(late&&late.ok&&late.rates&&currentData===data&&!currentRates){currentRates=late.rates;const table=document.getElementById('capitan-variants-preview');if(table&&!data.pricesConfirmed&&!table.querySelector('input:focus'))render(data,currentRates,currentDiscount);variantDiagnostic('tariffe ricevute: break-even aggiornabile')}});
   if(currentRates&&isFinite(Number(currentRates.discountRate)))currentDiscount=Number(currentRates.discountRate);else if(isFinite(Number(data.discountRate)))currentDiscount=Number(data.discountRate);
   ensureVariantDraft(currentData,currentDiscount);
   render(currentData,currentRates,currentDiscount);
   const savedState=saveVariantState();
   window.dispatchEvent(new CustomEvent('capitan-variants-ready',{detail:savedState}));
   startAutomaticVariantFlow();
-}catch(err){window.__capitanVariantProbe={mode:'unknown',error:String(err&&err.message||err)};try{window.dispatchEvent(new CustomEvent('capitan-variants-probed',{detail:window.__capitanVariantProbe}))}catch(_){}console.warn('Sell Like variants preview',err)}
+}catch(err){window.__capitanVariantProbe={mode:'unknown',error:String(err&&err.message||err)};variantDiagnostic('errore verifica: '+String(err&&err.message||err),true);try{window.dispatchEvent(new CustomEvent('capitan-variants-probed',{detail:window.__capitanVariantProbe}))}catch(_){}console.warn('Sell Like variants preview',err)}
 })();
