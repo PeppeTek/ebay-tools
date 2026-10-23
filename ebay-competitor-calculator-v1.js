@@ -152,14 +152,15 @@ async function fxUpdate(){
  else if(data.hasPriceVariants)message('Prodotto con possibili varianti: controlla il prezzo selezionato e usa ↻ per aggiornarlo.','warn');
  else message('Calcolatore pronto: verifica prezzo e valuta originali prima del salvataggio.','ok')
 }
-const labels={ebayFee:'Tariffa eBay (%)',internationalFee:'Tariffa internazionale (%)',marketingFee:'Marketing (%)',vatOnFees:'IVA sulle tariffe (%)',salesTaxEstimate:'Sales Tax stimata (%)',fixedFee:'Tariffa fissa ('+cur()+')',fixedFeeLow:'Fissa ordine fino a 10 '+cur(),fixedFeeHigh:'Fissa ordine oltre 10 '+cur(),fixedFeeThreshold:'Soglia fissa ('+cur()+')'};
+const labels={ebayFee:'Tariffa eBay (%)',internationalFee:'Tariffa internazionale (%)',marketingFee:'Marketing (%)',vatOnFees:'IVA sulle tariffe (%)',salesTaxEstimate:'Sales Tax stimata (%)',fixedFee:'Tariffa fissa ('+cur()+')',fixedFeeLow:'Fissa ordine fino a 10 '+cur(),fixedFeeHigh:'Fissa ordine oltre 10 '+cur(),fixedFeeThreshold:'Soglia fissa ('+cur()+')',sellerDiscountPct:'Discount from seller (%)',shippingCharge:'Shipping and handling (valuta locale)'};
 function renderSettings(){
  const box=el('feegrid');box.replaceChildren();
- const keys=S.market==='AU'?fields:[...fields,...tierKeys];
+ const keys=S.market==='AU'?[...fields,'sellerDiscountPct','shippingCharge']:[...fields,...tierKeys,'sellerDiscountPct','shippingCharge'];
  for(const key of keys){
    const l=document.createElement('label'),v=document.createElement('input'),abs=key==='fixedFee'||tierKeys.includes(key);
    l.textContent=tierKeys.includes(key)?(key==='fixedFeeLow'?'Fissa fino a '+S.fees[S.market].fixedFeeThreshold+' '+cur():key==='fixedFeeHigh'?'Fissa oltre '+S.fees[S.market].fixedFeeThreshold+' '+cur():'Soglia fissa ('+cur()+')'):labels[key];v.dataset.rate=key;v.type='number';v.min='0';v.step='.01';
-   v.value=String(C.round(abs?S.fees[S.market][key]:S.fees[S.market][key]*100));
+   if(key==='shippingCharge')l.textContent+=' ('+cur()+')';
+   v.value=String(C.round(abs||key==='shippingCharge'||key==='sellerDiscountPct'?S.fees[S.market][key]:S.fees[S.market][key]*100));
    box.append(l,v);
  }
 }
@@ -167,20 +168,22 @@ el('gear').addEventListener('click',()=>{el('settings').classList.toggle('open')
 el('save-rates').addEventListener('click',()=>{
  const rates={...S.fees[S.market]};
  for(const input of el('feegrid').querySelectorAll('input')){
-   const key=input.dataset.rate,v=C.num(input.value),abs=key==='fixedFee'||tierKeys.includes(key);
-   if(v===null||v<0||(!abs&&v>=100)||(key==='fixedFeeThreshold'&&v<=0)){message('Tariffa non valida: '+key,'bad');return}
+   const key=input.dataset.rate,v=C.num(input.value),abs=key==='fixedFee'||tierKeys.includes(key)||key==='shippingCharge'||key==='sellerDiscountPct';
+   if(v===null||v<0||(!abs&&v>=100)||(key==='sellerDiscountPct'&&v>=100)||(key==='fixedFeeThreshold'&&v<=0)){message('Tariffa non valida: '+key,'bad');return}
    rates[key]=abs?v:v/100;
  }
  if(!C.fees(100,rates,1,0)){message('Tariffe incoerenti, verifica le percentuali.','bad');return}
- const all=saved(feeKey);all[S.market]={...rates,feePresetVersion:2};
+ const all=saved(feeKey);all[S.market]={...rates,feePresetVersion:3};
  try{write(feeKey,all)}catch(e){message('Errore memoria browser: '+e.message,'bad');return}
- S.fees[S.market]=rates;S.provisional[S.market]=false;recalc();message('Tariffe '+S.market+' salvate senza modificare quelle di Sell Like Clone.','ok')
+ S.fees[S.market]=rates;S.provisional[S.market]=false;S.shipping=rates.shippingCharge;el('shipping').value=S.shipping;recalc();message('Tariffe, sconto venditore e spedizione '+S.market+' salvati solo nel calcolatore.','ok')
 });
-el('market').addEventListener('change',()=>{readEdits();S.market=el('market').value;S.manualSale=false;recalc();if(el('settings').classList.contains('open'))renderSettings();void fxUpdate()});
+el('market').addEventListener('change',()=>{readEdits();S.market=el('market').value;S.shipping=Number(S.fees[S.market].shippingCharge||0);el('shipping').value=S.shipping;S.manualSale=false;recalc();if(el('settings').classList.contains('open'))renderSettings();void fxUpdate()});
 el('source').addEventListener('input',()=>{readEdits();S.sourceMethod='manuale';S.manualSale=false;recalc()});
 el('source-currency').addEventListener('change',()=>{readEdits();S.sourceMethod='manuale';S.manualSale=false;recalc();void fxUpdate()});
 el('title').addEventListener('input',()=>{S.title=C.clean(el('title').value)});
 el('cost').addEventListener('input',()=>{readEdits();recalc()});
+el('shipping').addEventListener('input',()=>{readEdits();recalc()});
+el('quantity').addEventListener('input',()=>{readEdits();recalc()});
 el('discount').addEventListener('input',()=>{const x=C.num(el('discount').value);if(x===null||x<=-100||x>1000){message('Percentuale non valida: -2 diminuisce, +2 aumenta.','warn');return}S.discount=x;S.manualSale=false;recalc()});
 el('sale').addEventListener('input',()=>{const x=C.num(el('sale').value);S.sale=x>0?x:null;S.manualSale=true;const b=localBase();if(b>0&&S.sale>0){S.discount=C.round((S.sale/b-1)*100);el('discount').value=S.discount}recalc()});
 el('refresh').addEventListener('click',()=>{const again=C.readDocument(document,hostname,location.href);if(!again.price){message('Prezzo eBay non disponibile. Il valore manuale resta invariato.','warn');return}S.sourcePrice=again.price.value;S.sourceCur=again.price.currency;S.sourceMethod=again.price.source;el('source').value=S.sourcePrice;el('source-currency').value=S.sourceCur;S.manualSale=false;recalc();void fxUpdate()});
@@ -210,6 +213,6 @@ el('export').addEventListener('click',()=>{
  message('CSV generato: '+rows.length+' prodotti, solo Item ID, titolo e prezzo.','ok')
 });
 el('close').addEventListener('click',()=>{S.fxSequence++;panel.remove();style.remove()});
-el('title').value=S.title;el('market').value=S.market;el('source').value=S.sourcePrice??'';el('source-currency').value=S.sourceCur;el('discount').value=S.discount;
+el('title').value=S.title;el('market').value=S.market;el('source').value=S.sourcePrice??'';el('source-currency').value=S.sourceCur;el('discount').value=S.discount;el('shipping').value=S.shipping;el('quantity').value=S.quantity;
 recalc();void fxUpdate();
 })();
