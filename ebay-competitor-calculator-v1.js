@@ -65,7 +65,7 @@ panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPP
 '<div class="row"><label>Il mio utile netto:</label><span></span><div class="val" data-el="profit">—</div></div>'+
 '<div class="row"><label>Prezzo minimo di pareggio:</label><span></span><div class="val" data-el="break-even" style="color:#2563eb">—</div></div>'+
 '<div class="hint" data-el="fx-status"></div><div class="hint" data-el="fee-details"></div><div class="hint" data-el="market-compare"></div></div>'+
-'<div class="settings" data-el="settings"><b>Tariffe per paese selezionato</b><div class="feegrid" data-el="feegrid" style="margin-top:9px"></div><button data-el="save-rates" style="margin-top:9px;padding:8px;background:#2563eb;color:white;border:0;border-radius:7px;cursor:pointer">Salva tariffe per questo paese</button><p class="hint">Le tariffe sono stime modificabili, separate dalle impostazioni Sell Like Clone.</p></div>'+
+'<div class="settings" data-el="settings"><b>Tariffe per paese selezionato</b><p class="hint">Le tariffe fisse US e CA sono espresse direttamente nella valuta del paese, non convertite da 0,40 USD. L\'Australia usa il valore osservato nel tuo estratto, modificabile.</p><div class="feegrid" data-el="feegrid" style="margin-top:9px"></div><button data-el="save-rates" style="margin-top:9px;padding:8px;background:#2563eb;color:white;border:0;border-radius:7px;cursor:pointer">Salva tariffe per questo paese</button><p class="hint">Le tariffe sono stime modificabili, separate dalle impostazioni Sell Like Clone.</p></div>'+
 '<div class="buttons"><button data-el="ali" style="background:#ff4747;color:white">Trova su AliExpress</button><button data-el="amazon" style="background:#ffa41c;color:#111">Trova su Amazon</button>'+
 '<button class="span2" data-el="save" style="background:#16a34a;color:white">Aggiungi a catalogo</button>'+
 '<button class="span2" data-el="export" style="background:white;color:#333;height:31px">Esporta catalogo rapido CSV (3 colonne)</button></div>'+
@@ -152,7 +152,7 @@ function renderSettings(){
  const keys=S.market==='AU'?fields:[...fields,...tierKeys];
  for(const key of keys){
    const l=document.createElement('label'),v=document.createElement('input'),abs=key==='fixedFee'||tierKeys.includes(key);
-   l.textContent=labels[key];v.dataset.rate=key;v.type='number';v.min='0';v.step='.01';
+   l.textContent=tierKeys.includes(key)?(key==='fixedFeeLow'?'Fissa fino a '+S.fees[S.market].fixedFeeThreshold+' '+cur():key==='fixedFeeHigh'?'Fissa oltre '+S.fees[S.market].fixedFeeThreshold+' '+cur():'Soglia fissa ('+cur()+')'):labels[key];v.dataset.rate=key;v.type='number';v.min='0';v.step='.01';
    v.value=String(C.round(abs?S.fees[S.market][key]:S.fees[S.market][key]*100));
    box.append(l,v);
  }
