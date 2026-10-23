@@ -260,6 +260,24 @@ function search(kind){
  window.open(url,'_blank','noopener,noreferrer');message('Ricerca '+(kind==='ali'?'AliExpress':'Amazon')+' aperta in una nuova scheda.','ok')
 }
 el('ali').addEventListener('click',()=>search('ali'));el('amazon').addEventListener('click',()=>search('amazon'));
+async function ensureCatalogTransport(){
+ const loaded=globalThis.__dropperCompetitorCatalogTransport;
+ if(loaded&&typeof loaded.save==='function'&&typeof loaded.buildPackage==='function')return loaded;
+ // Older TEST bookmarklets may load only Core + UI, omitting the newly added transport.
+ // Load this module only when necessary; no Apps Script/API request or AI tokens used here.
+ const base='https://raw.githubusercontent.com/PeppeTek/ebay-tools/feature/competitor-calculator-2026-10-23/';
+ const file='ebay-competitor-catalog-transport-v1.js';
+ let response;
+ try{response=await fetch(base+file+'?ts='+Date.now(),{cache:'no-store'})}
+ catch(error){throw Error('Impossibile scaricare '+file+': '+String(error&&error.message||error))}
+ if(!response.ok)throw Error(file+' HTTP '+response.status+' (controlla accesso GitHub)');
+ const code=String(await response.text()).replace(/^\s*javascript\s*:/i,'');
+ try{(0,eval)(code)}catch(error){throw Error('Errore caricamento '+file+': '+String(error&&error.message||error))}
+ const ready=globalThis.__dropperCompetitorCatalogTransport;
+ if(!ready||typeof ready.save!=='function'||typeof ready.buildPackage!=='function')
+  throw Error(file+' scaricato ma non inizializzato; controlla la console browser');
+ return ready
+}
 function catalogRows(){const all=saved(catalogKey);return Array.isArray(all[S.market])?all[S.market]:[]}
 el('save').addEventListener('click',async()=>{
  readEdits();
@@ -278,12 +296,9 @@ el('save').addEventListener('click',async()=>{
  if(!check.some(r=>String(r.itemId)===id&&r.title===title&&r.price===entry.price)){
   message('Salvataggio locale non confermato.','bad');return
  }
- const transport=globalThis.__dropperCompetitorCatalogTransport;
- if(!transport||typeof transport.save!=='function'){
-  message('Salvato SOLO in locale. Modulo di trasporto catalogo non caricato: nessun dato scritto nel foglio.','bad');return
- }
  const btn=el('save'),oldLabel=btn.textContent;btn.disabled=true;btn.textContent='Salvataggio catalogo…';
  try{
+  const transport=await ensureCatalogTransport();
   const result=await transport.save(entry,market,existingSellLikeEndpoint);
   if(result.duplicate===true){
    message('Già presente nel catalogo '+market+' · Source Item ID '+id+' · riga '+result.rowStart+'. Nessuna riga duplicata creata.','warn')
