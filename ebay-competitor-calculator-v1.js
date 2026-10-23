@@ -214,7 +214,7 @@ async function probeVariants(reload=false){
   S.variants=variants;S.dimensions=result.dimensions;S.variantMode=true;
   el('variants-block').style.display='block';el('variants-count').textContent='('+variants.length+' rilevate)';
   chooseMaster(first.key,false);
-  void fxUpdate();
+  if(!(Number(S.fx[S.sourceCur])>0))void fxUpdate();
   message('Varianti confermate: '+variants.length+'. Modifica Riduzione e Prezzo soltanto sulla Master selezionata.','ok');
  }catch(err){
   if(seq!==S.variantRequest||!panel.isConnected)return;
@@ -337,6 +337,7 @@ async function fxUpdate(){
  recalc();
  if(errors.length)message('Cambio mancante: utile e pareggio restano vuoti, senza inventare il tasso.','warn');
  else if(!data.price)message('Prezzo concorrente non rilevato. Inserisci prezzo e valuta manualmente.','warn');
+ else if(S.variantMode)message('Varianti confermate: '+S.variants.length+'. È attiva soltanto la Master selezionata.','ok');
  else if(data.hasPriceVariants)message('Prodotto con possibili varianti: controlla il prezzo selezionato e usa ↻ per aggiornarlo.','warn');
  else message('Calcolatore pronto: verifica prezzo e valuta originali prima del salvataggio.','ok')
 }
