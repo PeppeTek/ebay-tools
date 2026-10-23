@@ -215,13 +215,12 @@ async function recoverSourceVariations(id,backend){
   if(dimensions.length!==1){variantDiagnostic('trovati '+dimensions.length+' attributi ma non le combinazioni reali; verifica backend necessaria',true);return null}
   const dim=dimensions[0];
   const clone=window.__capitanSellLikeCloneData||{};
-  const n=Number(backend&&backend.sourcePrice||clone.sourcePrice);
-  const base=Number.isFinite(n)&&n>0?n:null;
+  // Listing-level price is not a verified price for each option.
   const currency=clean(backend&&backend.currency||clone.currency||window.__capitanSellLikeCurrency||'USD');
   const variants=dim.values.map((value,i)=>({
     index:i+1,title:dim.name+': '+value,
     specifics:[{name:dim.name,value}],
-    sourcePrice:base, // common listing reference only, not a verified variant-specific price
+    sourcePrice:null, // unknown per-variant source price: never copy the common listing price
     targetPrice:'',targetQuantity:3,priceOverridden:false,images:[]
   }));
   variantDiagnostic('recuperate '+variants.length+' opzioni '+dim.name+' dalla pagina eBay. Prezzi per variante da verificare e inserire manualmente.');
