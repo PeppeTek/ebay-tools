@@ -103,7 +103,7 @@ function recalc(){
  el('profit').style.color=st?.profitUSD<0?'#b42318':'#16803d';
  textMoney('break-even',st?.breakEven??null,st?.breakEven!=null&&fx?C.round(st.breakEven*fx):null);
  const ratesAtOpening=S.fxAtStartup;
- el('fx-status').textContent=ratesAtOpening?('Cambio caricato all’avvio (Frankfurter · cache max 24 ore): 1 USD = '+C.round(1/ratesAtOpening.CAD*10000)/10000+' CAD · 1 USD = '+C.round(1/ratesAtOpening.AUD*10000)/10000+' AUD'):'Cambio all’avvio: in attesa di CAD e AUD';
+ el('fx-status').textContent=ratesAtOpening?('Cambio caricato all’avvio (Frankfurter · cache max 24 ore): 1 USD = '+(1/ratesAtOpening.CAD).toFixed(4)+' CAD · 1 USD = '+(1/ratesAtOpening.AUD).toFixed(4)+' AUD'):'Cambio all’avvio: in attesa di CAD e AUD';
  renderFeeDetails(st);
  el('source-label').textContent=S.sourceMethod==='manuale'?'Modificabile':'Letto: '+S.sourceMethod;
 }
