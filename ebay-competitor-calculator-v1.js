@@ -288,7 +288,11 @@ el('save').addEventListener('click',async()=>{
  // Preserve the existing local quick list / CSV, but never confuse that with online confirmation.
  const all=saved(catalogKey),rows=Array.isArray(all[market])?all[market]:[];
  const previous=rows.findIndex(r=>String(r.itemId)===id);
- if(previous>=0){if(!confirm('Item ID già presente nella lista locale '+market+'. Aggiornare la copia locale e provare il catalogo online?'))return;rows[previous]=entry}
+ if(previous>=0){
+  const old=rows[previous];
+  if((old.title!==entry.title||Number(old.price)!==entry.price)&&!confirm('Item ID già presente nella lista locale '+market+'. Aggiornare la copia locale e provare il catalogo online?'))return;
+  rows[previous]=entry;
+ }
  else rows.push(entry);
  all[market]=rows;
  try{write(catalogKey,all)}catch(e){message('Salvataggio locale fallito: '+String(e&&e.message||e),'bad');return}
