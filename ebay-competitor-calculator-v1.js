@@ -192,53 +192,88 @@ async function probeVariants(reload=false){
   return
  }
  const seq=++S.variantRequest;
- let remoteFailure=null;
- const domResult=()=>{
+ const inspect=()=>{
   if(typeof variantTools.inspectPage!=='function')return {hasSelects:false,hasVariations:false};
   return variantTools.inspectPage(document,location.href,data.price?.value??null,data.price?.currency||C.currencyFromHost(hostname),id)
  };
- try{
-  let result,origin='backend';
-  try{result=await variantTools.probe({itemId:id,endpoint:existingSellLikeEndpoint,fallbackCurrency:data.price?.currency||C.currencyFromHost(hostname)})}
-  catch(error){remoteFailure=error}
+ function activate(result,origin){
   if(seq!==S.variantRequest||!panel.isConnected)return;
-  if(!result?.hasVariations){
-   const available=domResult();
-   if(available.hasVariations){result=available;origin='pagina'}
-   else if(available.hasSelects){
-    message('La pagina mostra selettori varianti, ma non è possibile ricostruire combinazioni e prezzi in modo affidabile: '+(available.reason||'dati insufficienti')+'.','warn');return
-   }else if(remoteFailure){
-    message('Verifica varianti non completata: '+String(remoteFailure?.message||remoteFailure)+'. Nessun prezzo inventato.','warn');return
-   }else if(S.variantMode){
-    message('Il backend non conferma più le varianti: mantengo le modifiche fino al prossimo caricamento.','warn');return
-   }else return;
-  }
-  const previous=new Map(S.variants.map(v=>[v.key,v]));
-  const variants=result.variants.map(v=>{
-   const was=previous.get(v.key);
-   return {...v,byMarket:was?.byMarket||{}}
-  });
-  if(!variants.length)throw Error('Nessuna combinazione variante valida');
   if(S.variantMode)saveMasterState();
-  const oldMaster=S.masterKey;
-  const first=variants.find(v=>v.key===oldMaster)||variants.find(v=>v.key===result.selectedKey)||variants.find(v=>v.selected)||variants.find(v=>v.sourcePrice!==null)||variants[0];
+  const previous=new Map(S.variants.map(v=>[v.key,v]));
+  const variants=result.variants.map(v=>({...v,byMarket:previous.get(v.key)?.byMarket||{}}));
+  if(!variants.length)throw Error('Nessuna combinazione variante valida');
+  const first=variants.find(v=>v.key===S.masterKey)||variants.find(v=>v.key===result.selectedKey)||
+    variants.find(v=>v.selected)||variants.find(v=>v.sourcePrice!==null)||variants[0];
   if(!S.variantMode){
    const initial=variantMarketState(first);
    initial.discount=S.discount;initial.manualSale=S.manualSale;
-   if(S.manualSale&&S.sale>0)initial.sale=S.sale;
+   if(S.manualSale&&S.sale>0)initial.sale=S.sale
   }
-  S.variants=variants;S.dimensions=result.dimensions;S.variantMode=true;S.variantStatus=origin==='pagina'?'partial':'confirmed';
+  S.variants=variants;S.dimensions=result.dimensions;S.variantMode=true;
+  S.variantStatus=origin==='pagina'?'partial':'confirmed';
   el('variants-block').style.display='block';el('variants-count').textContent='('+variants.length+' rilevate)';
   chooseMaster(first.key,false);
   if(!(Number(S.fx[S.sourceCur])>0))void fxUpdate();
   const missing=variants.filter(v=>v.sourcePrice===null).length;
-  const note=origin==='pagina'?'Rilevate dalla pagina: '+variants.length+' varianti. '+missing+' prezzi non disponibili (n.d.); seleziona la Master e imposta il prezzo prima di salvare.':'Varianti confermate: '+variants.length+'. Modifica Riduzione e Prezzo soltanto sulla Master selezionata.';
-  message(note,origin==='pagina'?'warn':'ok');
- }catch(err){
-  if(seq!==S.variantRequest||!panel.isConnected)return;
-  console.warn('PriceMatch Pro probe varianti',err);
-  message('Rilevamento varianti non verificato: '+String(err?.message||err)+'. Prezzi e calcoli correnti preservati.','warn')
+  const note=origin==='pagina'?'Attributi eBay rilevati: '+variants.length+' varianti; '+missing+' prezzi non verificati (n.d.). Seleziona la Master e inserisci i prezzi prima del catalogo.':
+    'Varianti confermate dal backend: '+variants.length+'. Riduzione e prezzo modificano soltanto la Master selezionata.';
+  message(note,origin==='pagina'?'warn':'ok')
  }
+ // DOM FIRST: never wait up to 35s for the Apps Script backend before showing
+ // the variant UI. Skin listbox option nodes often exist already on the item page.
+ try{
+  const page=inspect();
+  if(page.hasVariations)activate(page,'pagina');
+  else if(page.hasSelects&&page.reason)message('Selettori eBay presenti, ma dati varianti non ancora completi: '+page.reason,'warn')
+ }catch(error){console.warn('PriceMatch Pro: ispezione varianti DOM',error)}
+ // Backend runs second to enrich validated prices/combinations, not to gate UI.
+ try{
+  const result=await variantTools.probe({itemId:id,endpoint:existingSellLikeEndpoint,
+    fallbackCurrency:data.price?.currency||C.currencyFromHost(hostname)});
+  if(seq!==S.variantRequest||!panel.isConnected)return;
+  if(result.hasVariations){activate(result,'backend');return}
+  if(S.variantMode)return;
+  // eBay may render the option list after the bookmarklet starts.
+  const late=inspect();
+  if(late.hasVariations)activate(late,'pagina');
+  else if(late.hasSelects)message('Selettori varianti eBay individuati; apri il menu per visualizzare le opzioni, poi usa ↻ se necessario.','warn')
+ }catch(error){
+  if(seq!==S.variantRequest||!panel.isConnected||S.variantMode)return;
+  console.warn('PriceMatch Pro: recupero varianti backend',error);
+  try{
+   const late=inspect();
+   if(late.hasVariations){activate(late,'pagina');return}
+   if(late.hasSelects){message('Selettore varianti rilevato, opzioni non ancora accessibili. Aprilo nella pagina eBay.','warn');return}
+  }catch(_){}
+  message('Rilevamento varianti non verificato: '+String(error?.message||error)+'. Calcoli standard preservati.','warn')
+ }
+}
+function watchVariationDropdowns(){
+ if(!variantTools||typeof variantTools.inspectPage!=='function')return;
+ const observe=(event)=>{
+  if(!panel.isConnected||S.variantMode)return;
+  const target=event.target;
+  if(!target?.closest?.('.x-msku-evo .listbox-button, .x-msku .listbox-button, .x-msku-evo .listbox-button__control, .x-msku .listbox-button__control'))return;
+  // The options can be mounted when the buyer opens the listbox.
+  setTimeout(()=>{
+   if(!panel.isConnected||S.variantMode)return;
+   const page=variantTools.inspectPage(document,location.href,data.price?.value??null,data.price?.currency||C.currencyFromHost(hostname),id);
+   if(page.hasVariations){
+    // Refresh becomes unnecessary once all options are present. Do not wait for backend.
+    S.variantRequest++; // invalidate any older pending backend callback
+    const found=page.variants,first=found.find(v=>v.key===page.selectedKey)||found.find(v=>v.selected)||found[0];
+    const vstate=variantMarketState(first);
+    vstate.discount=S.discount;vstate.manualSale=S.manualSale;
+    if(S.manualSale&&S.sale>0)vstate.sale=S.sale;
+    S.variants=found;S.dimensions=page.dimensions;S.variantMode=true;S.variantStatus='partial';
+    el('variants-block').style.display='block';el('variants-count').textContent='('+found.length+' rilevate)';
+    chooseMaster(first.key,false);
+    message('Selettore eBay rilevato: '+found.length+' varianti. Prezzi sconosciuti n.d. fino a verifica o inserimento.','warn');
+   }
+  },100)
+ };
+ document.addEventListener('click',observe,true);
+ S.stopVariantWatch=()=>document.removeEventListener('click',observe,true)
 }
 function variantCatalogEntry(entry){
  if(!S.variantMode)return entry;
@@ -509,7 +544,7 @@ el('export').addEventListener('click',async()=>{
  a.href=url;a.download='dropper-catalogo-rapido-'+S.market.toLowerCase()+'.csv';panel.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2500);
  message('CSV generato: '+rows.length+' prodotti, solo Item ID, titolo e prezzo.','ok')
 });
-el('close').addEventListener('click',()=>{S.fxSequence++;S.variantRequest++;panel.remove();style.remove()});
+el('close').addEventListener('click',()=>{S.fxSequence++;S.variantRequest++;if(S.stopVariantWatch)S.stopVariantWatch();panel.remove();style.remove()});
 el('title').value=S.title;el('market').value=S.market;el('source').value=S.sourcePrice??'';el('source-currency').value=S.sourceCur;el('discount').value=S.discount;el('shipping').value=S.shipping;el('quantity').value=S.quantity;
-recalc();void fxUpdate();void probeVariants(false);
+recalc();watchVariationDropdowns();void probeVariants(false);void fxUpdate();
 })();
