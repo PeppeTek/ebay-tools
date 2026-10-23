@@ -13,7 +13,7 @@ const saved=k=>{try{return JSON.parse(localStorage.getItem(k)||'null')||{}}catch
 const write=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 const data=C.readDocument(document,hostname,location.href);
 const fields=Object.keys(C.DEFAULT_FEES),tierKeys=['fixedFeeLow','fixedFeeHigh','fixedFeeThreshold'];
-const feeKey='dropper-competitor-calculator-fees-v1',catalogKey='dropper-quick-catalog-v1';
+const feeKey='dropper-competitor-calculator-fees-v1',catalogKey='dropper-quick-catalog-v1',catalogConnectionKey='dropper-quick-catalog-connection-v1';
 const savedFees=saved(feeKey),oldFees=saved('capitan-sell-like-market-pricing-v1');
 const S={market:C.countryFromHost(hostname),title:data.title,sourcePrice:data.price?.value??null,
  sourceCur:data.price?.currency||C.currencyFromHost(hostname),sourceMethod:data.price?.source||'manuale',
@@ -72,7 +72,7 @@ panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPP
 '<div class="row"><label>Il mio utile netto:</label><span></span><div class="val" data-el="profit">—</div></div>'+
 '<div class="row"><label>Prezzo minimo di pareggio:</label><span></span><div class="val" data-el="break-even" style="color:#2563eb">—</div></div>'+
 '<div class="hint" data-el="fx-status"></div><div class="hint" data-el="fee-details"></div><div class="hint" data-el="market-compare"></div></div>'+
-'<div class="settings" data-el="settings"><b>Tariffe per paese selezionato</b><p class="hint">Le tariffe fisse US e CA sono espresse direttamente nella valuta del paese, non convertite da 0,40 USD. L\'Australia usa il valore osservato nel tuo estratto, modificabile.</p><div class="feegrid" data-el="feegrid" style="margin-top:9px"></div><button data-el="save-rates" style="margin-top:9px;padding:8px;background:#2563eb;color:white;border:0;border-radius:7px;cursor:pointer">Salva tariffe per questo paese</button><p class="hint">Le tariffe sono stime modificabili, separate dalle impostazioni Sell Like Clone.</p></div>'+
+'<div class="settings" data-el="settings"><b>Tariffe per paese selezionato</b><p class="hint">Le tariffe fisse US e CA sono espresse direttamente nella valuta del paese, non convertite da 0,40 USD. L\'Australia usa il valore osservato nel tuo estratto, modificabile.</p><div class="feegrid" data-el="feegrid" style="margin-top:9px"></div><button data-el="save-rates" style="margin-top:9px;padding:8px;background:#2563eb;color:white;border:0;border-radius:7px;cursor:pointer">Salva tariffe per questo paese</button><p class="hint">Le tariffe sono stime modificabili, separate dalle impostazioni Sell Like Clone.</p><div style="margin-top:14px;padding-top:10px;border-top:1px solid #ddd"><b>Catalogo rapido Google Sheets</b><p class="hint">Inserisci URL del Web App Apps Script dedicato e chiave di accesso (non il backend Sell Like Clone). Il catalogo locale rimane disponibile.</p><label>URL Web App<input data-el="catalog-endpoint" type="url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off"></label><label style="display:block;margin-top:7px">Chiave catalogo<input data-el="catalog-token" type="password" autocomplete="off" placeholder="Chiave configurata in Apps Script"></label><button data-el="catalog-connect" style="margin-top:8px;padding:8px;border:1px solid #abb;border-radius:6px;background:#fff;cursor:pointer">Salva collegamento catalogo</button><p class="hint">Il salvataggio online sarà confermato soltanto dopo la risposta del foglio. <a href="https://docs.google.com/spreadsheets/d/1cUfx_0gckyBSc5eWpqqIfVlUfzjHxDx-c3bTCQCf8s4/edit" target="_blank" rel="noopener noreferrer">Apri catalogo Google Sheets</a></p></div></div>'+
 '<div class="buttons"><button data-el="ali" style="background:#ff4747;color:white">Trova su AliExpress</button><button data-el="amazon" style="background:#ffa41c;color:#111">Trova su Amazon</button>'+
 '<button class="span2" data-el="save" style="background:#16a34a;color:white">Aggiungi a catalogo</button>'+
 '<button class="span2" data-el="export" style="background:white;color:#333;height:31px">Esporta catalogo rapido CSV (3 colonne)</button></div>'+
@@ -250,15 +250,61 @@ function search(kind){
  window.open(url,'_blank','noopener,noreferrer');message('Ricerca '+(kind==='ali'?'AliExpress':'Amazon')+' aperta in una nuova scheda.','ok')
 }
 el('ali').addEventListener('click',()=>search('ali'));el('amazon').addEventListener('click',()=>search('amazon'));
+function catalogConnection(){const c=saved(catalogConnectionKey);return {url:String(c.url||''),token:String(c.token||'')}}
+function quickCatalogRemoteSave(entry,market){
+ const config=catalogConnection();
+ if(!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(config.url)||config.token.length<32){
+  return Promise.reject(Error('Web App catalogo o chiave non configurati'))
+ }
+ return new Promise((resolve,reject)=>{
+  const cb='__dropperQuickCatalogCb_'+Date.now()+'_'+Math.floor(Math.random()*100000);
+  const script=document.createElement('script');
+  let finished=false;
+  const done=(err,result)=>{
+   if(finished)return;finished=true;clearTimeout(timer);
+   try{delete window[cb]}catch(_){window[cb]=undefined}
+   script.remove();if(err)reject(err);else resolve(result);
+  };
+  const timer=setTimeout(()=>done(Error('Timeout catalogo online')),20000);
+  window[cb]=v=>done(null,v);
+  script.onerror=()=>done(Error('Endpoint catalogo online non raggiungibile'));
+  const q=new URLSearchParams({action:'quick_catalog_upsert',callback:cb,token:config.token,market,itemId:entry.itemId,title:entry.title,price:String(entry.price)});
+  script.src=config.url+'?'+q.toString();document.head.appendChild(script)
+ }).then(result=>{
+  if(!result||result.ok!==true||result.stored!==true||result.itemId!==entry.itemId||result.market!==market||Math.abs(Number(result.price)-entry.price)>.001){
+   throw Error(result&&result.error||'Scrittura online non confermata dal backend')
+  }
+  return result
+ })
+}
 function catalogRows(){const o=saved(catalogKey);return Array.isArray(o[S.market])?o[S.market]:[]}
-el('save').addEventListener('click',()=>{
+el('catalog-connect').addEventListener('click',()=>{
+ const url=String(el('catalog-endpoint').value||'').trim().replace(/\/+$/,'');
+ const token=String(el('catalog-token').value||'').trim();
+ if(!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)||token.length<32){
+  message('Collegamento non salvato: URL Web App non valido o chiave più corta di 32 caratteri.','bad');return
+ }
+ try{write(catalogConnectionKey,{url,token})}catch(e){message('Errore salvataggio collegamento: '+e.message,'bad');return}
+ message('Collegamento configurato. La scrittura online sarà verificata al prossimo clic su Aggiungi a catalogo.','warn')
+});
+el('save').addEventListener('click',async()=>{
  readEdits();if(!S.title||!Number.isFinite(S.sale)||S.sale<=0){message('Non salvato: titolo o prezzo mancante.','bad');return}
  if(!S.fx[cur()]&&S.sourceCur!==cur()){message('Cambio mancante: non salvo un prezzo non verificato.','bad');return}
  const all=saved(catalogKey),rows=catalogRows(),existing=rows.findIndex(x=>x.itemId===id),entry={itemId:id,title:S.title,price:C.round(S.sale)};
  if(existing>=0){if(!confirm('Item ID già salvato per '+S.market+'. Aggiornare titolo e prezzo?'))return;rows[existing]=entry}else rows.push(entry);
  all[S.market]=rows;try{write(catalogKey,all)}catch(e){message('Salvataggio locale fallito: '+e.message,'bad');return}
- const ok=catalogRows().some(x=>x.itemId===entry.itemId&&x.title===entry.title&&x.price===entry.price);
- message(ok?'Salvato nel catalogo RAPIDO LOCALE '+S.market+': '+id+' · '+C.round(S.sale).toFixed(2)+' '+cur()+' · '+rows.length+' record. Non ancora nel Google Sheet online.':'Salvataggio non verificato.',ok?'ok':'bad')
+ const verified=catalogRows().some(x=>x.itemId===entry.itemId&&x.title===entry.title&&x.price===entry.price);
+ if(!verified){message('Salvataggio locale non verificato.','bad');return}
+ const config=catalogConnection();
+ if(!config.url||!config.token){
+  message('Salvato solo nel catalogo RAPIDO LOCALE '+S.market+' · '+id+' · '+entry.price.toFixed(2)+' '+cur()+'. Per sincronizzare con Google Sheets configura il collegamento in ⚙.','warn');return
+ }
+ const btn=el('save'),originalLabel=btn.textContent;btn.disabled=true;btn.textContent='Salvataggio online…';
+ try{
+  const response=await quickCatalogRemoteSave(entry,S.market);
+  message('Salvato e VERIFICATO nel Google Sheet "'+String(response.sheetName)+'" · Item ID '+id+' · riga '+response.row+(response.updated?' (aggiornato)':' (nuovo)')+'.','ok')
+ }catch(e){message('Salvato solo in LOCALE, NON sincronizzato online: '+String(e&&e.message||e),'bad')}
+ finally{btn.disabled=false;btn.textContent=originalLabel}
 });
 const csvEscape=x=>{const s=String(x??'');return /[,"\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
 el('export').addEventListener('click',()=>{
@@ -269,6 +315,7 @@ el('export').addEventListener('click',()=>{
  message('CSV generato: '+rows.length+' prodotti, solo Item ID, titolo e prezzo.','ok')
 });
 el('close').addEventListener('click',()=>{S.fxSequence++;panel.remove();style.remove()});
+const savedConnection=catalogConnection();el('catalog-endpoint').value=savedConnection.url;el('catalog-token').value=savedConnection.token;
 el('title').value=S.title;el('market').value=S.market;el('source').value=S.sourcePrice??'';el('source-currency').value=S.sourceCur;el('discount').value=S.discount;el('shipping').value=S.shipping;el('quantity').value=S.quantity;
 recalc();void fxUpdate();
 })();
