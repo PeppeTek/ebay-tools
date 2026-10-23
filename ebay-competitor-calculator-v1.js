@@ -113,7 +113,7 @@ function renderFeeDetails(st){
  if(!st){box.textContent='Commissioni da calcolare: controlla quantità, prezzo e spedizione.';return}
  const wrapper=document.createElement('details');wrapper.className='dc-fee-table';wrapper.open=wasOpen;
  const header=document.createElement('summary');
- header.textContent='DETTAGLIO CALCOLO · '+cur();wrapper.appendChild(header);
+ header.textContent='CALCOLO DETTAGLIATO DELLE TARIFFE';wrapper.appendChild(header);
  function line(label,amount,strong=false){
   const row=document.createElement('div');row.className='dc-fee-line'+(strong?' dc-fee-emphasis':'');
   const left=document.createElement('span');left.textContent=label;
