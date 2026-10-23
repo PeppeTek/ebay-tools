@@ -14,10 +14,12 @@ const write=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 const data=C.readDocument(document,hostname,location.href);
 const fields=Object.keys(C.DEFAULT_FEES),tierKeys=['fixedFeeLow','fixedFeeHigh','fixedFeeThreshold'];
 const feeKey='dropper-competitor-calculator-fees-v1',catalogKey='dropper-quick-catalog-v1',catalogConnectionKey='dropper-quick-catalog-connection-v1';
+// Use the same active Apps Script /exec endpoint as Sell Like Clone. Never a script editor/project ID URL.
+const existingSellLikeEndpoint='https://script.google.com/macros/s/AKfycbzMOURNMR4bFzR0yTbjlTZ1IUJqmTo5Ep0K0Gg0yvNhUbcdKNwSDgiXhAbhnQ6i2UHu/exec';
 const savedFees=saved(feeKey),oldFees=saved('capitan-sell-like-market-pricing-v1');
 const S={market:C.countryFromHost(hostname),title:data.title,sourcePrice:data.price?.value??null,
  sourceCur:data.price?.currency||C.currencyFromHost(hostname),sourceMethod:data.price?.source||'manuale',
- discount:-2,sale:null,manualSale:false,purchaseUsd:null,quantity:1,shipping:0,fx:{USD:1},fees:{},provisional:{},fxInfo:'',fxSequence:0};
+ discount:-2,sale:null,manualSale:false,purchaseUsd:null,quantity:1,shipping:0,fx:{USD:1},fxAtStartup:null,fees:{},provisional:{},fxInfo:'',fxSequence:0};
 const priorDiscountText=localStorage.getItem('capitan-sell-like-discount-rate-v1');
 const prevDisc=priorDiscountText===null?NaN:Number(priorDiscountText);
 if(Number.isFinite(prevDisc)&&prevDisc>-1&&prevDisc<10)S.discount=C.round(prevDisc*100);
@@ -71,8 +73,8 @@ panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPP
 '<div class="row"><label>Costo totale d’acquisto:</label><span></span><div class="val" data-el="cost-view">—</div></div>'+
 '<div class="row"><label>Il mio utile netto:</label><span></span><div class="val" data-el="profit">—</div></div>'+
 '<div class="row"><label>Prezzo minimo di pareggio:</label><span></span><div class="val" data-el="break-even" style="color:#2563eb">—</div></div>'+
-'<div class="hint" data-el="fx-status"></div><div class="hint" data-el="fee-details"></div><div class="hint" data-el="market-compare"></div></div>'+
-'<div class="settings" data-el="settings"><b>Tariffe per paese selezionato</b><p class="hint">Le tariffe fisse US e CA sono espresse direttamente nella valuta del paese, non convertite da 0,40 USD. L\'Australia usa il valore osservato nel tuo estratto, modificabile.</p><div class="feegrid" data-el="feegrid" style="margin-top:9px"></div><button data-el="save-rates" style="margin-top:9px;padding:8px;background:#2563eb;color:white;border:0;border-radius:7px;cursor:pointer">Salva tariffe per questo paese</button><p class="hint">Le tariffe sono stime modificabili, separate dalle impostazioni Sell Like Clone.</p><div style="margin-top:14px;padding-top:10px;border-top:1px solid #ddd"><b>Catalogo rapido Google Sheets</b><p class="hint">Inserisci URL del Web App Apps Script dedicato e chiave di accesso (non il backend Sell Like Clone). Il catalogo locale rimane disponibile.</p><label>URL Web App<input data-el="catalog-endpoint" type="url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off"></label><label style="display:block;margin-top:7px">Chiave catalogo<input data-el="catalog-token" type="password" autocomplete="off" placeholder="Chiave configurata in Apps Script"></label><button data-el="catalog-connect" style="margin-top:8px;padding:8px;border:1px solid #abb;border-radius:6px;background:#fff;cursor:pointer">Salva collegamento catalogo</button><p class="hint">Il salvataggio online sarà confermato soltanto dopo la risposta del foglio. <a href="https://docs.google.com/spreadsheets/d/1cUfx_0gckyBSc5eWpqqIfVlUfzjHxDx-c3bTCQCf8s4/edit" target="_blank" rel="noopener noreferrer">Apri catalogo Google Sheets</a></p></div></div>'+
+'<div class="hint" data-el="fee-details"></div><div class="hint" data-el="fx-status"></div></div>'+
+'<div class="settings" data-el="settings"><b>Tariffe per paese selezionato</b><p class="hint">Le tariffe fisse US e CA sono espresse direttamente nella valuta del paese, non convertite da 0,40 USD. L\'Australia usa il valore osservato nel tuo estratto, modificabile.</p><div class="feegrid" data-el="feegrid" style="margin-top:9px"></div><button data-el="save-rates" style="margin-top:9px;padding:8px;background:#2563eb;color:white;border:0;border-radius:7px;cursor:pointer">Salva tariffe per questo paese</button><div style="margin-top:14px;padding-top:10px;border-top:1px solid #ddd"><b>Catalogo rapido Google Sheets</b><p class="hint">Inserisci URL del Web App Apps Script dedicato e chiave di accesso (non il backend Sell Like Clone). Il catalogo locale rimane disponibile.</p><label>URL Web App<input data-el="catalog-endpoint" type="url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off"></label><label style="display:block;margin-top:7px">Chiave catalogo<input data-el="catalog-token" type="password" autocomplete="off" placeholder="Chiave configurata in Apps Script"></label><button data-el="catalog-connect" style="margin-top:8px;padding:8px;border:1px solid #abb;border-radius:6px;background:#fff;cursor:pointer">Salva collegamento catalogo</button><p class="hint">Il salvataggio online sarà confermato soltanto dopo la risposta del foglio. <a href="https://docs.google.com/spreadsheets/d/1cUfx_0gckyBSc5eWpqqIfVlUfzjHxDx-c3bTCQCf8s4/edit" target="_blank" rel="noopener noreferrer">Apri catalogo Google Sheets</a></p></div></div>'+
 '<div class="buttons"><button data-el="ali" style="background:#ff4747;color:white">Trova su AliExpress</button><button data-el="amazon" style="background:#ffa41c;color:#111">Trova su Amazon</button>'+
 '<button class="span2" data-el="save" style="background:#16a34a;color:white">Aggiungi a catalogo</button>'+
 '<button class="span2" data-el="export" style="background:white;color:#333;height:31px">Esporta catalogo rapido CSV (3 colonne)</button></div>'+
@@ -100,9 +102,9 @@ function recalc(){
  textMoney('profit',st?.profitLocal??null,st?.profitUSD??null);
  el('profit').style.color=st?.profitUSD<0?'#b42318':'#16803d';
  textMoney('break-even',st?.breakEven??null,st?.breakEven!=null&&fx?C.round(st.breakEven*fx):null);
- el('fx-status').textContent=(S.fxInfo||'Conversioni da verificare')+(S.provisional[S.market]?' · Tariffe '+S.market+' di riferimento: controlla ⚙ per categoria/account':'');
+ const ratesAtOpening=S.fxAtStartup;
+ el('fx-status').textContent=ratesAtOpening?('Cambio caricato all’avvio (Frankfurter · cache max 24 ore): 1 USD = '+C.round(1/ratesAtOpening.CAD*10000)/10000+' CAD · 1 USD = '+C.round(1/ratesAtOpening.AUD*10000)/10000+' AUD'):'Cambio all’avvio: in attesa di CAD e AUD';
  renderFeeDetails(st);
- renderComparison();
  el('source-label').textContent=S.sourceMethod==='manuale'?'Modificabile':'Letto: '+S.sourceMethod;
 }
 function renderFeeDetails(st){
@@ -183,6 +185,7 @@ async function fxUpdate(){
  const errors=[];
  results.forEach((r,i)=>{if(r.status==='fulfilled')S.fx[r.value[0]]=r.value[1];else{delete S.fx[needed[i]];errors.push(needed[i]+': '+String(r.reason?.message||r.reason))}});
  S.fxInfo=errors.length?'Cambio non disponibile: '+errors.join(', '):'Cambio da Frankfurter (cache max 24 ore)';
+ if(!S.fxAtStartup&&Number(S.fx.CAD)>0&&Number(S.fx.AUD)>0)S.fxAtStartup={CAD:S.fx.CAD,AUD:S.fx.AUD};
  recalc();
  if(errors.length)message('Cambio mancante: utile e pareggio restano vuoti, senza inventare il tasso.','warn');
  else if(!data.price)message('Prezzo concorrente non rilevato. Inserisci prezzo e valuta manualmente.','warn');
@@ -193,8 +196,8 @@ const labels={ebayFee:'Tariffa eBay (%)',internationalFee:'Tariffa internazional
 function feeLabel(key){
  if(key==='fixedFee')return 'Tariffa fissa ('+cur()+')';
  if(key==='shippingCharge')return 'Shipping and handling ('+cur()+')';
- if(key==='fixedFeeLow')return 'Fissa fino alla soglia ('+cur()+')';
- if(key==='fixedFeeHigh')return 'Fissa oltre la soglia ('+cur()+')';
+ if(key==='fixedFeeLow')return 'Tariffa fissa fino a '+S.fees[S.market].fixedFeeThreshold+' '+cur();
+ if(key==='fixedFeeHigh')return 'Tariffa fissa oltre '+S.fees[S.market].fixedFeeThreshold+' '+cur();
  if(key==='fixedFeeThreshold')return 'Soglia tariffa fissa ('+cur()+')';
  return labels[key]||key;
 }
@@ -207,7 +210,7 @@ function renderSettings(){
   input.dataset.rate=key;input.type='number';input.min='0';input.step='.01';
   input.value=String(C.round(absolute?S.fees[S.market][key]:S.fees[S.market][key]*100));
   if(key==='fixedFee'&&S.market!=='AU'){
-   label.textContent='Tariffa fissa a scaglioni ('+cur()+')';
+   label.textContent='Tariffa fissa ('+cur()+')';
    input.type='text';input.value=Number(S.fees[S.market].fixedFeeLow).toFixed(2)+' / '+Number(S.fees[S.market].fixedFeeHigh).toFixed(2);
    input.readOnly=true;input.disabled=true;
    input.title='Modifica i valori in Scaglioni tariffa fissa qui sotto';
@@ -219,7 +222,7 @@ function renderSettings(){
   const details=document.createElement('details');details.className='dc-tier-details';
   details.style.gridColumn='1 / -1';
   const summary=document.createElement('summary');
-  summary.textContent='Scaglioni tariffa fissa: '+S.fees[S.market].fixedFeeLow.toFixed(2)+' / '+S.fees[S.market].fixedFeeHigh.toFixed(2)+' '+cur()+' · soglia '+S.fees[S.market].fixedFeeThreshold.toFixed(2)+' '+cur();
+  summary.textContent='Tariffa fissa · '+S.fees[S.market].fixedFeeLow.toFixed(2)+' / '+S.fees[S.market].fixedFeeHigh.toFixed(2)+' '+cur()+' (soglia '+S.fees[S.market].fixedFeeThreshold.toFixed(2)+' '+cur()+')';
   details.appendChild(summary);
   const group=document.createElement('div');group.className='feegrid';
   for(const key of tierKeys)makeFeeField(key,group);
@@ -238,7 +241,7 @@ el('save-rates').addEventListener('click',()=>{
  if(!C.fees(100,rates,1,0)){message('Tariffe incoerenti, verifica le percentuali.','bad');return}
  const all=saved(feeKey);all[S.market]={...rates,feePresetVersion:3};
  try{write(feeKey,all)}catch(e){message('Errore memoria browser: '+e.message,'bad');return}
- S.fees[S.market]=rates;S.provisional[S.market]=false;S.shipping=rates.shippingCharge;el('shipping').value=S.shipping;recalc();message('Tariffe, sconto venditore e spedizione '+S.market+' salvati solo nel calcolatore.','ok')
+ S.fees[S.market]=rates;S.provisional[S.market]=false;S.shipping=rates.shippingCharge;el('shipping').value=S.shipping;recalc();el('settings').classList.remove('open');message('Tariffe '+S.market+' salvate.','ok')
 });
 el('market').addEventListener('change',()=>{readEdits();S.market=el('market').value;S.shipping=Number(S.fees[S.market].shippingCharge||0);el('shipping').value=S.shipping;el('shipping-currency').textContent=cur();S.manualSale=false;recalc();if(el('settings').classList.contains('open'))renderSettings();void fxUpdate()});
 el('source').addEventListener('input',()=>{readEdits();S.sourceMethod='manuale';S.manualSale=false;recalc()});
