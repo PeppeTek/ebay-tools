@@ -162,7 +162,7 @@ window.addEventListener('capitan-pricing-saved',e=>{
 function variantDiagnostic(msg,bad=false){
   try{
     if(typeof window.__capitanTestLog==='function')window.__capitanTestLog('Varianti: '+msg,bad?'bad':'warn');
-    else console.warn('Varianti TEST:',msg);
+    else (window.__capitanPendingTestLogs=window.__capitanPendingTestLogs||[]).push({message:'Varianti: '+msg,state:bad?'bad':'warn'});
   }catch(_){}
 }
 function parseSourceSelects(doc){
