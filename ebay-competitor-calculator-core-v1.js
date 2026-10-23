@@ -4,7 +4,12 @@
 const HOST_CURRENCY={'ebay.com':'USD','ebay.ca':'CAD','ebay.com.au':'AUD','ebay.co.uk':'GBP','ebay.it':'EUR','ebay.de':'EUR','ebay.fr':'EUR','ebay.es':'EUR','ebay.ie':'EUR','ebay.ch':'CHF','ebay.com.sg':'SGD','ebay.com.my':'MYR','ebay.com.hk':'HKD'};
 const MARKETS={US:{currency:'USD',amazon:'www.amazon.com'},CA:{currency:'CAD',amazon:'www.amazon.ca'},AU:{currency:'AUD',amazon:'www.amazon.com.au'}};
 const DEFAULT_FEES={ebayFee:0.136,internationalFee:0.016,marketingFee:0.02,vatOnFees:0.22,salesTaxEstimate:0.06,fixedFee:0.40};
-const round=n=>Math.round((n+Number.EPSILON)*100)/100;
+// Decimal shift avoids common IEEE-754 half-cent errors (e.g. 8.075 -> 8.08).
+const round=n=>{
+ const value=Number(n);if(!Number.isFinite(value))return NaN;
+ const scaled=Number(Math.abs(value)+'e2');
+ return Math.sign(value)*Math.round(Number.isFinite(scaled)?scaled:Math.abs(value)*100)/100;
+};
 const clean=v=>String(v==null?'':v).replace(/\s+/g,' ').trim();
 function num(raw){
  let s=clean(raw).replace(/[^\d,.\-]/g,'');
