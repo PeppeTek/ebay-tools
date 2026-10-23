@@ -87,8 +87,10 @@ function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
  }
  // Current eBay item pages also use eBay Skin listbox-button components,
  // not native <select>. Scope strictly to the MSKU area to avoid search/sort menus.
+ let foundMskuListbox=false;
  if(!parts.length){
   const widgets=[...doc.querySelectorAll('.x-msku-evo .listbox-button, .x-msku .listbox-button, .x-msku-evo [aria-haspopup="listbox"], .x-msku [aria-haspopup="listbox"]')];
+  foundMskuListbox=widgets.length>0;
   const seenWidgets=new Set();
   for(const widget of widgets){
    const container=widget.matches?.('.listbox-button')?widget:widget.closest?.('.listbox-button');
@@ -121,7 +123,7 @@ function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
  }
  // A native or Skin dropdown can confirm its displayed choices, but multiple
  // independent selectors cannot establish valid combinations without backend data.
- if(parts.length!==1)return {hasSelects:parts.length>0,hasVariations:false,reason:parts.length>1?'Attributi multipli: le combinazioni richiedono dati verificati da eBay':'Nessun selettore variante compatibile'};
+ if(parts.length!==1)return {hasSelects:parts.length>0||foundMskuListbox,hasVariations:false,reason:parts.length>1?'Attributi multipli: le combinazioni richiedono dati verificati da eBay':foundMskuListbox?'Menu varianti eBay trovato, opzioni non ancora caricate':'Nessun selettore variante compatibile'};
  const part=parts[0],used=new Set(),variants=[];
  const requested=(String(href||'').match(/[?&]var=(\d+)/)||[])[1]||'';
  const selected=part.choices.find(x=>x.selected||x.option.selected)||part.choices.find(x=>x.value===part.select.value);
