@@ -18,7 +18,8 @@ const savedFees=saved(feeKey),oldFees=saved('capitan-sell-like-market-pricing-v1
 const S={market:C.countryFromHost(hostname),title:data.title,sourcePrice:data.price?.value??null,
  sourceCur:data.price?.currency||C.currencyFromHost(hostname),sourceMethod:data.price?.source||'manuale',
  discount:-2,sale:null,manualSale:false,purchaseUsd:null,fx:{USD:1},fees:{},provisional:{},fxInfo:'',fxSequence:0};
-const prevDisc=Number(localStorage.getItem('capitan-sell-like-discount-rate-v1'));
+const priorDiscountText=localStorage.getItem('capitan-sell-like-discount-rate-v1');
+const prevDisc=priorDiscountText===null?NaN:Number(priorDiscountText);
 if(Number.isFinite(prevDisc)&&prevDisc>-1&&prevDisc<10)S.discount=C.round(prevDisc*100);
 for(const mk of Object.keys(C.MARKETS)){
  const r=savedFees[mk]||oldFees[mk],valid=!!r&&fields.every(k=>Number.isFinite(Number(r[k]))&&Number(r[k])>=0);
