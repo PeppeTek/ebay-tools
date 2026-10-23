@@ -115,3 +115,32 @@ test('backend variant payload may omit itemId without being mislabeled',()=>{
  const r=V.normalize(p,'USD','147603152307');
  assert.equal(r.variants.length,2)
 });
+
+
+test('modern eBay Skin listbox-button is detected without native select options',()=>{
+ const values=['Select','1M Cable','EU Plug Yellow','US Plug Yellow','EU Plug Black','US Plug Black','EU Plug White','US Plug White'];
+ const options=values.map((value,i)=>({
+  textContent:value,disabled:false,
+  classList:{contains(c){return c==='listbox__option--selected'&&i===5}},
+  getAttribute(k){return k==='aria-selected'?(i===5?'true':'false'):k==='data-value'?(i===5?'595327416105':''):''},
+  querySelector(){return{textContent:value}}
+ }));
+ const group={querySelector(sel){return sel.includes('label')?{textContent:'plug types:'}:null}};
+ const trigger={textContent:'US Plug Black',getAttribute(k){return k==='aria-label'?'plug types: US Plug Black':''}};
+ const optionsBox={querySelectorAll(){return options}};
+ const container={matches(sel){return sel==='.listbox-button'},querySelector(sel){
+   return sel.startsWith('button[')?trigger:optionsBox;
+  },closest(){return group},parentElement:group};
+ const doc={querySelectorAll(sel){return sel==='select'?[]:sel.includes('.listbox-button')?[container]:[]}};
+ const found=V.inspectPage(doc,'https://www.ebay.ca/itm/298471057540?var=595327416105',6.87,'USD','298471057540');
+ assert.equal(found.hasVariations,true);assert.equal(found.variants.length,7);
+ assert.equal(found.selectedKey,'plug types=us plug black');
+ assert.equal(found.variants.find(v=>v.key===found.selectedKey).sourcePrice,6.87);
+ assert.ok(found.variants.filter(v=>v.key!==found.selectedKey).every(v=>v.sourcePrice===null));
+});
+test('unrelated eBay toolbar listboxes do not create product variations',()=>{
+ const doc={querySelectorAll(sel){return sel==='select'?[]:[]}};
+ const found=V.inspectPage(doc,'https://www.ebay.ca/itm/298471057540',6.87,'USD','298471057540');
+ assert.equal(found.hasVariations,false);
+ assert.equal(found.hasSelects,false)
+});
