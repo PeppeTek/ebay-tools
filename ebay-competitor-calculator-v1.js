@@ -42,7 +42,8 @@ S.shipping=S.fees[S.market].shippingCharge;
 const style=document.createElement('style');style.id=styleId;style.textContent=
 '#'+panelId+'{position:fixed;top:12px;right:12px;z-index:2147483647;width:500px;max-width:calc(100vw - 16px);max-height:calc(100vh - 24px);overflow:auto;background:#fff;color:#111;font:12px Arial,sans-serif;border:1px solid #bbb;border-radius:12px;box-shadow:0 10px 32px #0004;box-sizing:border-box}'+
 '#'+panelId+' *{box-sizing:border-box}#'+panelId+' .hd{padding:12px;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:7px}'+
-'#'+panelId+' .hd b{flex:1}#'+panelId+' .hd button{width:32px;height:30px;border:1px solid #bbb;border-radius:7px;background:#fff;font-size:18px;cursor:pointer}'+
+'#'+panelId+' .hd b{flex:1;min-width:0}#'+panelId+' .hd button{width:32px;height:30px;border:1px solid #bbb;border-radius:7px;background:#fff;font-size:18px;cursor:pointer;flex:0 0 32px}'+
+'#'+panelId+' .hd select{flex:0 1 138px;width:138px;min-width:110px;height:30px;padding:0 7px;border:1px solid #bbb;border-radius:7px;background:#fff;color:#111;font:11px Arial,sans-serif;cursor:pointer}'+
 '#'+panelId+' .main{padding:9px 14px}#'+panelId+' input,#'+panelId+' select{width:100%;min-width:0;border:1px solid #c5c9cf;background:#fff;color:#111;border-radius:7px;padding:6px;font:12px Arial,sans-serif}'+
 '#'+panelId+' label{font-weight:700}#'+panelId+' .split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}'+
 '#'+panelId+' .source{display:grid;grid-template-columns:1fr 115px 70px;gap:8px;align-items:center;margin:7px 0}'+
@@ -56,17 +57,18 @@ const style=document.createElement('style');style.id=styleId;style.textContent=
 '#'+panelId+' .dc-fee-table{border:1px solid #e1e5ec;border-radius:7px;padding:9px 10px;margin:9px 0;background:#f8fafc;font-size:11px;line-height:1.45}#'+panelId+' .dc-fee-table .dc-fee-line{display:flex;justify-content:space-between;gap:14px;padding:4px 0;border-bottom:1px solid #e7ebf0}#'+panelId+' .dc-fee-table .dc-fee-line:last-child{border-bottom:0}#'+panelId+' .dc-fee-table .dc-fee-line b{text-align:right;white-space:nowrap}#'+panelId+' .dc-fee-table .dc-fee-emphasis{font-weight:700;color:#1d4ed8}'+
 '#'+panelId+' .message{margin:0 14px 12px;padding:9px;border:1px solid #e2e5ec;background:#f8f9fb;border-radius:7px;font-size:11px;line-height:1.5;white-space:pre-wrap}'+
 '#'+panelId+' .message[data-status="bad"]{color:#b42318}#'+panelId+' .message[data-status="warn"]{color:#986000}#'+panelId+' .message[data-status="ok"]{color:#137333}'+
-'@media(max-width:420px){#'+panelId+' .row{grid-template-columns:minmax(0,1fr) 70px 90px;gap:4px}#'+panelId+' .main{padding:8px 10px}}';
+'@media(max-width:420px){#'+panelId+' .row{grid-template-columns:minmax(0,1fr) 70px 90px;gap:4px}#'+panelId+' .main{padding:8px 10px}#'+panelId+' .hd{flex-wrap:wrap}#'+panelId+' .hd b{flex:1 0 100%}#'+panelId+' .hd select{flex:1 1 auto}}';
 document.head.appendChild(style);
 const panel=document.createElement('section');panel.id=panelId;
-panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPPER ANALYTICS<br><small>Calcolatore concorrente</small></b><button data-el="refresh" title="Aggiorna prezzo dalla pagina">↻</button><button data-el="gear" title="Tariffe">⚙</button><button data-el="close" title="Chiudi">×</button></div>'+
+panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPPER ANALYTICS<br><small>PriceMatch Pro</small></b><select data-el="market" aria-label="Paese di vendita" title="Paese di vendita"><option value="US">USA (USD)</option><option value="CA">Canada (CAD)</option><option value="AU">Australia (AUD)</option></select><button data-el="refresh" title="Aggiorna prezzo dalla pagina">↻</button><button data-el="gear" title="Tariffe">⚙</button><button data-el="close" title="Chiudi">×</button></div>'+
 '<div class="main"><p><b>Source Item ID:</b> '+esc(id)+'</p><label> Titolo per catalogo <input data-el="title" maxlength="255" placeholder="Titolo eBay"></label>'+
-'<div class="split"><label>Paese di vendita<select data-el="market"><option value="US">USA (USD)</option><option value="CA">Canada (CAD)</option><option value="AU">Australia (AUD)</option></select></label><label>Costo acquisto (USD)<input type="number" data-el="cost" step=".01" min="0" placeholder="—"></label></div>'+
+
 '<label>Prezzo originale concorrente</label><div class="source"><span class="hint" data-el="source-label">Da pagina eBay</span><input type="number" data-el="source" min=".01" step=".01" placeholder="Prezzo"><select data-el="source-currency"><option>USD</option><option>CAD</option><option>AUD</option><option>EUR</option><option>GBP</option><option>CHF</option><option>SGD</option><option>HKD</option><option>MYR</option></select></div>'+
 '<div class="split"><label>Spedizione cliente per unità (<span data-el="shipping-currency">'+C.MARKETS[S.market].currency+'</span>)<input data-el="shipping" type="number" step=".01" min="0" placeholder="0.00"></label><label>Quantità vendute per ordine<input data-el="quantity" type="number" step="1" min="1" max="1000" value="1"></label></div>'+ 
 '<div class="row"><label>Riduzione rispetto alla concorrenza:</label><input data-el="discount" type="number" step=".01"><div class="val" data-el="source-local">—</div></div>'+
 '<div class="row"><label>Prezzo di vendita:</label><input data-el="sale" type="number" min=".01" step=".01"><div class="val" data-el="sale-view">—</div></div>'+
 '<div class="row"><label>Incasso al netto delle commissioni:</label><span></span><div class="val" data-el="net">—</div></div>'+
+'<div class="row"><label>Costo d’acquisto (USD):</label><input type="number" data-el="cost" step=".01" min="0" placeholder="—"><div class="val" data-el="cost-view" style="color:#e3342f">—</div></div>'+
 '<div class="row"><label>Il mio utile netto:</label><span></span><div class="val" data-el="profit">—</div></div>'+
 '<div class="row"><label>Prezzo minimo di pareggio:</label><span></span><div class="val" data-el="break-even" style="color:#2563eb">—</div></div>'+
 '<div class="hint" data-el="fee-details"></div><div class="hint" data-el="fx-status"></div></div>'+
@@ -91,6 +93,7 @@ function recalc(){
  textMoney('source-local',b,b!==null&&fx?C.round(b*fx):null);
  textMoney('sale-view',S.sale,S.sale!==null&&fx?C.round(S.sale*fx):null);
  textMoney('net',st?.net??null,st&&fx?C.round(st.net*fx):null);
+ textMoney('cost-view',st?.costLocal??null,st?.costUsd??null);
  textMoney('profit',st?.profitLocal??null,st?.profitUSD??null);
  el('profit').style.color=st?.profitUSD<0?'#b42318':'#16803d';
  textMoney('break-even',st?.breakEven??null,st?.breakEven!=null&&fx?C.round(st.breakEven*fx):null);
