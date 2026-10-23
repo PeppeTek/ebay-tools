@@ -59,7 +59,7 @@ const style=document.createElement('style');style.id=styleId;style.textContent=
 '#'+panelId+' .dc-variants{margin:10px 0 12px}#'+panelId+' .dc-variants-head{font-weight:700;margin:0 0 7px}'+
 '#'+panelId+' .dc-variant-list{max-height:270px;overflow-y:auto;border:1px solid #e1e5ec;border-radius:7px;background:#fff}'+
 '#'+panelId+' .dc-variant-item{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 76px minmax(0,1fr);gap:6px;align-items:center;padding:8px 7px;border-bottom:1px solid #e7ebf0;font-size:11px}'+
-'#'+panelId+' .dc-variant-item:last-child{border-bottom:0}#'+panelId+' .dc-variant-item.active{background:#eef5ff}'+
+'#'+panelId+' .dc-variant-item:last-child{border-bottom:0}#'+panelId+' .dc-variant-item{cursor:pointer}#'+panelId+' .dc-variant-item:focus-visible{outline:2px solid #2563eb;outline-offset:-2px}#'+panelId+' .dc-variant-item.active{background:#eef5ff}'+
 '#'+panelId+' .dc-variant-item .dc-label{display:flex;align-items:flex-start;gap:5px;font-weight:600;min-width:0;overflow-wrap:anywhere;cursor:pointer}'+
 '#'+panelId+' .dc-variant-item .dc-label input{width:14px;min-width:14px;height:14px;padding:0;margin:1px 0 0}'+
 '#'+panelId+' .dc-variant-item .dc-price{text-align:right;font-weight:600;overflow-wrap:anywhere}'+
@@ -162,11 +162,21 @@ function renderVariantRows(){
   const base=variantTools.marketPrice(v,S.fx,target,C.round);
   const price=selected?S.sale:derivedVariantPrice(v);
   const row=document.createElement('div');row.className='dc-variant-item'+(selected?' active':'');
-  const label=document.createElement('label');label.className='dc-label';
-  const radio=document.createElement('input');radio.type='radio';radio.name='dc-price-match-master';radio.checked=selected;radio.title='Seleziona variante Master';
-  radio.addEventListener('change',()=>{if(radio.checked)chooseMaster(v.key)});
+  row.setAttribute('role','button');row.setAttribute('tabindex','0');
+  row.setAttribute('aria-pressed',selected?'true':'false');
+  row.setAttribute('aria-label','Seleziona variante Master: '+v.label);
+  row.addEventListener('click',event=>{
+   if(event.target?.closest?.('.dc-sale-input'))return;
+   if(v.key!==S.masterKey)chooseMaster(v.key)
+  });
+  row.addEventListener('keydown',event=>{
+   if(event.target!==row||!(event.key==='Enter'||event.key===' '))return;
+   event.preventDefault();
+   if(v.key!==S.masterKey)chooseMaster(v.key)
+  });
+  const label=document.createElement('span');label.className='dc-label';
   const name=document.createElement('span');name.textContent=v.label;
-  label.append(radio,name);row.appendChild(label);
+  label.appendChild(name);row.appendChild(label);
   row.appendChild(cellAmount(base,v.sourceCurrency));
   const edit=document.createElement('input');edit.className='dc-sale-input';edit.type='number';edit.min='.01';edit.step='.01';
   edit.title=selected?'Prezzo della variante Master':'Seleziona prima la variante Master';
