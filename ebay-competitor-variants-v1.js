@@ -164,7 +164,7 @@ function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
   }
   name=name.replace(/:\s*$/,'').trim();
   if(!name||rejectHint.test(name)||!allowHint.test(name))continue;
-  const choices=options.map(o=>({text:clean(o.textContent||o.label).replace(/\s+(?:most popular|out of stock)$/i,'').trim(),
+  const choices=options.map(o=>({text:clean(o.textContent||o.label).replace(/\s+(?:(?:most popular|out of stock|selected)\s*)+$/i,'').trim(),
       option:o,value:String(o.value||'')}));
   if(choices.some(o=>!o.text))continue;
   parts.push({name,choices,select})
@@ -195,7 +195,7 @@ function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
    const raw=[...(list.querySelectorAll?.('.listbox__option, [role="option"]')||[])];
    const choices=raw.filter(o=>!o.disabled&&o.getAttribute?.('aria-disabled')!=='true').map(o=>{
     const label=clean(o.querySelector?.('.listbox__value, .listbox__option-text, .btn__text')?.textContent||o.textContent||'')
-      .replace(/\\s+(?:most popular|out of stock)$/i,'').trim();
+      .replace(/\s+(?:(?:most popular|out of stock|selected)\s*)+$/i,'').trim();
     return {text:label,option:o,value:clean(o.getAttribute?.('data-value')||o.getAttribute?.('value')||label),
      selected:o.getAttribute?.('aria-selected')==='true'||o.classList?.contains?.('listbox__option--selected')||false};
    }).filter(x=>x.text&&!/^select(?:\\s+(?:an?|one))?(?:\\s+option)?$|^choose(?:\\s+(?:an?|one))?/i.test(x.text));
