@@ -377,3 +377,58 @@ test('fallback plural colors selector omits Selectselected and preserves four op
  assert.equal(item.variants.length,4);
  assert.ok(item.variants.every(v=>!v.label.toLowerCase().includes('select')))
 });
+
+
+test('presentation normalizes colors and PC/PCS locally, preserving source key and price',()=>{
+ const raw={
+  dimensions:[{name:'colors',values:['3 pcs blue','1 pc white']}],
+  variants:[{key:'colors=3 pcs blue',label:'colors: 3 pcs blue',
+   specifics:[{name:'colors',value:'3 pcs blue'}],sourcePrice:9.99,sourceCurrency:'USD'},
+   {key:'colors=1 pc white',label:'colors: 1 pc white',
+   specifics:[{name:'colors',value:'1 pc white'}],sourcePrice:10.25,sourceCurrency:'USD'}]
+ };
+ const p=V.polishVariantPresentation(raw);
+ assert.deepEqual(p.dimensions,[{name:'Color',values:['3 PCS Blue','1 PC White']}]);
+ assert.deepEqual(p.variants.map(v=>v.label),['Color: 3 PCS Blue','Color: 1 PC White']);
+ assert.deepEqual(p.variants.map(v=>v.key),raw.variants.map(v=>v.key));
+ assert.deepEqual(p.variants.map(v=>v.sourcePrice),[9.99,10.25]);
+ assert.equal(raw.variants[0].specifics[0].value,'3 pcs blue');
+});
+test('presentation splits UnitType and ItemLength but preserves technical names',()=>{
+ const raw={
+  dimensions:[{name:'UnitType',values:['white a-c','White C-C']},{name:'ItemLength',values:['1.5m']}],
+  variants:[{key:'unittype=white a-c|itemlength=1.5m',
+    specifics:[{name:'UnitType',value:'white a-c'},{name:'ItemLength',value:'1.5m'}],sourcePrice:7.07}]
+ };
+ const p=V.polishVariantPresentation(raw);
+ assert.deepEqual(p.dimensions.map(x=>x.name),['Unit Type','Item Length']);
+ assert.equal(p.variants[0].label,'Unit Type: White A-C · Item Length: 1.5m');
+ assert.equal(p.variants[0].key,raw.variants[0].key);
+ assert.equal(V.formatOptionValue('usb type-c 120W'),'USB Type-C 120W');
+ assert.equal(V.formatDimensionName('plugTypes'),'Plug Type');
+ assert.equal(V.formatDimensionName('QTY'),'QTY');
+});
+test('presentation refuses normalization if two eBay values would collide',()=>{
+ const raw={dimensions:[{name:'colors',values:['blue','Blue']}],
+  variants:[{key:'colors=blue',specifics:[{name:'colors',value:'blue'}],sourcePrice:4},
+   {key:'colors=Blue',specifics:[{name:'colors',value:'Blue'}],sourcePrice:5}]};
+ assert.equal(V.polishVariantPresentation(raw),raw);
+});
+test('polished names and values are written to the same eBay CSV rows',()=>{
+ const raw={
+  dimensions:[{name:'colors',values:['3 pcs blue','1 pc white']}],
+  variants:[{key:'colors=3 pcs blue',specifics:[{name:'colors',value:'3 pcs blue'}],sourcePrice:9.99},
+   {key:'colors=1 pc white',specifics:[{name:'colors',value:'1 pc white'}],sourcePrice:10.25}]
+ };
+ const p=V.polishVariantPresentation(raw);
+ const pkg=T.buildVariantPackage({
+  itemId:'900025521069',title:'Tape',price:9.99,dimensions:p.dimensions,
+  variants:p.variants.map(v=>({specifics:v.specifics,price:v.sourcePrice}))
+ },'CA');
+ const ix=k=>pkg.headers.indexOf(k);
+ assert.equal(pkg.rows[0][ix('Relationship details')],'Color=3 PCS Blue;1 PC White');
+ assert.equal(pkg.rows[1][ix('Relationship details')],'Color=3 PCS Blue');
+ assert.equal(pkg.rows[2][ix('Relationship details')],'Color=1 PC White');
+ assert.deepEqual(pkg.rows.slice(1).map(row=>row[ix('Start price')]),['9.99','10.25']);
+ assert.deepEqual(pkg.rows.slice(1).map(row=>row[ix('Quantity')]),['1','1']);
+});
