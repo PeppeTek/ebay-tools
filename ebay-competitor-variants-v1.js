@@ -142,20 +142,88 @@ function enrichVariantsFromPage(doc,variants,fallbackCurrency){
   return {...v,sourcePrice:p.price,sourceCurrency:p.currency,priceSource:'ebay-msku'}
  })
 }
+
+function optionText(raw){
+ // eBay Skin sometimes joins the state-badge text directly: "Selectselected".
+ let value=clean(raw);
+ for(let i=0;i<3;i++){
+  const next=value.replace(/\s*(?:most popular|out of stock|selected)\s*$/i,'').trim();
+  if(next===value)break;value=next
+ }
+ return value
+}
+function isPlaceholder(value){
+ return /^(?:select|select one|select an option|choose|choose one|choose an option|please select|[-–—]+)$/i.test(clean(value))
+}
+function mskuVariants(doc,href,visiblePrice,fallbackCurrency,itemId){
+ const msku=readMskuJson(doc);
+ if(!msku)return null;
+ const menus=msku.selectMenus.filter(m=>clean(m?.displayLabel)&&Array.isArray(m?.menuItemValueIds));
+ if(!menus.length)return null;
+ const definitions=menus.map(menu=>({
+  name:clean(menu.displayLabel),
+  ids:new Set(menu.menuItemValueIds.map(String)),
+  values:[]
+ }));
+ const entries=[],seen=new Set();
+ const requested=(String(href||'').match(/[?&]var=(\d+)/)||[])[1]||'';
+ for(const [combination,ref] of Object.entries(msku.variationCombinations)){
+  const variantId=String(ref&&typeof ref==='object'?(ref.variationId||ref.id||''):ref);
+  const data=msku.variationsMap[variantId];
+  if(!data||typeof data!=='object')continue;
+  const specifics=[];
+  for(const partId of combination.split('_')){
+   const item=msku.menuItemMap[String(partId)];
+   const value=optionText(item?.displayName);
+   if(!item||!value||isPlaceholder(value))continue;
+   const match=definitions.filter(d=>d.ids.has(String(item.valueId)));
+   if(match.length!==1)continue;
+   specifics.push({name:match[0].name,value})
+  }
+  // Every child must have exactly one value for every dimension.
+  if(specifics.length!==definitions.length||
+     definitions.some(d=>specifics.filter(p=>p.name.toLowerCase()===d.name.toLowerCase()).length!==1))continue;
+  const key=specifics.map(p=>p.name.toLowerCase()+'='+p.value.toLowerCase()).sort().join('|');
+  if(seen.has(key))continue;seen.add(key);
+  const money=mskuPrice(data,fallbackCurrency);
+  const selected=!!requested&&variantId===requested;
+  const sourcePrice=money?.price??(selected?realPrice(visiblePrice):null);
+  const sourceCurrency=money?.currency||String(fallbackCurrency||'USD').toUpperCase();
+  const outOfStock=data.quantity?.outOfStock===true;
+  const label=specifics.map(p=>p.name+': '+p.value).join(' · ');
+  entries.push({key,label,specifics,sourcePrice,sourceCurrency,variationId:variantId,
+   selected,outOfStock,sale:null,discount:0,manualSale:false,images:[],verifiedUpc:null})
+  for(const p of specifics){
+   const dim=definitions.find(d=>d.name.toLowerCase()===p.name.toLowerCase());
+   if(dim&&!dim.values.some(v=>v.toLowerCase()===p.value.toLowerCase()))dim.values.push(p.value)
+  }
+ }
+ if(entries.length<2||definitions.some(d=>!d.values.length))return null;
+ const selected=entries.find(e=>e.selected);
+ return {
+  hasSelects:true,hasVariations:true,complete:true,source:'msku',sourceItemId:String(itemId),
+  selectedKey:selected?.key||null,
+  dimensions:definitions.map(d=>({name:d.name,values:d.values})),
+  variants:entries
+ }
+}
+
 // Conservative fallback when the active eBay layout exposes selectors but the
 // legacy Sell Like Clone backend does not return a complete variant payload.
 function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
+ const complete=mskuVariants(doc,href,selectedPrice,fallbackCurrency,itemId);
+ if(complete)return complete;
  const selectors=[...doc.querySelectorAll('select')],parts=[];
- const allowHint=/\b(msku|variation|variant|plug(?:\s*types?)?|colo(?:u)?r|size|capacity|style|material|pattern|type|model|option)\b/i;
+ const allowHint=/\b(msku|variation|variant|plug(?:\s*types?)?|colo(?:u)?r|size|capacity|style|material|pattern|type|model|option|length|qty|unit)\b/i;
  const rejectHint=/\b(sort|search|quantity|qty|shipping|country|currency|language|category|condition|order by)\b/i;
  for(const select of selectors){
-  const options=[...select.options||[]].filter(o=>!o.disabled&&clean(o.textContent||o.label)&&!/^select(?:\s+(?:an?|one))?(?:\s+option)?$|^choose(?:\s+(?:an?|one))?/i.test(clean(o.textContent||o.label)));
+  const options=[...select.options||[]].filter(o=>!o.disabled&&!isPlaceholder(optionText(o.textContent||o.label)));
   if(options.length<2||options.length>100)continue;
   const identifier=clean([select.id,select.name,select.getAttribute('aria-label'),select.getAttribute('data-testid')].join(' '));
   const parent=select.closest('label')||select.parentElement;
   const surrounding=clean((parent?.textContent||'').slice(0,180));
   const hint=clean(identifier+' '+surrounding);
-  if(rejectHint.test(identifier)||(!allowHint.test(hint)&&!/(?:\d{9,15}|plug)/i.test(options.map(o=>o.value).join(' '))))continue;
+  if((rejectHint.test(identifier)&&!select.closest?.('.x-msku-evo,.x-msku'))||(!allowHint.test(hint)&&!/(?:\d{9,15}|plug)/i.test(options.map(o=>o.value).join(' '))))continue;
   let name=clean(select.getAttribute('aria-label')||'');
   if(!name)name=clean(parent?.querySelector('label,legend,.ux-labels-values__labels,.x-msku__label')?.textContent||'');
   if(!name){
@@ -164,7 +232,7 @@ function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
   }
   name=name.replace(/:\s*$/,'').trim();
   if(!name||rejectHint.test(name)||!allowHint.test(name))continue;
-  const choices=options.map(o=>({text:clean(o.textContent||o.label).replace(/\s+(?:(?:most popular|out of stock|selected)\s*)+$/i,'').trim(),
+  const choices=options.map(o=>({text:optionText(o.textContent||o.label),
       option:o,value:String(o.value||'')}));
   if(choices.some(o=>!o.text))continue;
   parts.push({name,choices,select})
@@ -188,26 +256,31 @@ function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
    const buttonText=clean(button.textContent||button.getAttribute?.('aria-label')||'');
    const aria=clean(button.getAttribute?.('aria-label')||'');
    const labelled=(heading||buttonText||aria);
-   const match=(heading+' '+buttonText+' '+aria).match(/(?:^|\\s)(plug\\s*types?|colo(?:u)?r|size|capacity|style|material|pattern|model|type)\\s*:/i);
+   const match=(heading+' '+buttonText+' '+aria).match(/(?:^|\s)(plug\s*types?|colo(?:u)?r|size|capacity|style|material|pattern|model|type|unit\s*type|item\s*length|qty)\s*:/i);
    let name=clean((match&&match[1])||heading.split(':')[0]||buttonText.split(':')[0]).replace(/:$/,'');
-   if(!name||rejectHint.test(name)||(!allowHint.test(name)&&!allowHint.test(labelled)))continue;
+   if(!name||(rejectHint.test(name)&&!/^qty\b/i.test(name))||(!allowHint.test(name)&&!allowHint.test(labelled)))continue;
    const list=box.querySelector?.('.listbox-button__listbox, [role="listbox"]')||box;
    const raw=[...(list.querySelectorAll?.('.listbox__option, [role="option"]')||[])];
    const choices=raw.filter(o=>!o.disabled&&o.getAttribute?.('aria-disabled')!=='true').map(o=>{
     const label=clean(o.querySelector?.('.listbox__value, .listbox__option-text, .btn__text')?.textContent||o.textContent||'')
-      .replace(/\s+(?:(?:most popular|out of stock|selected)\s*)+$/i,'').trim();
+      .replace(/\s*(?:(?:most popular|out of stock|selected)\s*)+$/i,'').trim();
     return {text:label,option:o,value:clean(o.getAttribute?.('data-value')||o.getAttribute?.('value')||label),
      selected:o.getAttribute?.('aria-selected')==='true'||o.classList?.contains?.('listbox__option--selected')||false};
-   }).filter(x=>x.text&&!/^select(?:\\s+(?:an?|one))?(?:\\s+option)?$|^choose(?:\\s+(?:an?|one))?/i.test(x.text));
+   }).filter(x=>x.text&&!isPlaceholder(x.text));
    if(choices.length<2||choices.length>100)continue;
    const selected=choices.find(o=>o.selected)||choices.find(o=>
      buttonText.toLowerCase().endsWith(o.text.toLowerCase())||aria.toLowerCase().endsWith(o.text.toLowerCase()));
    parts.push({name,choices,select:{value:selected?.value||'',__priceMatchCustom:true}})
   }
  }
- // A native or Skin dropdown can confirm its displayed choices, but multiple
- // independent selectors cannot establish valid combinations without backend data.
- if(parts.length!==1)return {hasSelects:parts.length>0||foundMskuListbox,hasVariations:false,reason:parts.length>1?'Attributi multipli: le combinazioni richiedono dati verificati da eBay':foundMskuListbox?'Menu varianti eBay trovato, opzioni non ancora caricate':'Nessun selettore variante compatibile'};
+ // Multiple eBay MSKU controls may load their options at different times.
+ // Seeing one populated list must not be mistaken for the full product.
+ const widgetRoots=new Set([...doc.querySelectorAll('.x-msku-evo .listbox-button,.x-msku .listbox-button')]
+  .map(w=>w.closest?.('.listbox-button')||w));
+ if(widgetRoots.size>1||parts.length>1){
+  return {hasSelects:true,hasVariations:false,reason:'Attributi multipli eBay: attendo combinazioni MSKU complete; nessuna combinazione inventata'}
+ }
+ if(parts.length!==1)return {hasSelects:parts.length>0||foundMskuListbox,hasVariations:false,reason:foundMskuListbox?'Menu varianti eBay trovato, opzioni non ancora caricate':'Nessun selettore variante compatibile'};
  const part=parts[0],used=new Set(),variants=[];
  const requested=(String(href||'').match(/[?&]var=(\d+)/)||[])[1]||'';
  const selected=part.choices.find(x=>x.selected||x.option.selected)||part.choices.find(x=>x.value===part.select.value);
@@ -268,6 +341,6 @@ function readItemCategory(doc){
  // the product page does not expose one with BOTH a name and numeric id.
  return candidates.length?candidates[candidates.length-1]:{categoryId:'',categoryName:''}
 }
-root.__priceMatchVariantTools={normalize,probe,marketPrice,inspectPage,enrichVariantsFromPage,getMskuPrices,readItemCategory};
+root.__priceMatchVariantTools={normalize,probe,marketPrice,inspectPage,enrichVariantsFromPage,getMskuPrices,readItemCategory,mskuVariants,optionText,isPlaceholder};
 if(typeof module==='object'&&module.exports)module.exports=root.__priceMatchVariantTools;
 })(typeof globalThis==='object'?globalThis:this);
