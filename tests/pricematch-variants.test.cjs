@@ -11,10 +11,23 @@ const sample={
   {sourcePrice:8.56,specifics:[{name:'Color',value:'BLACK'},{name:'Size',value:'L'}]}
  ]
 };
-test('same existing single product catalog data: exactly 3 fields',()=>{
+test('single item gets eBay template master fields without a fake SKU',()=>{
  const p=T.buildPackage({itemId:sample.itemId,title:'Item',price:7.18},'US');
+ const at=k=>p.headers.indexOf(k),row=p.rows[0];
  assert.equal(p.rows.length,1);assert.equal(p.hasVariations,false);
- assert.deepEqual(p.rows[0].filter(Boolean),[sample.itemId,'Item','7.18'])
+ assert.equal(row[0],'Add');
+ assert.equal(row[at('Custom label (SKU)')],'');
+ assert.equal(row[at('Title')],'Item');
+ assert.equal(row[at('Start price')],'7.18');
+ assert.equal(row[at('Quantity')],'1');
+ assert.equal(row[at('Payment profile name')],'Payment Policy');
+ assert.equal(row[at('Condition ID')],'1000');
+ assert.equal(row[at('Format')],'FixedPrice');
+ assert.equal(row[at('Duration')],'GTC');
+ assert.equal(row[at('Location')],'Fort Pierce, FL');
+ assert.equal(row[at('C:Brand')],'Unbranded');
+ assert.equal(row[at('C:MPN')],'000'+sample.itemId);
+ assert.equal(row[at('Category ID')],'');
 });
 test('eBay backend mono response leaves variant section disabled',()=>{
  const x=V.normalize({ok:true,itemId:sample.itemId,hasVariations:false},'USD',sample.itemId);
@@ -52,7 +65,10 @@ test('parent-child eBay template with all attributes and own prices',()=>{
  assert.equal(p.rows[1][at('Relationship')],'Variation');
  assert.equal(p.rows[1][at('Relationship details')],'Color=PINK|Size=M');
  assert.equal(p.rows[2][at('Start price')],'8.56');
- assert.equal(p.rows[1][at('Quantity')],'');
+ assert.equal(p.rows[1][at('Quantity')],'1');
+ assert.equal(p.rows[0][at('Quantity')],'');
+ assert.equal(p.rows[0][at('Custom label (SKU)')],'');
+ assert.ok(p.rows[1][at('Custom label (SKU)')]);
  assert.equal(p.rows[0][at('Title')],'Variation Item');
  assert.ok(T.toCsv(p).includes('Color=PINK;BLACK|Size=M;L'))
 });
@@ -186,4 +202,62 @@ test('recovery keeps an existing, already verified price unchanged',()=>{
  const doc={querySelectorAll(q){return q==='script:not([src])'?[{textContent:'{"MSKU":'+JSON.stringify(state)+'}'}]:[]}};
  const original=[{specifics:[{name:'Color',value:'Black'}],sourcePrice:6.87,sourceCurrency:'USD'}];
  assert.equal(V.enrichVariantsFromPage(doc,original,'USD')[0].sourcePrice,6.87)
+});
+
+
+test('the category is copied from a matching eBay breadcrumb, not guessed',()=>{
+ const link=(name,url)=>({textContent:name,href:url,getAttribute(){return url}});
+ const page={querySelectorAll(q){
+  return q==='script[type="application/ld+json"]'?[]:[
+   link('Cell Phones & Accessories','https://www.ebay.ca/b/Phones/15032/bn_11'),
+   link('Wall Chargers','https://www.ebay.ca/b/Wall-Chargers/123417/bn_5')
+  ];
+ }};
+ const category=V.readItemCategory(page);
+ assert.deepEqual(category,{categoryId:'123417',categoryName:'Wall Chargers'});
+ const p=T.buildPackage({itemId:sample.itemId,title:'Test',price:3.5,...category},'CA');
+ const at=n=>p.headers.indexOf(n);
+ assert.equal(p.rows[0][at('Category ID')],'123417');
+ assert.equal(p.rows[0][at('Category name')],'Wall Chargers');
+});
+test('a missing or unverified category is not invented',()=>{
+ const page={querySelectorAll(){return[]}};
+ assert.deepEqual(V.readItemCategory(page),{categoryId:'',categoryName:''});
+});
+test('parent-child template writes only variation quantities and preserves all shared defaults',()=>{
+ const entry={itemId:sample.itemId,title:'Variant Item',price:5.5,categoryId:'123417',categoryName:'Wall Chargers',
+  dimensions:[{name:'Color',values:['Black','White']}],
+  variants:[
+   {specifics:[{name:'Color',value:'Black'}],price:5.5},
+   {specifics:[{name:'Color',value:'White'}],price:7.25}
+  ]};
+ const pkg=T.buildVariantPackage(entry,'AU'),idx=k=>pkg.headers.indexOf(k);
+ const [parent,a,b]=pkg.rows;
+ assert.equal(pkg.rows.length,3);
+ assert.equal(parent[0],'Add');
+ assert.equal(parent[idx('Quantity')],'');
+ assert.equal(parent[idx('Start price')],'');
+ assert.equal(parent[idx('Custom label (SKU)')],'');
+ assert.equal(parent[idx('Category ID')],'123417');
+ assert.equal(parent[idx('Category name')],'Wall Chargers');
+ assert.equal(parent[idx('Payment profile name')],'Payment Policy');
+ assert.equal(parent[idx('Condition ID')],'1000');
+ assert.equal(parent[idx('Format')],'FixedPrice');
+ assert.equal(parent[idx('Duration')],'GTC');
+ assert.equal(parent[idx('Location')],'Fort Pierce, FL');
+ assert.equal(parent[idx('C:Brand')],'Unbranded');
+ assert.equal(parent[idx('C:MPN')],'000'+sample.itemId);
+ for(const child of [a,b]){
+  assert.equal(child[idx('Relationship')],'Variation');
+  assert.equal(child[idx('Quantity')],'1');
+  assert.equal(child[idx('Location')],'Fort Pierce, FL');
+  assert.ok(child[idx('Custom label (SKU)')]);
+  assert.equal(child[idx('C:MPN')],'');
+ }
+ assert.equal(a[idx('Start price')],'5.50');
+ assert.equal(b[idx('Start price')],'7.25');
+ const csv=T.toCsv(pkg);
+ assert.ok(csv.includes('FixedPrice'));
+ assert.ok(csv.includes('Payment Policy'));
+ assert.ok(csv.includes('000'+sample.itemId));
 });
