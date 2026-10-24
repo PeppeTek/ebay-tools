@@ -210,7 +210,17 @@ async function probeVariants(reload=false){
   if(seq!==S.variantRequest||!panel.isConnected)return;
   if(S.variantMode)saveMasterState();
   const previous=new Map(S.variants.map(v=>[v.key,v]));
-  const variants=result.variants.map(v=>({...v,byMarket:previous.get(v.key)?.byMarket||{}}));
+  const recovered=typeof variantTools.enrichVariantsFromPage==='function'
+    ?variantTools.enrichVariantsFromPage(document,result.variants,data.price?.currency||C.currencyFromHost(hostname))
+    :result.variants;
+  const variants=recovered.map(v=>{
+   const old=previous.get(v.key);
+   return {...v,
+    sourcePrice:v.sourcePrice??old?.sourcePrice??null,
+    sourceCurrency:v.sourcePrice!=null?v.sourceCurrency:(old?.sourceCurrency||v.sourceCurrency),
+    byMarket:old?.byMarket||{}
+   }
+  });
   if(!variants.length)throw Error('Nessuna combinazione variante valida');
   const first=variants.find(v=>v.key===S.masterKey)||variants.find(v=>v.key===result.selectedKey)||
     variants.find(v=>v.selected)||variants.find(v=>v.sourcePrice!==null)||variants[0];
@@ -275,7 +285,10 @@ function watchVariationDropdowns(){
     const vstate=variantMarketState(first);
     vstate.discount=S.discount;vstate.manualSale=S.manualSale;
     if(S.manualSale&&S.sale>0)vstate.sale=S.sale;
-    S.variants=found;S.dimensions=page.dimensions;S.variantMode=true;S.variantStatus='partial';
+    S.variants=typeof variantTools.enrichVariantsFromPage==='function'
+      ?variantTools.enrichVariantsFromPage(document,found,data.price?.currency||C.currencyFromHost(hostname))
+      :found;
+    S.dimensions=page.dimensions;S.variantMode=true;S.variantStatus='partial';
     el('variants-block').style.display='block';el('variants-count').textContent='('+found.length+' rilevate)';
     chooseMaster(first.key,false);
     message('Selettore eBay rilevato: '+found.length+' varianti. Prezzi sconosciuti n.d. fino a verifica o inserimento.','warn');
