@@ -12,11 +12,24 @@ function buildPackage(entry,marketplace){
  if(!title||title.length>255)throw Error('Titolo catalogo mancante o troppo lungo');
  if(!Number.isFinite(price)||price<=0||price>10000000)throw Error('Prezzo catalogo non valido');
  const headers=HEADERS.slice();headers[0]=ACTION[mk];
- const row=Array(headers.length).fill('');
- row[headers.indexOf('Custom label (SKU)')]=id;
- row[headers.indexOf('Title')]=/^[=+\-@]/.test(title)?"'"+title:title;
- row[headers.indexOf('Start price')]=price.toFixed(2);
- if(row.filter(x=>x!=='').length!==3)throw Error('Il catalogo rapido deve valorizzare solo tre campi');
+ const row=Array(headers.length).fill(''),at=name=>headers.indexOf(name);
+ row[0]='Add';
+ row[at('Custom label (SKU)')]=''; // Master only; the variant children keep unique SKUs.
+ const categoryId=String(entry?.categoryId||'').trim();
+ const categoryName=String(entry?.categoryName||'').replace(/\s+/g,' ').trim();
+ if(categoryId&&!/^\d{2,12}$/.test(categoryId))throw Error('Category ID rilevato non valido');
+ row[at('Category ID')]=categoryId;
+ row[at('Category name')]=categoryId?categoryName:'';
+ row[at('Title')]=/^[=+\-@]/.test(title)?"'"+title:title;
+ row[at('Start price')]=price.toFixed(2);
+ row[at('Quantity')]='1';
+ row[at('Payment profile name')]='Payment Policy';
+ row[at('Condition ID')]='1000';
+ row[at('Format')]='FixedPrice';
+ row[at('Duration')]='GTC';
+ row[at('Location')]='Fort Pierce, FL';
+ row[at('C:MPN')]='000'+id; // Explicit synthetic part number requested by the user.
+ row[at('C:Brand')]='Unbranded';
  return {version:1,marketplace:mk,sheetName:'Catalogo '+(mk==='US'?'USA':mk),sourceItemId:id,
   groupId:mk+'-'+id+'-QUICK',hasVariations:false,currency:CURRENCY[mk],headers,rows:[row]};
 }
@@ -30,6 +43,7 @@ function buildVariantPackage(entry,marketplace){
  const header=pkg.headers,idx=k=>header.indexOf(k),rows=pkg.rows;
  rows[0][idx('Relationship details')]=dims.map(d=>d.name+'='+d.values.join(';')).join('|');
  rows[0][idx('Start price')]=''; // eBay variation parent has no Start price; child rows own prices.
+ rows[0][idx('Quantity')]=''; // Variations: quantity on children, not parent.
  const seen=new Set();
  for(const [i,v] of entry.variants.entries()){
   const price=Number(v?.price),specifics=Array.isArray(v?.specifics)?v.specifics:[];
@@ -47,7 +61,9 @@ function buildVariantPackage(entry,marketplace){
   child[idx('Relationship')]='Variation';
   child[idx('Relationship details')]=rel;
   child[idx('Start price')]=price.toFixed(2);
-  // Do NOT manufacture Quantity, category, policies, condition, or UPC.
+  child[idx('Quantity')]='1';
+  child[idx('Location')]='Fort Pierce, FL';
+  // Category, Brand, MPN and Payment Policy belong on the Master only; UPC is not invented.
   rows.push(child);
  }
  pkg.hasVariations=true;pkg.groupId=pkg.marketplace+'-'+pkg.sourceItemId+'-QUICK-VARIANTS';
