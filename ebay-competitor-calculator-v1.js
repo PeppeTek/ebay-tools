@@ -503,13 +503,18 @@ async function ensureCatalogTransport(){
   throw Error(file+' scaricato ma non inizializzato; controlla la console browser');
  return ready
 }
+function catalogEntry(base){
+ const verified=typeof variantTools?.readItemCategory==='function'
+  ?variantTools.readItemCategory(document):{categoryId:'',categoryName:''};
+ return {...base,categoryId:verified.categoryId||'',categoryName:verified.categoryName||''}
+}
 function catalogRows(){const all=saved(catalogKey);return Array.isArray(all[S.market])?all[S.market]:[]}
 el('save').addEventListener('click',async()=>{
  readEdits();
  const title=C.clean(el('title').value),price=S.sale,market=S.market;
  if(!title||!Number.isFinite(price)||price<=0){message('Non salvato: Title o Start price non valido.','bad');return}
  if(!S.fx[cur()]&&S.sourceCur!==cur()){message('Non salvato: cambio valuta non disponibile.','bad');return}
- let entry={itemId:id,title,price:C.round(price)};
+ let entry=catalogEntry({itemId:id,title,price:C.round(price)});
  if(S.variantMode){
   try{
    entry=variantCatalogEntry(entry);
@@ -540,7 +545,8 @@ el('save').addEventListener('click',async()=>{
   if(result.duplicate===true){
    message('Item ID già presente nel catalogo '+market+' · '+id+'. Backend segnala duplicato: aggiornamento dei prezzi varianti NON confermato.','warn')
   }else{
-   message('Catalogo '+market+': backend conferma '+(S.variantMode?'padre e '+entry.variants.length+' righe varianti':'SKU + Title + Start price')+' · Item ID '+id+' · riga '+result.rowStart+'.','ok')
+   const warning=entry.categoryId?'':' · ATTENZIONE: Category ID e Category name non rilevati, completare prima dell’importazione.';
+   message('Catalogo '+market+': backend conferma '+(S.variantMode?'padre e '+entry.variants.length+' righe varianti':'riga Master')+' · Item ID '+id+' · riga '+result.rowStart+warning,warning?'warn':'ok')
   }
  }catch(e){console.error('Dropper catalogo concorrente',e);message('Copia LOCALE salvata, catalogo ONLINE non confermato: '+String(e&&e.message||e),'bad')}
  finally{btn.disabled=false;btn.textContent=oldLabel}
@@ -550,14 +556,14 @@ el('export').addEventListener('click',async()=>{
  if(S.variantMode){
   try{
    readEdits();
-   const entry=variantCatalogEntry({itemId:id,title:C.clean(el('title').value),price:C.round(S.sale)});
+   const entry=variantCatalogEntry(catalogEntry({itemId:id,title:C.clean(el('title').value),price:C.round(S.sale)}));
    const transport=await ensureCatalogTransport();
    if(typeof transport.buildVariantPackage!=='function'||typeof transport.toCsv!=='function')throw Error('Modulo CSV varianti non caricato');
    const pkg=transport.buildVariantPackage(entry,S.market);
    const blob=new Blob([transport.toCsv(pkg)],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
    a.href=url;a.download='pricematch-pro-varianti-'+S.market.toLowerCase()+'-'+id+'.csv';
    panel.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2500);
-   message('CSV eBay padre + '+entry.variants.length+' varianti generato. Prima dell’importazione completare categoria, quantità, condizione, profili e ogni altro campo obbligatorio.','warn')
+   message('CSV eBay padre + '+entry.variants.length+' varianti generato.'+(entry.categoryId?'':' Categoria non rilevata: completa ID e nome.')+' Verifica Payment Policy e altri eventuali campi eBay richiesti.','warn')
   }catch(err){message('CSV varianti non generato: '+String(err?.message||err),'bad')}
   return
  }
