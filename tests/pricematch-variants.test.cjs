@@ -261,3 +261,83 @@ test('parent-child template writes only variation quantities and preserves all s
  assert.ok(csv.includes('Payment Policy'));
  assert.ok(csv.includes('000'+sample.itemId));
 });
+
+
+test('MSKU combines both Unit Type and Item Length without inventing missing combinations',()=>{
+ const msku={
+  variationsMap:{
+   '501':{binModel:{price:{textSpans:[{text:'US $7.07'}]}}},
+   '502':{binModel:{price:{textSpans:[{text:'US $8.45'}]}}},
+   '503':{binModel:{price:{textSpans:[{text:'US $9.99'}]}}}
+  },
+  menuItemMap:{
+   '0':{valueId:10,displayName:'White A-C'},
+   '1':{valueId:11,displayName:'White C-C'},
+   '2':{valueId:21,displayName:'1.5m'},
+   '3':{valueId:22,displayName:'2m'}
+  },
+  variationCombinations:{'0_2':'501','1_2':'502','1_3':'503'},
+  selectMenus:[
+   {displayLabel:'Unit Type',menuItemValueIds:[10,11]},
+   {displayLabel:'Item Length',menuItemValueIds:[21,22]}
+  ]
+ };
+ const doc={querySelectorAll(q){return q==='script:not([src])'?[{textContent:'window.__ebay={"MSKU":'+JSON.stringify(msku)+',"QUANTITY":{}}'}]:[]}};
+ const found=V.inspectPage(doc,'https://www.ebay.com/itm/900003786126?var=502',7.07,'USD','900003786126');
+ assert.equal(found.hasVariations,true);
+ assert.equal(found.complete,true);
+ assert.equal(found.dimensions.length,2);
+ assert.equal(found.variants.length,3);
+ assert.equal(found.variants.find(v=>v.selected).sourcePrice,8.45);
+ assert.ok(found.variants.every(v=>v.specifics.length===2));
+ assert.ok(found.variants.every(v=>!v.label.toLowerCase().includes('select')));
+ const p=T.buildVariantPackage({itemId:'900003786126',title:'Cable',price:8.45,
+  dimensions:found.dimensions,variants:found.variants.map(v=>({specifics:v.specifics,price:v.sourcePrice}))},'CA');
+ const at=n=>p.headers.indexOf(n);
+ assert.equal(p.rows.length,4);
+ assert.equal(p.rows[1][at('Relationship details')],'Unit Type=White A-C|Item Length=1.5m');
+ assert.equal(p.rows[3][at('Relationship details')],'Unit Type=White C-C|Item Length=2m');
+});
+test('MSKU includes only configured QTY 1pc and 2pcs combinations',()=>{
+ const state={
+  variationsMap:{'100':{binModel:{price:{textSpans:[{text:'US $5.62'}]}}},
+   '101':{binModel:{price:{textSpans:[{text:'US $9.99'}]}}}},
+  menuItemMap:{'0':{valueId:1,displayName:'1pc'},'1':{valueId:2,displayName:'2pcs'}},
+  variationCombinations:{'0':'100','1':'101'},
+  selectMenus:[{displayLabel:'QTY',menuItemValueIds:[1,2]}]
+ };
+ const doc={querySelectorAll(q){return q==='script:not([src])'?[{textContent:'{"MSKU":'+JSON.stringify(state)+'}'}]:[]}};
+ const found=V.inspectPage(doc,'https://www.ebay.ca/itm/188154441118',5.62,'USD','188154441118');
+ assert.equal(found.hasVariations,true);
+ assert.equal(found.variants.length,2);
+ assert.deepEqual(found.dimensions.map(d=>d.name),['QTY']);
+ assert.deepEqual(found.variants.map(v=>v.sourcePrice),[5.62,9.99])
+});
+test('Selectselected is a placeholder and cannot become a variant',()=>{
+ assert.equal(V.optionText('Selectselected'),'Select');
+ assert.equal(V.isPlaceholder(V.optionText('Selectselected')),true);
+ assert.equal(V.optionText('White A-Cselected'),'White A-C');
+ assert.equal(V.optionText('2pcs Most popular'),'2pcs')
+});
+test('two eBay Skin selectors with only one populated list do not claim 3 complete variants',()=>{
+ const choice=(s)=>({textContent:s,disabled:false,getAttribute(){return null},querySelector(){return{textContent:s}},classList:{contains(){return false}}});
+ const createBox=(name,values)=>{
+  const button={textContent:name+': Select',getAttribute(){return name+': Select'}};
+  const options={querySelectorAll(){return values.map(choice)}};
+  const group={querySelector(){return{textContent:name+':'}}};
+  return {
+   matches(s){return s==='.listbox-button'},
+   querySelector(s){return s.startsWith('button[')?button:options},
+   closest(){return group},parentElement:group
+  }
+ };
+ const first=createBox('Unit Type',['Selectselected','White A-C','White C-C']);
+ const second=createBox('Item Length',[]);
+ const doc={querySelectorAll(q){
+  if(q==='select'||q==='script:not([src])')return[];
+  return q.includes('.listbox-button')?[first,second]:[]
+ }};
+ const p=V.inspectPage(doc,'https://www.ebay.com/itm/900003786126',7.07,'USD','900003786126');
+ assert.equal(p.hasSelects,true);assert.equal(p.hasVariations,false);
+ assert.ok(/Attributi multipli/i.test(p.reason))
+});
