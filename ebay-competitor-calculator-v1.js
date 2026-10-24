@@ -230,14 +230,15 @@ async function probeVariants(reload=false){
    if(S.manualSale&&S.sale>0)initial.sale=S.sale
   }
   S.variants=variants;S.dimensions=result.dimensions;S.variantMode=true;
-  S.variantStatus=origin==='pagina'?'partial':'confirmed';
+  S.variantStatus=result.complete&&result.source==='msku'?'msku':origin==='pagina'?'partial':'confirmed';
   el('variants-block').style.display='block';el('variants-count').textContent='('+variants.length+' rilevate)';
   chooseMaster(first.key,false);
   if(!(Number(S.fx[S.sourceCur])>0))void fxUpdate();
   const missing=variants.filter(v=>v.sourcePrice===null).length;
-  const note=origin==='pagina'?'Attributi eBay rilevati: '+variants.length+' varianti; '+missing+' prezzi non verificati (n.d.). Seleziona la Master e inserisci i prezzi prima del catalogo.':
-    'Varianti confermate dal backend: '+variants.length+'. Riduzione e prezzo modificano soltanto la Master selezionata.';
-  message(note,origin==='pagina'?'warn':'ok')
+  const note=S.variantStatus==='msku'?'Combinazioni eBay MSKU: '+variants.length+' varianti, '+result.dimensions.length+' attributi, '+missing+' prezzi non rilevati.':
+    origin==='pagina'?'Opzioni eBay rilevate: '+variants.length+' varianti parziali; '+missing+' prezzi non verificati (n.d.).':
+    'Varianti confermate dal backend: '+variants.length+'. Prezzo e riduzione modificano soltanto la Master.';
+  message(note,missing||S.variantStatus==='partial'?'warn':'ok')
  }
  // DOM FIRST: never wait up to 35s for the Apps Script backend before showing
  // the variant UI. Skin listbox option nodes often exist already on the item page.
@@ -251,7 +252,11 @@ async function probeVariants(reload=false){
   const result=await variantTools.probe({itemId:id,endpoint:existingSellLikeEndpoint,
     fallbackCurrency:data.price?.currency||C.currencyFromHost(hostname)});
   if(seq!==S.variantRequest||!panel.isConnected)return;
-  if(result.hasVariations){activate(result,'backend');return}
+  if(result.hasVariations){
+   // Never downgrade a complete, verified multi-attribute MSKU listing.
+   if(S.variantMode&&S.variantStatus==='msku')return;
+   activate(result,'backend');return
+  }
   if(S.variantMode)return;
   // eBay may render the option list after the bookmarklet starts.
   const late=inspect();
@@ -270,30 +275,28 @@ async function probeVariants(reload=false){
 }
 function watchVariationDropdowns(){
  if(!variantTools||typeof variantTools.inspectPage!=='function')return;
- const observe=(event)=>{
-  if(!panel.isConnected||S.variantMode)return;
+ const observe=event=>{
+  if(!panel.isConnected||S.variantStatus==='msku'||S.variantStatus==='confirmed')return;
   const target=event.target;
   if(!target?.closest?.('.x-msku-evo .listbox-button, .x-msku .listbox-button, .x-msku-evo .listbox-button__control, .x-msku .listbox-button__control'))return;
-  // The options can be mounted when the buyer opens the listbox.
+  // eBay may mount a second attribute and its options only after a click.
+  // Recompute only when the detected set of combinations truly changes.
   setTimeout(()=>{
-   if(!panel.isConnected||S.variantMode)return;
-   const page=variantTools.inspectPage(document,location.href,data.price?.value??null,data.price?.currency||C.currencyFromHost(hostname),id);
-   if(page.hasVariations){
-    // Refresh becomes unnecessary once all options are present. Do not wait for backend.
-    S.variantRequest++; // invalidate any older pending backend callback
-    const found=page.variants,first=found.find(v=>v.key===page.selectedKey)||found.find(v=>v.selected)||found[0];
-    const vstate=variantMarketState(first);
-    vstate.discount=S.discount;vstate.manualSale=S.manualSale;
-    if(S.manualSale&&S.sale>0)vstate.sale=S.sale;
-    S.variants=typeof variantTools.enrichVariantsFromPage==='function'
-      ?variantTools.enrichVariantsFromPage(document,found,data.price?.currency||C.currencyFromHost(hostname))
-      :found;
-    S.dimensions=page.dimensions;S.variantMode=true;S.variantStatus='partial';
-    el('variants-block').style.display='block';el('variants-count').textContent='('+found.length+' rilevate)';
-    chooseMaster(first.key,false);
-    message('Selettore eBay rilevato: '+found.length+' varianti. Prezzi sconosciuti n.d. fino a verifica o inserimento.','warn');
-   }
-  },100)
+   if(!panel.isConnected||S.variantStatus==='msku'||S.variantStatus==='confirmed')return;
+   try{
+    const page=variantTools.inspectPage(document,location.href,data.price?.value??null,
+      data.price?.currency||C.currencyFromHost(hostname),id);
+    if(!page.hasVariations){
+     if(page.hasSelects)message('Attributi eBay: '+(page.reason||'combinazioni non ancora verificate')+'.','warn');
+     return
+    }
+    const oldKeys=new Set(S.variants.map(v=>v.key));
+    const needsUpdate=!S.variantMode||page.dimensions.length>S.dimensions.length||
+     page.variants.length!==S.variants.length||page.variants.some(v=>!oldKeys.has(v.key))||
+     page.variants.some(v=>v.sourcePrice!=null&&S.variants.find(x=>x.key===v.key)?.sourcePrice==null);
+    if(needsUpdate)void probeVariants(true)
+   }catch(error){console.warn('PriceMatch Pro: aggiornamento opzioni eBay',error)}
+  },150)
  };
  document.addEventListener('click',observe,true);
  S.stopVariantWatch=()=>document.removeEventListener('click',observe,true)
@@ -413,7 +416,7 @@ async function fxUpdate(){
  recalc();
  if(errors.length)message('Cambio mancante: utile e pareggio restano vuoti, senza inventare il tasso.','warn');
  else if(!data.price)message('Prezzo concorrente non rilevato. Inserisci prezzo e valuta manualmente.','warn');
- else if(S.variantMode)message(S.variantStatus==='partial'?'Attributi rilevati sulla pagina. I prezzi non disponibili restano n.d. finché non vengono impostati.':'Varianti confermate: '+S.variants.length+'. È attiva soltanto la Master selezionata.',S.variantStatus==='partial'?'warn':'ok');
+ else if(S.variantMode)message(S.variantStatus==='partial'?'Opzioni parziali: attendo combinazioni verificate.':('Varianti '+(S.variantStatus==='msku'?'MSKU':'confermate')+': '+S.variants.length+'. Master selezionata.'),S.variantStatus==='partial'?'warn':'ok');
  else if(data.hasPriceVariants)message('Prodotto con possibili varianti: controlla il prezzo selezionato e usa ↻ per aggiornarlo.','warn');
  else message('Calcolatore pronto: verifica prezzo e valuta originali prima del salvataggio.','ok')
 }
