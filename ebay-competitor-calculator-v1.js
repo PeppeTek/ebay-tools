@@ -175,7 +175,7 @@ function renderVariantRows(){
    if(v.key!==S.masterKey)chooseMaster(v.key)
   });
   const label=document.createElement('span');label.className='dc-label';
-  const name=document.createElement('span');name.textContent=v.label;
+  const name=document.createElement('span');name.textContent=(Array.isArray(v.specifics)&&v.specifics.length?v.specifics.map(x=>x.name+': '+x.value).join('\n'):v.label.replace(/\s*·\s*/g,'\n'));name.style.whiteSpace='pre-line';
   label.appendChild(name);row.appendChild(label);
   row.appendChild(cellAmount(base,v.sourceCurrency));
   const edit=document.createElement('input');edit.className='dc-sale-input';edit.type='number';edit.min='.01';edit.step='.01';
