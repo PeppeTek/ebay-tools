@@ -233,6 +233,41 @@ function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
  return{hasSelects:true,hasVariations:true,partial:true,sourceItemId:String(itemId),selectedKey:active?part.name.toLowerCase()+'='+active.text.toLowerCase():null,
    dimensions:[{name:part.name,values:variants.map(v=>v.specifics[0].value)}],variants:enrichVariantsFromPage(doc,variants,fallbackCurrency)}
 }
-root.__priceMatchVariantTools={normalize,probe,marketPrice,inspectPage,enrichVariantsFromPage,getMskuPrices};
+// Only verified category breadcrumbs from the CURRENT item page are exported.
+// Category names are labels, not inferred from the product title or keywords.
+function readItemCategory(doc){
+ const hrefId=url=>{
+  const match=String(url||'').match(/\/b\/[^/?#]+\/(\d{2,12})(?=\/|[?#]|$)|[?&](?:_sacat|categoryId|cat)=(\d{2,12})(?=&|$)/i);
+  return match?match[1]||match[2]:''
+ };
+ const candidates=[];
+ const add=(id,name)=>{
+  id=clean(id);name=clean(name);
+  if(/^\d{2,12}$/.test(id)&&name&&name.length<=120&&!/^(home|shop by category|all categories|see all|more)$/i.test(name))
+   candidates.push({categoryId:id,categoryName:name})
+ };
+ const links=doc.querySelectorAll?.(
+  'nav[aria-label*="readcrumb"] a[href],.breadcrumbs a[href],.x-breadcrumbs a[href],.seo-breadcrumbs a[href],.vi-breadcrumb a[href],[data-testid*="breadcrumb"] a[href]')||[];
+ for(const link of links)add(hrefId(link.href||link.getAttribute?.('href')),link.textContent||link.innerText);
+ const scripts=doc.querySelectorAll?.('script[type="application/ld+json"]')||[];
+ function collect(node){
+  if(!node||typeof node!=='object')return;
+  if(Array.isArray(node)){for(const part of node)collect(part);return}
+  if(String(node['@type']||'').includes('BreadcrumbList')&&Array.isArray(node.itemListElement)){
+   for(const item of node.itemListElement){
+    const url=item?.item?.['@id']||item?.item?.url||item?.item||'';
+    add(hrefId(url),item?.name||item?.item?.name||'')
+   }
+  }
+  if(Array.isArray(node['@graph']))collect(node['@graph'])
+ }
+ for(const script of scripts){
+  try{collect(JSON.parse(script.textContent||''))}catch(_){}
+ }
+ // Prefer the most specific (last) breadcrumb. No category is fabricated when
+ // the product page does not expose one with BOTH a name and numeric id.
+ return candidates.length?candidates[candidates.length-1]:{categoryId:'',categoryName:''}
+}
+root.__priceMatchVariantTools={normalize,probe,marketPrice,inspectPage,enrichVariantsFromPage,getMskuPrices,readItemCategory};
 if(typeof module==='object'&&module.exports)module.exports=root.__priceMatchVariantTools;
 })(typeof globalThis==='object'?globalThis:this);
