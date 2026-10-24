@@ -58,6 +58,90 @@ function marketPrice(v,fx,targetCurrency,round){
  const from=Number(fx?.[v.sourceCurrency]),to=Number(fx?.[targetCurrency]);
  return from>0&&to>0?round(v.sourcePrice*from/to):null;
 }
+// The eBay MSKU widget can embed an authoritative price per variation. Read
+// inert JSON data only; do not execute page scripts, click the buyer's dropdown,
+// request unauthenticated third-party APIs, or infer sibling prices from the Master.
+function readMskuJson(doc){
+ const scripts=doc.querySelectorAll?.('script:not([src])')||[];
+ for(const el of scripts){
+  const body=String(el.textContent||'');
+  if(!body.includes('"MSKU"')||!body.includes('"variationsMap"'))continue;
+  const begin=/"MSKU"\s*:\s*\{/g;
+  let match;
+  while((match=begin.exec(body))){
+   const start=body.indexOf('{',match.index),limit=Math.min(body.length,start+3000000);
+   let level=0,quoted=false,escape=false;
+   for(let i=start;i<limit;i++){
+    const ch=body[i];
+    if(quoted){if(escape)escape=false;else if(ch==='\\')escape=true;else if(ch==='"')quoted=false}
+    else if(ch==='"')quoted=true;
+    else if(ch==='{')level++;
+    else if(ch==='}'&&--level===0){
+     try{
+      const state=JSON.parse(body.slice(start,i+1));
+      if(state&&typeof state.variationsMap==='object'&&typeof state.menuItemMap==='object'&&typeof state.variationCombinations==='object'&&Array.isArray(state.selectMenus))return state
+     }catch(_){}
+     break
+    }
+   }
+  }
+ }
+ return null
+}
+function mskuPrice(value,fallbackCurrency){
+ if(!value||typeof value!=='object')return null;
+ const bin=value.binModel?.price;
+ const raw=bin?.textSpans?.map(v=>clean(v?.text)).join('')||'';
+ // Only explicit money tokens from the variation price object are accepted.
+ // Ignore eBay strikethrough prices, ranges and extra price descriptions.
+ let price=null;
+ const amount=clean(raw);
+ if(/^(?:US|CA|AU|C|A|USD|CAD|AUD)?\s*(?:[$€£]\s*)?\d[\d,.]*$/.test(amount)){
+  const token=amount.match(/(\d[\d,.]*)$/)?.[1]||'';
+  const decimal=token.lastIndexOf('.')>token.lastIndexOf(',')?'.':',';
+  const normalized=decimal===','?token.replace(/\./g,'').replace(',','.'):token.replace(/,/g,'');
+  price=realPrice(normalized)
+ }
+ if(price===null)return null;
+ const explicit=clean(value.currency||value.currencyID||bin?.currency||bin?.currencyID||'').toUpperCase();
+ const prefix=amount.match(/^(US|CA|AU|USD|CAD|AUD|C|A)(?=\s*\$|\s*\d)/i)?.[1]?.toUpperCase();
+ const code=explicit||({US:'USD',CA:'CAD',C:'CAD',AU:'AUD',A:'AUD'}[prefix]||prefix)||fallbackCurrency;
+ return {price,currency:String(code||fallbackCurrency).toUpperCase()}
+}
+function getMskuPrices(doc,fallbackCurrency){
+ const msku=readMskuJson(doc);
+ if(!msku)return null;
+ const combinations=msku.variationCombinations,items=msku.menuItemMap,menus=msku.selectMenus,variations=msku.variationsMap,found=new Map();
+ for(const [combination,idValue] of Object.entries(combinations)){
+  const id=(idValue&&typeof idValue==='object')?(idValue.variationId||idValue.id):idValue;
+  const variation=variations?.[String(id)];
+  const data=mskuPrice(variation,fallbackCurrency);
+  if(!data)continue;
+  const specifics=[];
+  for(const menuId of combination.split('_')){
+   const item=items?.[menuId];
+   if(!item||!clean(item.displayName))continue;
+   const matching=menus.filter(menu=>Array.isArray(menu.menuItemValueIds)&&menu.menuItemValueIds.map(String).includes(String(item.valueId)));
+   if(matching.length!==1)continue;
+   specifics.push({name:clean(matching[0].displayLabel),value:clean(item.displayName)});
+  }
+  if(!specifics.length)continue;
+  const key=specifics.map(x=>x.name.toLowerCase()+'='+x.value.toLowerCase()).sort().join('|');
+  if(found.has(key))found.delete(key); // ambiguous combination: never assign a price
+  else found.set(key,data)
+ }
+ return found
+}
+function enrichVariantsFromPage(doc,variants,fallbackCurrency){
+ const prices=getMskuPrices(doc,fallbackCurrency);
+ if(!prices)return variants;
+ return variants.map(v=>{
+  const key=(v.specifics||[]).map(x=>clean(x.name).toLowerCase()+'='+clean(x.value).toLowerCase()).sort().join('|');
+  const p=prices.get(key);
+  if(!p||v.sourcePrice!==null&&v.sourcePrice!==undefined)return v;
+  return {...v,sourcePrice:p.price,sourceCurrency:p.currency,priceSource:'ebay-msku'}
+ })
+}
 // Conservative fallback when the active eBay layout exposes selectors but the
 // legacy Sell Like Clone backend does not return a complete variant payload.
 function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
@@ -147,8 +231,8 @@ function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
  }
  if(variants.length<2)return {hasSelects:true,hasVariations:false,reason:'Meno di due opzioni variante distinte'};
  return{hasSelects:true,hasVariations:true,partial:true,sourceItemId:String(itemId),selectedKey:active?part.name.toLowerCase()+'='+active.text.toLowerCase():null,
-   dimensions:[{name:part.name,values:variants.map(v=>v.specifics[0].value)}],variants}
+   dimensions:[{name:part.name,values:variants.map(v=>v.specifics[0].value)}],variants:enrichVariantsFromPage(doc,variants,fallbackCurrency)}
 }
-root.__priceMatchVariantTools={normalize,probe,marketPrice,inspectPage};
+root.__priceMatchVariantTools={normalize,probe,marketPrice,inspectPage,enrichVariantsFromPage,getMskuPrices};
 if(typeof module==='object'&&module.exports)module.exports=root.__priceMatchVariantTools;
 })(typeof globalThis==='object'?globalThis:this);
