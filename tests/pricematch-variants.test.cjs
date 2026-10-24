@@ -341,3 +341,39 @@ test('two eBay Skin selectors with only one populated list do not claim 3 comple
  assert.equal(p.hasSelects,true);assert.equal(p.hasVariations,false);
  assert.ok(/Attributi multipli/i.test(p.reason))
 });
+
+
+test('fallback Skin QTY selector keeps 1pc and 2pcs and no Select row',()=>{
+ const makePage=(label,values,selected)=>{
+  const options=values.map(text=>({textContent:text,disabled:false,
+   getAttribute(k){return k==='aria-selected'?(text===selected?'true':'false'):null},
+   classList:{contains(){return false}},querySelector(){return{textContent:text}}}));
+  const group={querySelector(){return{textContent:label+':'}}};
+  const button={textContent:label+': '+selected,getAttribute(){return label+': '+selected}};
+  const list={querySelectorAll(){return options}};
+  const box={matches(s){return s==='.listbox-button'},querySelector(s){return s.startsWith('button[')?button:list},
+    closest(){return group},parentElement:group};
+  return{querySelectorAll(s){
+   if(s==='select'||s==='script:not([src])')return[];
+   return s.includes('.listbox-button')?[box]:[]
+  }}
+ };
+ const item=V.inspectPage(makePage('QTY',['Select','1pc','2pcs Most popular'],'1pc'),
+   'https://www.ebay.ca/itm/188154441118',5.62,'USD','188154441118');
+ assert.equal(item.hasVariations,true);
+ assert.deepEqual(item.variants.map(v=>v.label),['QTY: 1pc','QTY: 2pcs']);
+});
+test('fallback plural colors selector omits Selectselected and preserves four options',()=>{
+ const options=['Selectselected','3 pcs blue','1 pc blue','1 pc white','3 pc white'];
+ const list={querySelectorAll(){return options.map(text=>({textContent:text,disabled:false,
+  getAttribute(){return null},classList:{contains(){return false}},querySelector(){return{textContent:text}}}))}};
+ const button={textContent:'colors: 3 pcs blue',getAttribute(){return'colors: 3 pcs blue'}};
+ const group={querySelector(){return{textContent:'colors:'}}};
+ const box={matches(s){return s==='.listbox-button'},querySelector(s){return s.startsWith('button[')?button:list},
+  closest(){return group},parentElement:group};
+ const doc={querySelectorAll(s){return s==='select'||s==='script:not([src])'?[]:s.includes('.listbox-button')?[box]:[]}};
+ const item=V.inspectPage(doc,'https://www.ebay.ca/itm/900025521069',9.99,'USD','900025521069');
+ assert.equal(item.hasVariations,true);
+ assert.equal(item.variants.length,4);
+ assert.ok(item.variants.every(v=>!v.label.toLowerCase().includes('select')))
+});
