@@ -253,8 +253,14 @@ async function probeVariants(reload=false){
     fallbackCurrency:data.price?.currency||C.currencyFromHost(hostname)});
   if(seq!==S.variantRequest||!panel.isConnected)return;
   if(result.hasVariations){
-   // Never downgrade a complete, verified multi-attribute MSKU listing.
+   // Never downgrade a complete MSKU listing, or treat one attribute returned
+   // by a backend as a complete listing when eBay displays two or more.
    if(S.variantMode&&S.variantStatus==='msku')return;
+   const local=inspect();
+   if((local.visibleDimensionCount||0)>result.dimensions.length){
+    message('Backend incompleto: '+result.dimensions.length+' attributi restituiti, almeno '+local.visibleDimensionCount+' selettori eBay presenti. Non mostro varianti parziali.','warn');
+    return
+   }
    activate(result,'backend');return
   }
   if(S.variantMode)return;
