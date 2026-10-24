@@ -567,11 +567,23 @@ el('export').addEventListener('click',async()=>{
   }catch(err){message('CSV varianti non generato: '+String(err?.message||err),'bad')}
   return
  }
- const rows=catalogRows();if(!rows.length){message('Catalogo rapido '+S.market+' vuoto.','warn');return}
- const content=['Item ID,Title,Price',...rows.map(r=>[r.itemId,r.title,r.price].map(csvEscape).join(','))].join('\r\n');
- const blob=new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
- a.href=url;a.download='dropper-catalogo-rapido-'+S.market.toLowerCase()+'.csv';panel.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2500);
- message('CSV generato: '+rows.length+' prodotti, solo Item ID, titolo e prezzo.','ok')
+ const rows=catalogRows();if(!rows.length){message('Catalogo rapido '+S.market+' vuoto. Salva il prodotto prima di esportare.','warn');return}
+ try{
+  const transport=await ensureCatalogTransport();
+  if(typeof transport.toCsv!=='function'||typeof transport.buildVariantPackage!=='function')
+   throw Error('Modulo esportazione CSV eBay non disponibile');
+  const packages=rows.map(entry=>Array.isArray(entry.variants)&&entry.variants.length
+    ?transport.buildVariantPackage(entry,S.market)
+    :transport.buildPackage(entry,S.market));
+  const master={...packages[0],rows:packages.flatMap(p=>p.rows)};
+  const blob=new Blob([transport.toCsv(master)],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='pricematch-pro-catalogo-'+S.market.toLowerCase()+'.csv';
+  panel.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2500);
+  const withoutCategory=rows.filter(e=>!e.categoryId).length;
+  message('CSV eBay esportato: '+packages.length+' prodotti, '+master.rows.length+' righe.'+
+   (withoutCategory?' '+withoutCategory+' prodotti senza categoria verificata: completala prima dell’importazione.':'')+
+   ' Verifica la Payment Policy e gli altri campi obbligatori per il tuo account.','warn');
+ }catch(error){message('Esportazione CSV eBay non riuscita: '+String(error?.message||error),'bad')}
 });
 el('close').addEventListener('click',()=>{S.fxSequence++;S.variantRequest++;if(S.stopVariantWatch)S.stopVariantWatch();panel.remove();style.remove()});
 el('title').value=S.title;el('market').value=S.market;el('source').value=S.sourcePrice??'';el('source-currency').value=S.sourceCur;el('discount').value=S.discount;el('shipping').value=S.shipping;el('quantity').value=S.quantity;
