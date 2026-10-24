@@ -144,3 +144,46 @@ test('unrelated eBay toolbar listboxes do not create product variations',()=>{
  assert.equal(found.hasVariations,false);
  assert.equal(found.hasSelects,false)
 });
+
+
+test('reads exact prices for every variation from embedded eBay MSKU JSON',()=>{
+ const state={
+  variationsMap:{
+   '551':{binModel:{price:{textSpans:[{text:'US $6.87'}]}}},
+   '552':{binModel:{price:{textSpans:[{text:'US $8.99'}]}}},
+   '553':{binModel:{price:{textSpans:[{text:'US $7.45'}]}}}
+  },
+  menuItemMap:{
+   '0':{valueId:'50',displayName:'EU Plug Yellow'},
+   '1':{valueId:'51',displayName:'US Plug Black'},
+   '2':{valueId:'52',displayName:'US Plug White'}
+  },
+  variationCombinations:{'0':'551','1':'552','2':'553'},
+  selectMenus:[{displayLabel:'plug types',menuItemValueIds:['50','51','52']}]
+ };
+ const doc={querySelectorAll(q){return q==='script:not([src])'?[{
+  textContent:'window.__item={"MSKU":'+JSON.stringify(state)+',"QUANTITY":{"max":5}};'
+ }]:[]}};
+ const input=['EU Plug Yellow','US Plug Black','US Plug White'].map(label=>({
+  specifics:[{name:'plug types',value:label}],sourcePrice:null,sourceCurrency:'USD'
+ }));
+ const res=V.enrichVariantsFromPage(doc,input,'USD');
+ assert.deepEqual(res.map(v=>v.sourcePrice),[6.87,8.99,7.45]);
+ assert.ok(res.every(v=>v.priceSource==='ebay-msku'));
+});
+test('incomplete or unrelated eBay MSKU data cannot invent missing prices',()=>{
+ const state={variationsMap:{'600':{binModel:{price:{textSpans:[{text:'US $99'}]}}}},
+ menuItemMap:{'0':{valueId:'3',displayName:'Blue'}},variationCombinations:{'0':'600'},
+ selectMenus:[{displayLabel:'Color',menuItemValueIds:['3']}]};
+ const doc={querySelectorAll(q){return q==='script:not([src])'?[{textContent:'{"MSKU":'+JSON.stringify(state)+'}'}]:[]}};
+ const original=[{specifics:[{name:'plug types',value:'US Plug Black'}],sourcePrice:null,sourceCurrency:'USD'}];
+ assert.equal(V.enrichVariantsFromPage(doc,original,'USD')[0].sourcePrice,null)
+});
+test('recovery keeps an existing, already verified price unchanged',()=>{
+ const state={variationsMap:{'1':{binModel:{price:{textSpans:[{text:'US $9.00'}]}}}},
+ menuItemMap:{'1':{valueId:'3',displayName:'Black'}},variationCombinations:{'1':'1'},
+ selectMenus:[{displayLabel:'Color',menuItemValueIds:['3']}]};
+ const doc={querySelectorAll(q){return q==='script:not([src])'?[{textContent:'{"MSKU":'+JSON.stringify(state)+'}'}]:[]}};
+ const original=[{specifics:[{name:'Color',value:'Black'}],sourcePrice:6.87,sourceCurrency:'USD'}];
+ assert.equal(V.enrichVariantsFromPage(doc,original,'USD')[0].sourcePrice,6.87)
+});
