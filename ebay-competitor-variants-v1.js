@@ -3,6 +3,61 @@
 'use strict';
 const clean=x=>String(x==null?'':x).replace(/\s+/g,' ').trim();
 const realPrice=value=>{if(value===null||value===undefined||value==='')return null;const n=Number(value);return Number.isFinite(n)&&n>0?n:null};
+// Deterministic presentation-only formatting, never used for eBay IDs or price lookups.
+// No AI calls, network traffic, or changes to raw keys; formatted names/values are
+// deliberately passed to the CSV after prices have been matched to source variants.
+const commonAcronyms=new Set(['USB','HDMI','LED','RGB','SSD','HDD','PD','QC','EU','US','UK','AC','DC','SD','TF','PC','PCS','QTY','WIFI','GPS','NFC','RFID','LCD','OLED','GB','TB','MB','MP','MPN','UPC','SKU']);
+function splitPresentationText(value){
+ return clean(value).replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[_]+/g,' ')
+   .replace(/(\d)\s*(pcs?)(?=$|[\s,;/])/gi,(_,n,unit)=>n+' '+unit.toUpperCase());
+}
+function titlePresentationWord(word){
+ if(!word)return word;
+ const upper=word.toUpperCase();
+ if(commonAcronyms.has(upper))return upper;
+ if(/^\d+(?:[.,]\d+)?(?:mm|cm|m|km|ft|in)$/i.test(word))return word.replace(/[A-Z]+$/g,m=>m.toLowerCase());
+ if(/^[a-z](?:-[a-z])+$/i.test(word))return word.toUpperCase(); // A-C, C-C
+ if(/^[a-z]+-[a-z]$/i.test(word))return word[0].toUpperCase()+word.slice(1,-1).toLowerCase()+word.slice(-1).toUpperCase(); // Type-C
+ if(/[A-Z]/.test(word.slice(1))&&!/^[A-Z]+$/.test(word))return word; // iPhone, MagSafe
+ if(/\d/.test(word)&&!/^pcs?$/i.test(word))return word; // 120W, 10A, 1.5m
+ return word.charAt(0).toUpperCase()+word.slice(1).toLowerCase()
+}
+function presentationText(value){
+ return splitPresentationText(value).split(' ').map(titlePresentationWord).join(' ')
+}
+function formatDimensionName(value){
+ const raw=splitPresentationText(value).replace(/:\s*$/,'');
+ const key=raw.toLowerCase().replace(/\s+/g,' ');
+ const known={
+  'color':'Color','colors':'Color','colour':'Color','colours':'Color',
+  'unit type':'Unit Type','unit types':'Unit Type',
+  'item length':'Item Length','plug type':'Plug Type','plug types':'Plug Type',
+  'size':'Size','sizes':'Size','qty':'QTY','quantity':'QTY'
+ };
+ return known[key]||presentationText(raw)
+}
+function formatOptionValue(value){return presentationText(value)}
+function polishVariantPresentation(data){
+ if(!data||!Array.isArray(data.dimensions)||!Array.isArray(data.variants))return data;
+ const dims=data.dimensions.map(d=>({
+  ...d,name:formatDimensionName(d.name),
+  values:Array.isArray(d.values)?d.values.map(formatOptionValue):[]
+ }));
+ const unique=values=>new Set(values.map(v=>String(v).toLowerCase())).size===values.length;
+ if(!unique(dims.map(d=>d.name))||dims.some(d=>!unique(d.values)))return data;
+ const names=new Map(data.dimensions.map((d,i)=>[clean(d.name).toLowerCase(),dims[i].name]));
+ const variants=data.variants.map(v=>{
+  const specifics=(v.specifics||[]).map(sp=>({
+   ...sp,name:names.get(clean(sp.name).toLowerCase())||formatDimensionName(sp.name),
+   value:formatOptionValue(sp.value)
+  }));
+  return{...v,specifics,label:specifics.map(sp=>sp.name+': '+sp.value).join(' · ')}
+ });
+ const keys=variants.map(v=>v.specifics.map(sp=>sp.name.toLowerCase()+'='+sp.value.toLowerCase()).sort().join('|'));
+ if(!unique(keys))return data; // Never collapse distinct eBay combinations.
+ return {...data,dimensions:dims,variants}
+}
+
 function normalize(payload,fallbackCurrency,sourceId){
  if(!payload||payload.ok!==true)throw Error(String(payload?.error||'Risposta varianti non valida'));
  if(payload.itemId!==undefined&&payload.itemId!==null&&String(payload.itemId)!==String(sourceId))throw Error('ID prodotto diverso nella risposta varianti');
@@ -343,6 +398,6 @@ function readItemCategory(doc){
  // the product page does not expose one with BOTH a name and numeric id.
  return candidates.length?candidates[candidates.length-1]:{categoryId:'',categoryName:''}
 }
-root.__priceMatchVariantTools={normalize,probe,marketPrice,inspectPage,enrichVariantsFromPage,getMskuPrices,readItemCategory,mskuVariants,optionText,isPlaceholder};
+root.__priceMatchVariantTools={normalize,probe,marketPrice,inspectPage,enrichVariantsFromPage,getMskuPrices,readItemCategory,mskuVariants,optionText,isPlaceholder,formatDimensionName,formatOptionValue,polishVariantPresentation};
 if(typeof module==='object'&&module.exports)module.exports=root.__priceMatchVariantTools;
 })(typeof globalThis==='object'?globalThis:this);
