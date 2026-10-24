@@ -213,7 +213,12 @@ async function probeVariants(reload=false){
   const recovered=typeof variantTools.enrichVariantsFromPage==='function'
     ?variantTools.enrichVariantsFromPage(document,result.variants,data.price?.currency||C.currencyFromHost(hostname))
     :result.variants;
-  const variants=recovered.map(v=>{
+  // Apply cosmetics only AFTER raw eBay keys/specifics were used for MSKU price matching.
+  // The original v.key is never changed (Master state and selectedKey remain stable).
+  const presentation=typeof variantTools.polishVariantPresentation==='function'
+    ?variantTools.polishVariantPresentation({dimensions:result.dimensions,variants:recovered})
+    :{dimensions:result.dimensions,variants:recovered};
+  const variants=presentation.variants.map(v=>{
    const old=previous.get(v.key);
    return {...v,
     sourcePrice:v.sourcePrice??old?.sourcePrice??null,
@@ -229,7 +234,7 @@ async function probeVariants(reload=false){
    initial.discount=S.discount;initial.manualSale=S.manualSale;
    if(S.manualSale&&S.sale>0)initial.sale=S.sale
   }
-  S.variants=variants;S.dimensions=result.dimensions;S.variantMode=true;
+  S.variants=variants;S.dimensions=presentation.dimensions;S.variantMode=true;
   S.variantStatus=result.complete&&result.source==='msku'?'msku':origin==='pagina'?'partial':'confirmed';
   el('variants-block').style.display='block';el('variants-count').textContent='('+variants.length+' rilevate)';
   chooseMaster(first.key,false);
