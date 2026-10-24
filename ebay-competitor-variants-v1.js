@@ -280,7 +280,7 @@ function inspectPage(doc,href,selectedPrice,fallbackCurrency,itemId){
  const nativeMskuCount=selectors.filter(e=>e.closest?.('.x-msku-evo,.x-msku')||/msku|variation/i.test(String(e.id||'')+' '+String(e.name||''))).length;
  const expectedMenuCount=readMskuJson(doc)?.selectMenus?.length||0;
  if(widgetRoots.size>1||nativeMskuCount>1||expectedMenuCount>1||parts.length>1){
-  return {hasSelects:true,hasVariations:false,reason:'Attributi multipli eBay: attendo combinazioni MSKU complete; nessuna combinazione inventata'}
+  return {hasSelects:true,hasVariations:false,visibleDimensionCount:Math.max(widgetRoots.size,nativeMskuCount,expectedMenuCount,parts.length),reason:'Attributi multipli eBay: attendo combinazioni MSKU complete; nessuna combinazione inventata'}
  }
  if(parts.length!==1)return {hasSelects:parts.length>0||foundMskuListbox,hasVariations:false,reason:foundMskuListbox?'Menu varianti eBay trovato, opzioni non ancora caricate':'Nessun selettore variante compatibile'};
  const part=parts[0],used=new Set(),variants=[];
