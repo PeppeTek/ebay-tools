@@ -31,7 +31,7 @@ for(const mk of Object.keys(C.MARKETS)){
  // A new manually saved V2 profile may override the preset fee tiers.
  const customV2=!!savedLocal&&Number(savedLocal.feePresetVersion)>=2;
  const percentages=valid?Object.fromEntries(fields.filter(k=>k!=='fixedFee').map(k=>[k,Number(r[k])])):{};
- S.fees[mk]={...preset,...percentages,sellerDiscountPct:Number(savedLocal?.sellerDiscountPct??0),shippingCharge:Number(savedLocal?.shippingCharge??0)};
+ S.fees[mk]={...preset,...percentages,sellerDiscountPct:Number(savedLocal?.sellerDiscountPct??0),shippingCharge:Number(savedLocal?.shippingCharge??0),fxConversionPct:Number(savedLocal?.fxConversionPct??0.03)};
  if(customV2){
    S.fees[mk].fixedFee=Number(savedLocal.fixedFee);
    for(const k of tierKeys)if(savedLocal[k]!==undefined)S.fees[mk][k]=Number(savedLocal[k]);
@@ -50,7 +50,7 @@ const style=document.createElement('style');style.id=styleId;style.textContent=
 '#'+panelId+' .source{display:grid;grid-template-columns:1fr 115px 70px;gap:8px;align-items:center;margin:7px 0}'+
 '#'+panelId+' .row{display:grid;grid-template-columns:minmax(0,1fr) 84px 106px;gap:8px;align-items:center;min-height:40px;border-bottom:1px solid #e8e8e8;padding:4px 0}'+
 '#'+panelId+' .row .val{text-align:right;font-weight:bold;color:#16813f}#'+panelId+' .row .val small{display:block;font-weight:400;font-size:10px;color:#777;margin-top:3px}'+
-'#'+panelId+' .hint{font-size:10px;color:#666;line-height:1.4;margin:8px 0}#'+panelId+' .buttons{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px 14px}'+
+'#'+panelId+' .row.dc-profit-row{grid-template-columns:minmax(0,1fr) minmax(0,220px)}#'+panelId+' .dc-profit-line{display:block;text-align:right;white-space:nowrap;font-size:12px;padding:2px 0}#'+panelId+' .hint{font-size:10px;color:#666;line-height:1.4;margin:8px 0}#'+panelId+' .buttons{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px 14px}'+
 '#'+panelId+' .buttons button{height:42px;border:1px solid #aaa;border-radius:21px;cursor:pointer;font-size:13px;font-weight:700}'+
 '#'+panelId+' .span2{grid-column:1/-1}#'+panelId+' .settings{display:none;background:#fafafa;padding:12px 14px;border-top:1px solid #ddd}'+
 '#'+panelId+' .settings.open{display:block}#'+panelId+' .feegrid{display:grid;grid-template-columns:1fr 90px;gap:7px;align-items:center}'+
@@ -83,7 +83,7 @@ panel.innerHTML='<div class="hd"><b><span style="color:#0cbcae">◩</span> DROPP
 '<div class="row"><label>Prezzo di vendita:</label><input data-el="sale" type="number" min=".01" step=".01"><div class="val" data-el="sale-view">—</div></div>'+
 '<div class="row"><label>Incasso al netto delle commissioni:</label><span></span><div class="val" data-el="net" style="color:#d97706">—</div></div>'+
 '<div class="row"><label>Costo d’acquisto (USD):</label><input type="number" data-el="cost" step=".01" min="0" title="Inserisci costo acquisto in USD" placeholder="—"><div class="val" data-el="cost-view" style="color:#e3342f">—</div></div>'+
-'<div class="row"><label>Il mio utile netto:</label><span></span><div class="val" data-el="profit">—</div></div>'+
+'<div class="row dc-profit-row"><label>Il mio utile netto:</label><div class="val" data-el="profit">—</div></div>'+
 '<div class="row"><label>Prezzo minimo di pareggio:</label><span></span><div class="val" data-el="break-even" style="color:#2563eb">—</div></div>'+
 '<div class="hint" data-el="fee-details"></div><div class="hint" data-el="fx-status"></div></div>'+
 '<div class="settings" data-el="settings"><b>Tariffe per paese selezionato</b><p class="hint">Le tariffe fisse US e CA sono espresse direttamente nella valuta del paese, non convertite da 0,40 USD. L\'Australia usa il valore osservato nel tuo estratto, modificabile.</p><div class="feegrid" data-el="feegrid" style="margin-top:9px"></div><button data-el="save-rates" style="margin-top:9px;padding:8px;background:#2563eb;color:white;border:0;border-radius:7px;cursor:pointer">Salva tariffe per questo paese</button></div>'+
@@ -342,8 +342,21 @@ function recalc(){
  textMoney('sale-view',S.sale,S.sale!==null&&fx?C.round(S.sale*fx):null);
  textMoney('net',st?.net??null,st&&fx?C.round(st.net*fx):null);
  textMoney('cost-view',st?.costLocal??null,st?.costUsd??null);
- textMoney('profit',st?.profitLocal??null,st?.profitUSD??null);
- el('profit').style.color=st?.profitUSD<0?'#b42318':'#16803d';
+ // Only the profit row is USD/EUR on every marketplace. No fee for display.
+ const profitNode=el('profit');profitNode.replaceChildren();
+ if(st?.profitUSD===null||st?.profitUSD===undefined){
+  profitNode.textContent='—';
+ }else{
+  const euroToUsd=Number(S.fx.EUR);
+  const profitEur=euroToUsd>0?C.round(st.profitUSD/euroToUsd):null;
+  for(const [amount,currency] of [[st.profitUSD,'USD'],[profitEur,'EUR']]){
+   const line=document.createElement('div');line.className='dc-profit-line';
+   const margin=st.marginPct===null?'—':st.marginPct.toFixed(2)+'%';
+   line.textContent=margin+'  ·  '+(amount===null?'—':amount.toFixed(2))+' '+currency;
+   profitNode.appendChild(line)
+  }
+ }
+ profitNode.style.color=st?.profitUSD<0?'#b42318':'#16803d';
  textMoney('break-even',st?.breakEven??null,st?.breakEven!=null&&fx?C.round(st.breakEven*fx):null);
  const ratesAtOpening=S.fxAtStartup;
  el('fx-status').textContent=ratesAtOpening?('Cambio caricato all’avvio (Frankfurter · cache max 24 ore): 1 USD = '+(1/ratesAtOpening.CAD).toFixed(4)+' CAD · 1 USD = '+(1/ratesAtOpening.AUD).toFixed(4)+' AUD'):'Cambio all’avvio: in attesa di CAD e AUD';
@@ -384,6 +397,21 @@ function renderFeeDetails(st){
  line('Commissioni prima IVA',st.feeSubtotal,true);
  line('IVA sulle commissioni ('+C.round(S.fees[S.market].vatOnFees*100)+'%)',st.vat);
  line('TOTALE COMMISSIONI',st.fee,true);
+ // FX expense belongs under the same details menu, after selling fees.
+ const section=document.createElement('div');
+ section.style.cssText='margin-top:10px;padding-top:9px;border-top:1px solid #cbd5e1';
+ const title=document.createElement('b');title.textContent='CONVERSIONE VALUTARIA ('+C.round(st.conversionRate*100)+'%)';
+ section.appendChild(title);
+ function fxDetail(label,value){
+  const row=document.createElement('div');row.className='dc-fee-line';
+  const left=document.createElement('span');left.textContent=label;
+  const right=document.createElement('b');right.textContent=value;
+  row.append(left,right);section.appendChild(row)
+ }
+ const euroToUsd=Number(S.fx.EUR);
+ fxDetail('Perdita dovuta alla conversione (EUR)',euroToUsd>0&&st.conversionLossUSD!==null?C.round(st.conversionLossUSD/euroToUsd).toFixed(2)+' EUR':'— EUR');
+ fxDetail('Incidenza sul margine (punti percentuali)',st.conversionMarginImpactPp!==null?st.conversionMarginImpactPp.toFixed(2)+' p.p.':'— p.p.');
+ wrapper.appendChild(section);
  box.appendChild(wrapper)
 }
 function renderComparison(){
@@ -427,7 +455,7 @@ async function getToUSD(code){
  }finally{clearTimeout(timer)}
 }
 async function fxUpdate(){
- const seq=++S.fxSequence, needed=[...new Set(['USD','CAD','AUD',cur(),S.sourceCur])];S.fxInfo='Recupero cambi…';recalc();
+ const seq=++S.fxSequence, needed=[...new Set(['USD','CAD','AUD','EUR',cur(),S.sourceCur])];S.fxInfo='Recupero cambi…';recalc();
  const results=await Promise.allSettled(needed.map(async currency=>[currency,await getToUSD(currency)]));
  if(seq!==S.fxSequence||!panel.isConnected)return;
  const errors=[];
@@ -441,7 +469,7 @@ async function fxUpdate(){
  else if(data.hasPriceVariants)message('Prodotto con possibili varianti: controlla il prezzo selezionato e usa ↻ per aggiornarlo.','warn');
  else message('Calcolatore pronto: verifica prezzo e valuta originali prima del salvataggio.','ok')
 }
-const labels={ebayFee:'Tariffa eBay (%)',internationalFee:'Tariffa internazionale (%)',marketingFee:'Marketing (%)',vatOnFees:'IVA sulle tariffe (%)',salesTaxEstimate:'Sales Tax stimata (%)',sellerDiscountPct:'Discount from seller (%)'};
+const labels={ebayFee:'Tariffa eBay (%)',internationalFee:'Tariffa internazionale (%)',marketingFee:'Marketing (%)',vatOnFees:'IVA sulle tariffe (%)',salesTaxEstimate:'Sales Tax stimata (%)',sellerDiscountPct:'Discount from seller (%)',fxConversionPct:'Costo conversione valutaria eBay (%)'};
 function feeLabel(key){
  if(key==='fixedFee')return 'Tariffa fissa ('+cur()+')';
  if(key==='shippingCharge')return 'Shipping and handling ('+cur()+')';
@@ -466,7 +494,7 @@ function renderSettings(){
   }
   container.append(label,input);
  }
- for(const key of [...fields,'sellerDiscountPct','shippingCharge'])makeFeeField(key,box);
+ for(const key of [...fields,'sellerDiscountPct','shippingCharge','fxConversionPct'])makeFeeField(key,box);
  if(S.market!=='AU'){
   const details=document.createElement('details');details.className='dc-tier-details';
   details.style.gridColumn='1 / -1';
