@@ -55,7 +55,7 @@ const style=document.createElement('style');style.id=styleId;style.textContent=
 '#'+panelId+' .span2{grid-column:1/-1}#'+panelId+' .settings{display:none;background:#fafafa;padding:12px 14px;border-top:1px solid #ddd}'+
 '#'+panelId+' .settings.open{display:block}#'+panelId+' .feegrid{display:grid;grid-template-columns:1fr 90px;gap:7px;align-items:center}'+
 '#'+panelId+' .dc-tier-details{margin:5px 0;padding:8px;border:1px solid #e1e5ec;border-radius:7px;background:#fff}#'+panelId+' .dc-tier-details summary{font-size:11px;font-weight:700;line-height:1.5;cursor:pointer;list-style:revert}#'+panelId+' .dc-tier-details .feegrid{margin-top:9px}'+
-'#'+panelId+' .dc-fee-table{border:1px solid #e1e5ec;border-radius:7px;padding:9px 10px;margin:9px 0;background:#f8fafc;font-size:11px;line-height:1.45}#'+panelId+' .dc-fee-table summary{cursor:pointer;list-style:revert;color:#111;font-weight:700}#'+panelId+' .dc-fee-table[open] summary{margin-bottom:5px}#'+panelId+' .dc-fee-table .dc-fee-line{display:flex;justify-content:space-between;gap:14px;padding:4px 0;border-bottom:1px solid #e7ebf0}#'+panelId+' .dc-fee-table .dc-fee-line:last-child{border-bottom:0}#'+panelId+' .dc-fee-table .dc-fee-line b{text-align:right;white-space:nowrap}#'+panelId+' .dc-fee-table .dc-fee-emphasis{font-weight:700;color:#1d4ed8}'+
+'#'+panelId+' .dc-fee-table{border:1px solid #e1e5ec;border-radius:7px;padding:9px 10px;margin:9px 0;background:#f8fafc;font-size:11px;line-height:1.45}#'+panelId+' .dc-fee-table summary{cursor:pointer;list-style:revert;color:#111;font-weight:700}#'+panelId+' .dc-fee-table[open] summary{margin-bottom:5px}#'+panelId+' .dc-fee-table .dc-fee-line{display:flex;justify-content:space-between;gap:14px;padding:4px 0;border-bottom:1px solid #e7ebf0}#'+panelId+' .dc-fee-table .dc-fee-line:last-child{border-bottom:0}#'+panelId+' .dc-fee-table .dc-fee-line b{text-align:right;white-space:nowrap}#'+panelId+' .dc-fee-table .dc-fee-emphasis{font-weight:700;color:#1d4ed8}#'+panelId+' .dc-fx-section,#'+panelId+' .dc-fx-section *{color:#000!important}'+
 '#'+panelId+' .dc-variants{margin:10px 0 12px}#'+panelId+' .dc-variants-head{font-weight:700;margin:0 0 7px}'+
 '#'+panelId+' .dc-variant-list{max-height:270px;overflow-y:auto;border:1px solid #e1e5ec;border-radius:7px;background:#fff}'+
 '#'+panelId+' .dc-variant-item{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.9fr) 76px minmax(0,.9fr);gap:6px;align-items:center;padding:8px 7px;border-bottom:1px solid #e7ebf0;font-size:11px}'+
@@ -383,7 +383,7 @@ function renderFeeDetails(st){
  line('Prezzo articolo / unità',st.itemPrice);
  line('Sconto venditore / unità (−'+st.discountPct+'%)',-st.discount);
  line('Spedizione cliente / unità',st.shipping);
- line('Sales Tax / unità',st.tax);
+ line('Sales Tax / unità ('+C.round(S.fees[S.market].salesTaxEstimate*100)+'%)',st.tax);
  line('Base commissionabile / unità',st.masterPerUnit,true);
  const q=document.createElement('div');q.className='dc-fee-line';
  const label=document.createElement('span');label.textContent='Quantità';
@@ -399,6 +399,7 @@ function renderFeeDetails(st){
  line('TOTALE COMMISSIONI',st.fee,true);
  // FX expense belongs under the same details menu, after selling fees.
  const section=document.createElement('div');
+ section.className='dc-fx-section';
  section.style.cssText='margin-top:10px;padding-top:9px;border-top:1px solid #cbd5e1';
  const title=document.createElement('b');title.textContent='CONVERSIONE VALUTARIA ('+C.round(st.conversionRate*100)+'%)';
  section.appendChild(title);
@@ -410,7 +411,7 @@ function renderFeeDetails(st){
  }
  const euroToUsd=Number(S.fx.EUR);
  fxDetail('Perdita dovuta alla conversione (EUR)',euroToUsd>0&&st.conversionLossUSD!==null?C.round(st.conversionLossUSD/euroToUsd).toFixed(2)+' EUR':'— EUR');
- fxDetail('Incidenza sul margine (punti percentuali)',st.conversionMarginImpactPp!==null?st.conversionMarginImpactPp.toFixed(2)+' p.p.':'— p.p.');
+ fxDetail('Incidenza sul margine (%)',st.conversionMarginImpactPp!==null?st.conversionMarginImpactPp.toFixed(2)+'%':'— %');
  wrapper.appendChild(section);
  box.appendChild(wrapper)
 }
