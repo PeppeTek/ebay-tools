@@ -85,7 +85,10 @@ function breakEvenPrice(costUsd,fx,rates,options={}){
  if(!Number.isFinite(c)||c<0||!Number.isFinite(fxn)||fxn<=0)return null;
  const r={...DEFAULT_FEES,...(rates||{})},qty=options.quantity===undefined?1:Number(options.quantity);
  if(!Number.isInteger(qty)||qty<1||qty>1000)return null;
- const target=c*qty/fxn;
+ // Account for the one-time currency-conversion loss when finding break-even.
+ const conversionRate=Number(r.fxConversionPct??0);
+ if(!Number.isFinite(conversionRate)||conversionRate<0||conversionRate>=1)return null;
+ const target=c*qty/(fxn*(1-conversionRate));
  const f=cent=>feeItems(cent/100,r,options);
  const positive=cent=>{const x=f(cent);return !!x&&x.net+0.000001>=target};
  const MAX=100000000;
@@ -114,11 +117,24 @@ function fees(price,rates,toUsd,purchaseUsd,options={}){
  const fx=Number(toUsd)>0?Number(toUsd):null;
  const c=purchaseUsd==null||purchaseUsd===''?null:Number(purchaseUsd);
  const validCost=c!==null&&Number.isFinite(c)&&c>=0,extendedCost=validCost?round(c*parts.quantity):null;
+ // eBay incorporates the conversion charge by reducing the FX rate. Reflect its
+ // equivalent cost in the final profit, not in the selling-fee subtotal.
+ const conversionRate=Number(rates?.fxConversionPct??0);
+ if(!Number.isFinite(conversionRate)||conversionRate<0||conversionRate>=1)return null;
+ const netUsdBeforeConversion=fx?round(parts.net*fx):null;
+ const conversionLossUSD=fx?round(netUsdBeforeConversion*conversionRate):null;
+ const netUsdAfterConversion=fx?round(netUsdBeforeConversion-conversionLossUSD):null;
+ const profitBeforeConversionUSD=validCost&&fx?round(netUsdBeforeConversion-extendedCost):null;
+ const profitUSD=validCost&&fx?round(netUsdAfterConversion-extendedCost):null;
+ const revenueUSD=fx?parts.buyerRevenue*fx:null;
+ const marginPctBeforeConversion=profitBeforeConversionUSD!==null&&revenueUSD>0?round(100*profitBeforeConversionUSD/revenueUSD):null;
+ const marginPct=profitUSD!==null&&revenueUSD>0?round(100*profitUSD/revenueUSD):null;
  const be=validCost&&fx?breakEvenPrice(c,fx,rates,options):null;
- const profitUSD=validCost&&fx?round(parts.net*fx-extendedCost):null;
- return {sale:p,...parts,netUsd:fx?round(parts.net*fx):null,costLocal:validCost&&fx?round(extendedCost/fx):null,
+ return {sale:p,...parts,netUsd:netUsdBeforeConversion,costLocal:validCost&&fx?round(extendedCost/fx):null,
    costUsd:extendedCost,profitUSD,profitLocal:profitUSD!==null&&fx?round(profitUSD/fx):null,
-   breakEven:be,marginPct:profitUSD!==null&&parts.buyerRevenue>0&&fx?round(100*profitUSD/(parts.buyerRevenue*fx)):null};
+   breakEven:be,marginPct,conversionRate,conversionLossUSD,netUsdAfterConversion,
+   profitBeforeConversionUSD,marginPctBeforeConversion,
+   conversionMarginImpactPp:marginPct!==null&&marginPctBeforeConversion!==null?round(marginPctBeforeConversion-marginPct):null};
 }
 function adjusted(source,discountPct){const n=Number(source),d=Number(discountPct);return Number.isFinite(n)&&n>0&&Number.isFinite(d)&&d>-100&&d<=1000?round(n*(1+d/100)):null;}
 function readDocument(doc,host,href){
