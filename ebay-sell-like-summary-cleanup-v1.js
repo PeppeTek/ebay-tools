@@ -5,6 +5,7 @@ const ENDPOINT_KEY='pep-ebay-bs-v6-google-url';
 const DISCOUNT_KEY='capitan-sell-like-discount-rate-v1';
 let discountRate=-.02,reverseSaveTimer=null;
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
+const formatMarketAmount=n=>/^(?:www\.)?ebay\.it$/i.test(location.hostname)&&window.__capitanSellLikeCurrency==='EUR'?Number(n).toFixed(2).replace('.',','):Number(n).toFixed(2);
 function endpoint(){return String(localStorage.getItem(ENDPOINT_KEY)||'').replace(/\/+$/,'')}
 function jsonpAction(action,params){const ep=endpoint();return new Promise((resolve,reject)=>{if(!ep)return reject(Error('Endpoint Apps Script non configurato'));const cb='__capitanDiscountCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),30000);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:Date.now().toString(),...(params||{})});s.src=ep+(ep.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
 function discountText(){const n=Number(discountRate||0)*100;return (Math.round(n*100)/100).toLocaleString('it-IT',{minimumFractionDigits:Number.isInteger(n)?0:2,maximumFractionDigits:2})+'%'}
@@ -72,7 +73,7 @@ function cleanup(){
   const competitor=p.querySelector('#capitan-competitor-price');
   if(competitor){
     const source=Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice);
-    competitor.textContent=isFinite(source)&&source>0?source.toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD'):'—';
+    competitor.textContent=isFinite(source)&&source>0?formatMarketAmount(source)+' '+(window.__capitanSellLikeCurrency||'USD'):'—';
   }
 
   // Sale-price row: percentage is no longer repeated in the label/value.
@@ -85,6 +86,7 @@ function cleanup(){
     if(value){
       let t=clean(value.textContent||'').replace(/\s*\(-\d+(?:[.,]\d+)?%\)\s*$/i,'');
       if(/^\d+(?:[.,]\d+)?$/i.test(t))t=t+' '+(window.__capitanSellLikeCurrency||'USD');
+      if(/^(?:www\.)?ebay\.it$/i.test(location.hostname)&&window.__capitanSellLikeCurrency==='EUR')t=t.replace(/(\d+)\.(\d{2})(?=\s*EUR|$)/,'$1,$2');
       value.textContent=' '+t;
     }
   }
