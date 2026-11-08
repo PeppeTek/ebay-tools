@@ -400,6 +400,13 @@ async function enableHtmlMode(){
 }
 async function setDescription(html,htmlMode){
   html=String(html||'');
+  if(!clean(html))return false;
+  // Check that the editor contains THIS template, not just pre-existing text.
+  const expectedText=clean(new DOMParser().parseFromString(html,'text/html').body?.textContent||'');
+  const confirmsContent=el=>{
+   const markup=clean(el?.innerHTML||''),actual=clean(el?.textContent||'');
+   return markup===clean(html)||(expectedText.length>=12&&actual.includes(expectedText.slice(0,Math.min(90,expectedText.length))))
+  };
   const sec=descriptionSection();
   let ta=null;
   for(let i=0;i<20&&!ta;i++){
@@ -424,7 +431,7 @@ async function setDescription(html,htmlMode){
     ed.focus();ed.innerHTML=html;
     try{ed.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertHTML',data:html}))}catch(_){ed.dispatchEvent(new Event('input',{bubbles:true}))}
     ed.dispatchEvent(new Event('change',{bubbles:true}));ed.blur?.();await sleep(350);
-    return clean(ed.innerHTML).length>0
+    return confirmsContent(ed)
   }
   for(const iframe of [...sec.querySelectorAll('iframe')].filter(visible)){
    try{
@@ -434,7 +441,7 @@ async function setDescription(html,htmlMode){
     try{body.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertHTML',data:html}))}
     catch(_){body.dispatchEvent(new Event('input',{bubbles:true}))}
     body.dispatchEvent(new Event('change',{bubbles:true}));body.blur?.();await sleep(350);
-    if(clean(body.innerHTML).length>0&&clean(body.textContent).length>0)return true
+    if(confirmsContent(body))return true
    }catch(_){} // Never bypass cross-origin restrictions
   }
   return false
