@@ -51,7 +51,7 @@ const FX_CACHE_KEY='capitan-sell-like-fx-to-usd-v2';
 const FX_TTL_MS=24*60*60*1000;
 function marketCurrency(){return String(window.__capitanSellLikeCurrency||window.__capitanSellLikeCloneData?.currency||'USD').toUpperCase()}
 function roundCurrency(n){return Math.round((n+Number.EPSILON)*100)/100}
-function formatted(n,c){return Number.isFinite(n)?roundCurrency(n).toFixed(2)+' '+c:'— '+c}
+function formatted(n,c){if(!Number.isFinite(n))return '— '+c;const amount=roundCurrency(n).toFixed(2);return (c==='EUR'&&/^(?:www\.)?ebay\.it$/i.test(location.hostname)?amount.replace('.',','):amount)+' '+c}
 function readNumeric(el){
   const raw=clean(el&&el.textContent||'');
   const match=raw.match(/^-?\d+(?:[.,]\d+)?/);
@@ -261,7 +261,7 @@ function observeStatus(){
 window.addEventListener('capitan-ai-description-updated',()=>log('Template AI-HTML generato','ok'));
 window.addEventListener('capitan-pricing-saved',()=>log('Tariffe aggiornate','ok'));
 window.addEventListener('capitan-shipping-policy-updated',e=>log('Shipping aggiornato: '+clean(e.detail?.target||e.detail?.shipping||''),'ok'));
-window.addEventListener('capitan-sale-price-updated',e=>log('Prezzo di vendita aggiornato: '+Number(e.detail?.value||0).toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD'),'ok'));
+window.addEventListener('capitan-sale-price-updated',e=>log('Prezzo di vendita aggiornato: '+(window.__capitanSellLikeCurrency==='EUR'&&/^(?:www\.)?ebay\.it$/i.test(location.hostname)?Number(e.detail?.value||0).toFixed(2).replace('.',','):Number(e.detail?.value||0).toFixed(2))+' '+(window.__capitanSellLikeCurrency||'USD'),'ok'));
 window.addEventListener('capitan-sell-like-ui-ready',()=>{ensureUi();wireButtons();observeStatus();queueDualRefresh();log('UI pronta','ok')});
 window.addEventListener('capitan-sale-price-updated',queueDualRefresh);
 window.addEventListener('capitan-discount-updated',queueDualRefresh);
