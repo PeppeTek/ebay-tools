@@ -535,6 +535,7 @@ function countryCode(v){
 }
 function marketplaceConfig(){
   const host=String(location.hostname||'').toLowerCase().replace(/^www\./,'');
+  if(host==='ebay.it')throw Error('eBay Italia (EUR): catalogo online e CSV IT non ancora configurati. Esportazione USA bloccata per evitare dati e valuta errati.');
   if(/ebay\.com\.au$/.test(host))return {marketplace:'AU',sheetName:'Catalogo AU',currency:'AUD',action:'*Action(SiteID=Australia|Country=US|Currency=AUD|Version=1193)'};
   if(/ebay\.ca$/.test(host))return {marketplace:'CA',sheetName:'Catalogo CA',currency:'CAD',action:'*Action(SiteID=Canada|Country=US|Currency=CAD|Version=1193|CC=UTF-8)'};
   return {marketplace:'US',sheetName:'Catalogo USA',currency:'USD',action:'*Action(SiteID=US|Country=US|Currency=USD|Version=1193)'}
