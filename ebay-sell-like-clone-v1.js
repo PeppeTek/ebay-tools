@@ -317,8 +317,8 @@ panel.querySelector('[data-close]').onclick=()=>{stopProcessTimer();panel.remove
 const steps=panel.querySelector('#steps'),status=panel.querySelector('#st');
 const add=(name,state,msg)=>{const d=document.createElement('div');d.className='row';d.innerHTML=`<b>${esc(name)}:</b> <span class="${state}">${esc(msg)}</span>`;steps.appendChild(d);return d};
 function endpoint(){let u=String(window.__capitanSellLikeBackendEndpoint||'').trim();if(!/^https:\/\/script\.google\.com\/macros\/s\//i.test(u)){try{u=localStorage.getItem(ENDPOINT_KEY)||''}catch(_){u=''}}if(!/^https:\/\/script\.google\.com\/macros\/s\//i.test(u)){u=prompt('Incolla l’URL Web App Apps Script già usato dal bookmarklet eBay:','')||'';u=u.trim();try{if(u)localStorage.setItem(ENDPOINT_KEY,u)}catch(_){}}return u.replace(/\/+$/,'');}
-function jsonp(u){return new Promise((resolve,reject)=>{const cb='__capitanCloneCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),90000);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));s.src=u+(u.includes('?')?'&':'?')+'action=clone_prepare&itemId='+encodeURIComponent(itemId)+'&callback='+encodeURIComponent(cb)+'&_='+Date.now();document.head.appendChild(s)})}
-function jsonpAction(u,action,params,timeoutMs=90000){return new Promise((resolve,reject)=>{const cb='__capitanActionCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),timeoutMs);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:String(Date.now()),...(params||{})});s.src=u+(u.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
+function jsonp(u){return new Promise((resolve,reject)=>{const cb='__capitanCloneCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),90000);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));s.src=u+(u.includes('?')?'&':'?')+'action=clone_prepare&itemId='+encodeURIComponent(itemId)+'&callback='+encodeURIComponent(cb)+(EBAY_SOURCE_HOST==='ebay.it'?'&lang=it':'')+'&_='+Date.now();document.head.appendChild(s)})}
+function jsonpAction(u,action,params,timeoutMs=90000){return new Promise((resolve,reject)=>{const cb='__capitanActionCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6),s=document.createElement('script'),t=setTimeout(()=>done(Error('Timeout backend')),timeoutMs);function done(err,val){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove();err?reject(err):resolve(val)}window[cb]=v=>done(null,v);s.onerror=()=>done(Error('Backend non raggiungibile'));const q=new URLSearchParams({action,callback:cb,_:String(Date.now()),...(params||{}),...(EBAY_SOURCE_HOST==='ebay.it'&&/^(clone_prepare|sell_like_ai_retry)$/.test(action)?{lang:'it'}:{})});s.src=u+(u.includes('?')?'&':'?')+q.toString();document.head.appendChild(s)})}
 function isAiDescriptionError(v){return /groq|descrizione\s+valida|risposta\s+ai|risposta\s+groq|description/i.test(clean(v))}
 function labelControl(re){for(const l of document.querySelectorAll('label')){const txt=clean(l.innerText||l.textContent);if(!re.test(txt))continue;let c=l.htmlFor?document.getElementById(l.htmlFor):l.querySelector('input,textarea,select,[role="combobox"]');if(c)return c;let p=l.parentElement;for(let i=0;i<4&&p;i++,p=p.parentElement){c=p.querySelector('input,textarea,select,[role="combobox"]');if(c)return c}}return null}
 function candidates(sel,re){return [...document.querySelectorAll(sel)].filter(e=>!e.disabled).sort((a,b)=>(visible(b)?1:0)-(visible(a)?1:0)).find(e=>re.test(clean([e.name,e.id,e.getAttribute('aria-label'),e.placeholder].join(' '))))||null}
@@ -465,6 +465,7 @@ function attachAiRetry(row,data){
     try{
       const r=await jsonpAction(AI_RECOVERY_ENDPOINT,'sell_like_ai_retry',{itemId},90000);
       if(!r||!r.ok)throw Error(r&&r.error||'Retry AI non riuscito');
+      if(EBAY_SOURCE_HOST==='ebay.it'&&r.descriptionLanguage!=='it')throw Error('Backend AI non conferma lingua italiana. Aggiorna Apps Script.');
       const retryHtmlMode=await enableHtmlMode();
       if(!await setDescription(r.descriptionHtml,retryHtmlMode))throw Error('editor HTML non trovato');
       data.descriptionHtml=r.descriptionHtml;
@@ -640,9 +641,10 @@ async function initialNonAiData(){
   }
   return {mode:(mi&&mi.mode==='variants')||(pre&&pre.hasVariations)?'variants':'mono',data}
 }
-let pendingPreviewAiResponse=null;
+let pendingPreviewAiResponse=null,pendingPreviewLocaleError=false;
 async function ensurePreviewFullData(){
   if(previewReady)return true;
+  if(pendingPreviewLocaleError)throw Error('AI italiana non attiva nel backend Apps Script: aggiorna il deployment e ricarica la pagina.');
   if(previewPreparePromise)return previewPreparePromise;
   previewPreparePromise=(async()=>{
     const ep=endpoint();if(!ep)throw Error('URL backend mancante.');
@@ -665,6 +667,11 @@ async function ensurePreviewFullData(){
       }catch(aiErr){console.warn('Sell Like Preview AI retry',aiErr)}
     }
     if(response.aiFallback||!clean(response.descriptionHtml))throw Error('Template AI-HTML non disponibile: Preview non avviata.');
+    if(EBAY_SOURCE_HOST==='ebay.it'&&response.descriptionLanguage!=='it'){
+      pendingPreviewLocaleError=true;
+      operationalLog('Backend Apps Script senza conferma lingua italiana: aggiornamento deployment richiesto','bad');
+      throw Error('Descrizione AI italiana non disponibile: backend Apps Script non ancora aggiornato.');
+    }
     pendingPreviewAiResponse=response;
 
     status.textContent='Inserimento Template AI-HTML nella descrizione…';
