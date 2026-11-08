@@ -646,8 +646,9 @@ async function ensurePreviewFullData(){
   if(previewPreparePromise)return previewPreparePromise;
   previewPreparePromise=(async()=>{
     const ep=endpoint();if(!ep)throw Error('URL backend mancante.');
-    status.textContent='Generazione Template AI-HTML in corso…';
-    operationalLog('Generazione Template AI-HTML in corso…','warn');
+    const alreadyGenerated=!!pendingPreviewAiResponse;
+    status.textContent=alreadyGenerated?'Riprovo inserimento Template AI-HTML nell’editor…':'Generazione Template AI-HTML in corso…';
+    operationalLog(alreadyGenerated?'Reinserimento Template AI-HTML senza nuova generazione AI':'Generazione Template AI-HTML in corso…','warn');
     let response=pendingPreviewAiResponse;
     if(response)operationalLog('Template AI-HTML riutilizzato: nessuna nuova chiamata AI','warn');
     else response=await jsonp(ep);
@@ -671,7 +672,13 @@ async function ensurePreviewFullData(){
     const htmlMode=await enableHtmlMode();
     operationalLog(htmlMode?'Modalità HTML confermata':'Modalità HTML non confermata: provo editor rich text',htmlMode?'ok':'warn');
     const descOk=await setDescription(response.descriptionHtml,htmlMode);
-    if(!descOk)throw Error('Template AI generato ma non scritto nell’editor HTML eBay');
+    if(!descOk){
+      const section=descriptionSection(),visibleCount=selector=>[...section.querySelectorAll(selector)].filter(visible).length;
+      operationalLog('Editor descrizione non confermato: textarea='+visibleCount('textarea')+
+       ', rich text='+visibleCount('[contenteditable="true"]')+', iframe='+visibleCount('iframe')+
+       ', modalità HTML='+(htmlMode?'sì':'no'),'bad');
+      throw Error('Template AI generato ma non scritto nell’editor HTML eBay')
+    }
 
     const current=window.__capitanSellLikeCloneData||{};
     current.descriptionHtml=response.descriptionHtml;
