@@ -41,7 +41,28 @@ function patchUi(){
   return true;
 }
 function nativeButtons(){const p=panel();return [...document.querySelectorAll('button,a,[role="button"]')].filter(x=>visible(x)&&(!p||!p.contains(x)));}
-function triggerNativeAction(kind){const map={list:/^list it$/i,save:/^save for later$/i,preview:/^preview$/i};const btn=nativeButtons().find(x=>map[kind].test(clean(x.innerText||x.textContent||x.getAttribute('aria-label')||'')));if(btn){btn.click();return true}alert('Pulsante eBay non trovato: '+kind);return false;}
+function triggerNativeAction(kind){
+ const italy=/^(?:www\.)?ebay\.it$/i.test(location.hostname);
+ const map={
+  list:italy?/^(?:list it|metti in vendita|pubblica l['’]inserzione)$/i:/^list it$/i,
+  save:italy?/^(?:save for later|salva per dopo|salva come bozza|salva e continua dopo)$/i:/^save for later$/i,
+  preview:italy?/^(?:preview|anteprima|visualizza(?:\s+l['’])?\s*anteprima|visualizza in anteprima|mostra anteprima|anteprima(?:\s+dell['’]inserzione|\s+inserzione)?|visualizza anteprima inserzione)$/i:/^preview$/i
+ };
+ const pattern=map[kind];if(!pattern)return false;
+ const candidates=nativeButtons().filter(x=>!x.disabled&&x.getAttribute('aria-disabled')!=='true');
+ const caption=x=>clean([x.innerText||x.textContent||'',x.getAttribute('aria-label')||'',x.getAttribute('title')||''].filter(Boolean).join(' '));
+ // Match either a visible caption OR an accessible label, never a substring
+ // of an unrelated eBay action such as 'Anteprima foto'.
+ const button=candidates.find(x=>pattern.test(clean(x.innerText||x.textContent||''))||
+  pattern.test(clean(x.getAttribute('aria-label')||''))||
+  pattern.test(clean(x.getAttribute('title')||'')));
+ if(button){button.click();return true}
+ if(italy){
+  reportSetting('Azione eBay '+kind+' non trovata. Controlli disponibili: '+
+   candidates.slice(-12).map(caption).filter(Boolean).map(x=>x.slice(0,55)).join(' | '),'warn');
+ }
+ alert('Pulsante eBay non trovato: '+kind);return false
+}
 
 function getLocationRow(){const p=panel();if(!p)return null;return [...p.querySelectorAll('#steps .row')].find(r=>/^Item Location:/i.test(clean(r.innerText||r.textContent)))||null;}
 function parseDisplayFromRow(row){if(!row)return'';const t=clean(row.innerText||row.textContent).replace(/^Item Location:\s*/i,'');const m=t.match(/sorgente:\s*(.*?)(?:\s+—|$)/i);return clean(m?m[1]:t.replace(/campo eBay.*$/i,''));}
