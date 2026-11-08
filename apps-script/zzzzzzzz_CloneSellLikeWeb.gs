@@ -64,7 +64,8 @@ function sellLikeCloneJsonp_(e) {
   try {
     const itemId = ebayCanonicalExtractItemId_(e && e.parameter && e.parameter.itemId || '');
     if (!itemId) throw new Error('eBay Item ID mancante/non valido.');
-    payload = sellLikeClonePrepare_(itemId);
+    const language = String(e && e.parameter && (e.parameter.lang || e.parameter.language) || '').trim().toLowerCase() === 'it' ? 'it' : 'en';
+    payload = sellLikeClonePrepare_(itemId, language);
     try {
       ebayCanonicalLog_('Sell Like Clone', payload.country || '-', itemId, 'OK',
         'Pacchetto clone preparato: immagini, descrizione AI/template, prezzo -2%, New, quantita 3.',
@@ -334,7 +335,8 @@ function sellLikeAliRefreshToken_() {
   }
 }
 
-function sellLikeClonePrepare_(itemId) {
+function sellLikeClonePrepare_(itemId, descriptionLanguage) {
+  descriptionLanguage = descriptionLanguage === 'it' ? 'it' : 'en';
   const fetched = ebayImportFetchItemWithFallback_(itemId);
   const parsed = ebayCanonicalParseFetched_(fetched, itemId);
   const price = Number(parsed.price);
@@ -354,7 +356,8 @@ function sellLikeClonePrepare_(itemId) {
   const ai = sellLikeCloneRewriteDescription_(
     String(parsed.title || ''),
     originalDescription,
-    aspects
+    aspects,
+    descriptionLanguage
   );
 
   const html = sellLikeCloneBuildTemplate_(
@@ -382,6 +385,7 @@ function sellLikeClonePrepare_(itemId) {
     condition: 'New',
     images: images,
     descriptionHtml: html,
+    descriptionLanguage: descriptionLanguage,
     aiModel: ai.model,
     itemLocation: locationParts.display,
     itemLocationParts: locationParts,
@@ -630,7 +634,7 @@ function sellLikeCloneGroqKey_() {
   throw new Error('Chiave Groq non configurata nelle Script Properties.');
 }
 
-function sellLikeCloneRewriteDescription_(title, sourceText, aspects) {
+function sellLikeCloneRewriteDescription_(title, sourceText, aspects, descriptionLanguage) {
   const props = PropertiesService.getScriptProperties();
   const apiKey = sellLikeCloneGroqKey_();
   const model = String(
@@ -646,6 +650,7 @@ function sellLikeCloneRewriteDescription_(title, sourceText, aspects) {
 
   const system = [
     'You prepare factual eBay product descriptions for a clone/reformat workflow.',
+    ...(descriptionLanguage === 'it' ? ['Write EVERY bullet and the description in natural Italian for an Italian eBay listing, even when the source is in English. Keep product facts, model numbers, units, compatibility references, and brand names accurate; do not invent or omit information.'] : []),
     'Preserve ALL distinct factual product information present in SOURCE DESCRIPTION and ITEM SPECIFICS.',
     'Do not summarize away useful facts. Do not arbitrarily reduce a long feature list to 4 or 5 items.',
     'You may remove only exact duplicates, seller-specific language, external links, competitor shop names, contact details, and generic boilerplate.',
