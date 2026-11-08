@@ -5,7 +5,9 @@ const PATCH_ID='capitan-margin-metrics-v6';
 if(document.getElementById(PATCH_ID))return;
 const marker=document.createElement('span');marker.id=PATCH_ID;marker.style.display='none';document.documentElement.appendChild(marker);
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
-const money=(n,currency='USD')=>typeof n==='number'&&Number.isFinite(n)?`${n.toFixed(2)} ${currency}`:'—';
+const italian=/^(?:www\.)?ebay\.it$/i.test(location.hostname);
+const moneyAmount=(n,currency='USD')=>currency==='EUR'&&italian?Number(n).toFixed(2).replace('.',','):Number(n).toFixed(2);
+const money=(n,currency='USD')=>typeof n==='number'&&Number.isFinite(n)?`${moneyAmount(n,currency)} ${currency}`:'—';
 let manualPurchaseCost=null;
 
 function panel(){return document.getElementById(PANEL_ID)}
@@ -36,7 +38,7 @@ function hasSourcingResults(){
 }
 function colorValue(el,val){if(!el)return;el.style.fontWeight=isFinite(val)?'700':'400';el.style.color=isFinite(val)?(val<0?'#b42318':'#137333'):''}
 function findEbayPriceField(){
-  const labelRe=/^(?:item\s+)?(?:price|buy it now price|fixed price)$/i;
+  const labelRe=italian?/^(?:item\s+)?(?:price|buy it now price|fixed price|prezzo|prezzo fisso|compralo subito)$/i:/^(?:item\s+)?(?:price|buy it now price|fixed price)$/i;
   const editorField=el=>!!(el&&!el.disabled&&!el.closest('#'+PANEL_ID));
   for(const l of document.querySelectorAll('label')){
     const t=clean(l.innerText||l.textContent);
@@ -46,7 +48,7 @@ function findEbayPriceField(){
     let p=l.parentElement;
     for(let i=0;i<4&&p;i++,p=p.parentElement){el=p.querySelector('input');if(editorField(el))return el}
   }
-  return [...document.querySelectorAll('input')].find(el=>editorField(el)&&/(^|\b)(price|binprice|startprice)(\b|$)/i.test(clean([el.name,el.id,el.getAttribute('aria-label'),el.placeholder].join(' '))))||null
+  return [...document.querySelectorAll('input')].find(el=>editorField(el)&&(italian?/(^|\b)(price|binprice|startprice|prezzo)(\b|$)/i:/(^|\b)(price|binprice|startprice)(\b|$)/i).test(clean([el.name,el.id,el.getAttribute('aria-label'),el.placeholder].join(' '))))||null
 }
 function setNativeInputValue(el,value){
   if(!el)return false;
@@ -70,7 +72,7 @@ function applyManualSalePrice(value,row,span,input){
     try{priceWritten=writer(rounded)===true}catch(e){console.warn('Sell Like manual editor price',e)}
   }else{
     const field=findEbayPriceField();
-    if(field&&setNativeInputValue(field,rounded.toFixed(2))){
+    if(field&&setNativeInputValue(field,italian&&field.type!=='number'?rounded.toFixed(2).replace('.',','):rounded.toFixed(2))){
       const actual=Number(String(field.value||'').replace(/[^0-9.,]/g,'').replace(',','.'));
       priceWritten=isFinite(actual)&&Math.abs(actual-rounded)<.011
     }
@@ -80,7 +82,7 @@ function applyManualSalePrice(value,row,span,input){
     try{window.__capitanTestLog?.('Prezzo manuale non scritto in Item price eBay','warn')}catch(_){}
     return false
   }
-  if(span){span.textContent=rounded.toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD');colorValue(span,rounded)}
+  if(span){span.textContent=money(rounded,window.__capitanSellLikeCurrency||'USD');colorValue(span,rounded)}
   window.__capitanSellLikeSalePrice=rounded;
   const source=Number(window.__capitanSellLikeSourcePrice||window.__capitanSellLikeCloneData?.sourcePrice);
   let reverseDiscount=null;
@@ -109,7 +111,7 @@ function updateSalePriceLabel(){
   if(span){
     const t=clean(span.textContent||'').replace(/\s*\(-?\d+(?:[.,]\d+)?%\)\s*$/i,'');
     current=parseNumber(t,/([0-9]+(?:[.,][0-9]+)?)/);
-    if(isFinite(current)){span.textContent=Number(current).toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD');colorValue(span,current)}
+    if(isFinite(current)){span.textContent=money(Number(current),window.__capitanSellLikeCurrency||'USD');colorValue(span,current)}
     span.style.gridColumn='3';span.style.justifySelf='end';span.style.textAlign='right';span.style.whiteSpace='nowrap'
   }
   r.style.display='grid';r.style.gridTemplateColumns='minmax(0,1fr) 82px 104px';r.style.alignItems='center';r.style.gap='8px';r.style.minHeight='38px';
@@ -121,15 +123,15 @@ function updateSalePriceLabel(){
     input.type='text';input.inputMode='decimal';
     input.title='Modifica manualmente il prezzo di vendita';
     input.style.cssText='grid-column:2;width:82px;height:28px;box-sizing:border-box;border:1px solid #c5c9cf;border-radius:7px;padding:0 7px;text-align:right;font-size:12px;background:#fff;color:#111';
-    if(isFinite(current))input.value=Number(current).toFixed(2);
+    if(isFinite(current))input.value=moneyAmount(Number(current),window.__capitanSellLikeCurrency||'USD');
     input.addEventListener('focus',()=>input.select());
-    input.addEventListener('change',()=>{if(applyManualSalePrice(input.value,r,span,input))input.value=Number(String(input.value).replace(',','.')).toFixed(2)});
-    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const raw=input.value;if(applyManualSalePrice(raw,r,span,input))input.value=Number(String(raw).replace(',','.')).toFixed(2);input.blur()}});
+    input.addEventListener('change',()=>{if(applyManualSalePrice(input.value,r,span,input))input.value=moneyAmount(Number(String(input.value).replace(',','.')),window.__capitanSellLikeCurrency||'USD')});
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const raw=input.value;if(applyManualSalePrice(raw,r,span,input))input.value=moneyAmount(Number(String(raw).replace(',','.')),window.__capitanSellLikeCurrency||'USD');input.blur()}});
     input.addEventListener('click',e=>e.stopPropagation());
     if(span)r.insertBefore(input,span);else r.appendChild(input)
   }else{
     input.style.gridColumn='2';
-    if(isFinite(current)&&document.activeElement!==input)input.value=Number(current).toFixed(2)
+    if(isFinite(current)&&document.activeElement!==input)input.value=moneyAmount(Number(current),window.__capitanSellLikeCurrency||'USD')
   }
 }
 function removeMetricRows(){return}
