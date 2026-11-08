@@ -355,14 +355,42 @@ async function setConditionNew(){
  }
  return false
 }
-function descriptionSection(){return [...document.querySelectorAll('section,div')].find(x=>(EBAY_SOURCE_HOST==='ebay.it'?/^(?:description|descrizione)$/i:/^description$/i).test(clean(x.querySelector('h2,h3,legend')?.textContent||'')))||document.body}
-async function enableHtmlMode(){const sec=descriptionSection();const items=[...sec.querySelectorAll('button,label,input[type="checkbox"],[role="checkbox"]')];for(const x of items){const txt=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute?.('aria-label')||''));if((EBAY_SOURCE_HOST==='ebay.it'?/show html code|html code|mostra (?:il )?codice html|codice html/i:/show html code|html code/i).test(txt)){if(x.matches('input[type="checkbox"]')){if(!x.checked)x.click()}else{x.click()}await sleep(500);return true}}return false}
-async function setDescription(html){
+function descriptionSection(){
+ const titleRe=EBAY_SOURCE_HOST==='ebay.it'?/^(?:description|descrizione)$/i:/^description$/i;
+ for(const heading of document.querySelectorAll('h2,h3,legend,[role="heading"]')){
+  if(!titleRe.test(clean(heading.textContent||heading.innerText||'')))continue;
+  for(let p=heading.parentElement,n=0;p&&n<8;p=p.parentElement,n++)
+   if(p.querySelector('textarea,[contenteditable="true"],iframe'))return p
+ }
+ return [...document.querySelectorAll('section,div')].find(x=>titleRe.test(clean(x.querySelector('h2,h3,legend')?.textContent||'')))||document.body
+}
+async function enableHtmlMode(){
+ const labelRe=/show\s+html\s+code|html\s+code|mostra\s+(?:il\s+)?codice\s+html|codice\s+html/i;
+ for(const root of [descriptionSection(),document]){
+  for(const x of root.querySelectorAll('label,button,[role="checkbox"],input[type="checkbox"],span')){
+   const text=clean((x.innerText||x.textContent||'')+' '+(x.getAttribute?.('aria-label')||''));
+   if(!labelRe.test(text)||text.length>110)continue;
+   const input=x.matches('input[type="checkbox"],[role="checkbox"]')?x:
+    x.control||(x.htmlFor?document.getElementById(x.htmlFor):null)||
+    x.querySelector?.('input[type="checkbox"],[role="checkbox"]')||
+    x.parentElement?.querySelector('input[type="checkbox"],[role="checkbox"]');
+   const target=input||x;
+   const active=()=>target.checked===true||target.getAttribute?.('aria-checked')==='true'||target.getAttribute?.('aria-pressed')==='true';
+   if(active())return true;
+   target.click();await sleep(400);
+   if(active())return true;
+   if([...descriptionSection().querySelectorAll('textarea')].some(t=>
+    visible(t)&&/html|code|descri|descrip/i.test(clean([t.id,t.name,t.getAttribute('aria-label'),t.placeholder].join(' ')))))return true
+  }
+ }
+ return false
+}
+async function setDescription(html,htmlMode){
   html=String(html||'');
   const sec=descriptionSection();
   let ta=null;
   for(let i=0;i<20&&!ta;i++){
-    ta=[...sec.querySelectorAll('textarea')].filter(visible).sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight))[0]||[...document.querySelectorAll('textarea')].filter(visible).sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight))[0]||null;
+    ta=htmlMode?[...sec.querySelectorAll('textarea')].filter(visible).sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight))[0]||null:null;
     if(!ta)await sleep(100)
   }
   if(ta){
@@ -385,6 +413,17 @@ async function setDescription(html){
     ed.dispatchEvent(new Event('change',{bubbles:true}));ed.blur?.();await sleep(350);
     return clean(ed.innerHTML).length>0
   }
+  for(const iframe of [...sec.querySelectorAll('iframe')].filter(visible)){
+   try{
+    const doc=iframe.contentDocument,body=doc?.body;
+    if(!body||!(doc.designMode==='on'||body.isContentEditable||body.getAttribute('contenteditable')==='true'))continue;
+    body.focus?.();body.innerHTML=html;
+    try{body.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertHTML',data:html}))}
+    catch(_){body.dispatchEvent(new Event('input',{bubbles:true}))}
+    body.dispatchEvent(new Event('change',{bubbles:true}));body.blur?.();await sleep(350);
+    if(clean(body.innerHTML).length>0&&clean(body.textContent).length>0)return true
+   }catch(_){} // Never bypass cross-origin restrictions
+  }
   return false
 }
 function attachAiRetry(row,data){
@@ -406,8 +445,8 @@ function attachAiRetry(row,data){
     try{
       const r=await jsonpAction(AI_RECOVERY_ENDPOINT,'sell_like_ai_retry',{itemId},90000);
       if(!r||!r.ok)throw Error(r&&r.error||'Retry AI non riuscito');
-      await enableHtmlMode();
-      if(!setDescription(r.descriptionHtml))throw Error('editor HTML non trovato');
+      const retryHtmlMode=await enableHtmlMode();
+      if(!await setDescription(r.descriptionHtml,retryHtmlMode))throw Error('editor HTML non trovato');
       data.descriptionHtml=r.descriptionHtml;
       data.aiModel=r.aiModel||data.aiModel;
       data.aiFallback=false;
@@ -604,10 +643,10 @@ async function ensurePreviewFullData(){
     if(response.aiFallback||!clean(response.descriptionHtml))throw Error('Template AI-HTML non disponibile: Preview non avviata.');
 
     status.textContent='Inserimento Template AI-HTML nella descrizione…';
-    operationalLog('Template AI-HTML generato · attivo modalità HTML','ok');
+    operationalLog('Template AI-HTML ricevuto · verifico l’editor','ok');
     const htmlMode=await enableHtmlMode();
-    if(!htmlMode)operationalLog('Modalità HTML: controllo diretto editor','warn');
-    const descOk=await setDescription(response.descriptionHtml);
+    operationalLog(htmlMode?'Modalità HTML confermata':'Modalità HTML non confermata: provo editor rich text',htmlMode?'ok':'warn');
+    const descOk=await setDescription(response.descriptionHtml,htmlMode);
     if(!descOk)throw Error('Template AI generato ma non scritto nell’editor HTML eBay');
 
     const current=window.__capitanSellLikeCloneData||{};
