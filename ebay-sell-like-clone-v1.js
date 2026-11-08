@@ -323,13 +323,25 @@ function isAiDescriptionError(v){return /groq|descrizione\s+valida|risposta\s+ai
 function labelControl(re){for(const l of document.querySelectorAll('label')){const txt=clean(l.innerText||l.textContent);if(!re.test(txt))continue;let c=l.htmlFor?document.getElementById(l.htmlFor):l.querySelector('input,textarea,select,[role="combobox"]');if(c)return c;let p=l.parentElement;for(let i=0;i<4&&p;i++,p=p.parentElement){c=p.querySelector('input,textarea,select,[role="combobox"]');if(c)return c}}return null}
 function candidates(sel,re){return [...document.querySelectorAll(sel)].filter(e=>!e.disabled).sort((a,b)=>(visible(b)?1:0)-(visible(a)?1:0)).find(e=>re.test(clean([e.name,e.id,e.getAttribute('aria-label'),e.placeholder].join(' '))))||null}
 function nativeSet(el,value){if(!el)return false;const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const set=Object.getOwnPropertyDescriptor(proto,'value')?.set;set?set.call(el,String(value)):el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));el.blur?.();return true}
+function displayPrice(n){const text=Number(n).toFixed(2);return EBAY_SOURCE_HOST==='ebay.it'?text.replace('.',','):text}
+function editorPriceInput(n,field){return field?.type==='number'?Number(n).toFixed(2):displayPrice(n)}
+function parseEditorNumber(v){
+ const raw=String(v??'').replace(/[^0-9.,-]/g,'');if(!raw)return null;
+ const lastComma=raw.lastIndexOf(','),lastDot=raw.lastIndexOf('.');
+ let formatted=raw;
+ if(lastComma>lastDot)formatted=raw.replace(/\./g,'').replace(',','.');
+ else if(lastDot>=0&&lastComma>=0)formatted=raw.replace(/,/g,'');
+ else if(EBAY_SOURCE_HOST==='ebay.it'&&/^\d{1,3}(?:\.\d{3})+$/.test(raw))formatted=raw.replace(/\./g,'');
+ else if(lastComma>=0)formatted=raw.replace(',','.');
+ const n=Number(formatted);return Number.isFinite(n)?n:null
+}
 const priceLabelRe=EBAY_SOURCE_HOST==='ebay.it'?/^(?:price|buy it now price|fixed price|prezzo|prezzo fisso|prezzo compralo subito|compralo subito)$/i:/^(price|buy it now price|fixed price)$/i;
-function setPrice(v){const el=labelControl(priceLabelRe)||candidates('input',EBAY_SOURCE_HOST==='ebay.it'?/(^|\b)(price|binprice|startprice|prezzo)(\b|$)/i:/(^|\b)(price|binprice|startprice)(\b|$)/i);return !!(el&&nativeSet(el,Number(v).toFixed(2)))}
-function readEditorPrice(){const el=labelControl(priceLabelRe)||candidates('input',EBAY_SOURCE_HOST==='ebay.it'?/(^|\b)(price|binprice|startprice|prezzo)(\b|$)/i:/(^|\b)(price|binprice|startprice)(\b|$)/i);if(!el)return null;const n=Number(String(el.value||el.getAttribute('value')||'').replace(/[^0-9.,]/g,'').replace(',','.'));return isFinite(n)&&n>0?n:null}
+function setPrice(v){const el=labelControl(priceLabelRe)||candidates('input',EBAY_SOURCE_HOST==='ebay.it'?/(^|\b)(price|binprice|startprice|prezzo)(\b|$)/i:/(^|\b)(price|binprice|startprice)(\b|$)/i);return !!(el&&nativeSet(el,editorPriceInput(v,el)))}
+function readEditorPrice(){const el=labelControl(priceLabelRe)||candidates('input',EBAY_SOURCE_HOST==='ebay.it'?/(^|\b)(price|binprice|startprice|prezzo)(\b|$)/i:/(^|\b)(price|binprice|startprice)(\b|$)/i);if(!el)return null;const n=parseEditorNumber(el.value||el.getAttribute('value')||'');return n!=null&&n>0?n:null}
 // Reuse the same editor-price writer as the working percentage control for direct edits.
 window.__capitanSellLikeWriteEditorPrice=function(value){
-  const n=Number(value);
-  if(!isFinite(n)||n<=0)return false;
+  const n=parseEditorNumber(value);
+  if(n===null||n<=0)return false;
   const field=labelControl(priceLabelRe)||candidates('input',EBAY_SOURCE_HOST==='ebay.it'?/(^|\b)(price|binprice|startprice|prezzo)(\b|$)/i:/(^|\b)(price|binprice|startprice)(\b|$)/i);
   if(!field||field.closest('#'+ID)||!setPrice(n))return false;
   const actual=readEditorPrice();
@@ -381,6 +393,7 @@ async function enableHtmlMode(){
    if(active())return true;
    if([...descriptionSection().querySelectorAll('textarea')].some(t=>
     visible(t)&&/html|code|descri|descrip/i.test(clean([t.id,t.name,t.getAttribute('aria-label'),t.placeholder].join(' ')))))return true
+   return false; // Do not click an ambiguous toggle twice.
   }
  }
  return false
@@ -689,9 +702,9 @@ window.addEventListener('capitan-discount-updated',e=>{
   data.sourcePrice=source;data.targetPrice=sale;
   window.__capitanSellLikeSourcePrice=source;window.__capitanSellLikeSalePrice=sale;window.__capitanSellLikeCloneData=data;
   try{localStorage.setItem('capitan-sell-like-clone-data-v1',JSON.stringify(data))}catch(_){}
-  const ok=setPrice(sale);setStep('Prezzo',ok?'ok':'warn',ok?sale.toFixed(2)+' (-'+discountLabel()+'%)':'campo non trovato');
+  const ok=setPrice(sale);setStep('Prezzo',ok?'ok':'warn',ok?displayPrice(sale)+' (-'+discountLabel()+'%)':'campo non trovato');
   try{window.dispatchEvent(new CustomEvent('capitan-sale-price-updated',{detail:{value:sale,sourcePrice:source,discountRate:currentDiscountRate}}))}catch(_){}
-  operationalLog('Riduzione prezzo aggiornata a '+discountLabel()+'% · nuovo prezzo '+sale.toFixed(2)+' '+EBAY_SOURCE_CURRENCY,'ok')
+  operationalLog('Riduzione prezzo aggiornata a '+discountLabel()+'% · nuovo prezzo '+displayPrice(sale)+' '+EBAY_SOURCE_CURRENCY,'ok')
 });
 
 try{
@@ -713,7 +726,7 @@ try{
     if(isFinite(sale)&&sale>0){
       window.__capitanSellLikeSalePrice=sale;
       const priceOk=setPrice(sale);
-      setStep('Prezzo',priceOk?'ok':'warn',priceOk?sale.toFixed(2)+' (-'+discountLabel()+'%)':'campo non trovato');
+      setStep('Prezzo',priceOk?'ok':'warn',priceOk?displayPrice(sale)+' (-'+discountLabel()+'%)':'campo non trovato');
       try{window.dispatchEvent(new CustomEvent('capitan-sale-price-updated',{detail:{value:sale,sourcePrice:Number(data.sourcePrice),discountRate:currentDiscountRate}}))}catch(_){}
     }else setStep('Prezzo','warn','prezzo sorgente non disponibile');
     const qtyOk=setQuantity(3);
