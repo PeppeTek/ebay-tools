@@ -263,9 +263,33 @@ function idFromManual(v){const s=String(v||'');return idFromTrustedText(s)||((s.
 function detectSourceItemId(){const u=new URL(location.href);for(const k of['itemId','itemid','sourceItemId','originalItemId']){const v=u.searchParams.get(k);if(/^\d{9,12}$/.test(String(v||'')))return String(v)}let id=idFromTrustedText(location.href);if(id)return id;id=idFromTrustedText(document.referrer);if(id)return id;return''}
 const isEbay=/^(?:www\.)?ebay\.[a-z.]{2,20}$/i.test(location.hostname);
 const pageText=clean((document.querySelector('h1')?.innerText||'')+' '+(document.body?.innerText||'').slice(0,6000));
-const itEditor=EBAY_SOURCE_HOST==='ebay.it'&&(/\/sl\/sell(?:\/|$)|\/sell(?:\/|$)/i.test(location.pathname)||/\b(?:completa|modifica) l['’]inserzione\b/i.test(pageText)&&/foto e video/i.test(pageText));
+// eBay.it renders its localized editor under several route names. Detect its
+// actual page markers, not just the first H1 or 6000 visible characters.
+// Keep the existing English-market detection EXACTLY as before.
+const itBodyText=EBAY_SOURCE_HOST==='ebay.it'
+ ?clean((document.body?.innerText||'').slice(0,120000)+' '+(document.body?.textContent||'').slice(0,120000))
+ :'';
+const itHeadingText=EBAY_SOURCE_HOST==='ebay.it'
+ ?clean([...document.querySelectorAll('h1,h2,h3,[role="heading"]')].map(e=>e.textContent||'').join(' '))
+ :'';
+const itEditorTitle=/(?:completa|modifica)\s+l\s*['’]\s*inserzione/i.test(itHeadingText+' '+itBodyText);
+const itPhotos=/foto\s*e\s*video/i.test(itHeadingText+' '+itBodyText);
+const itPhotoTools=/suggerimenti\s+per\s+le\s+foto|vedi\s+opzioni\s+per\s+le\s+foto/i.test(itBodyText);
+const itEditor=EBAY_SOURCE_HOST==='ebay.it'&&(
+ /\/sl\/(?:sell|list)(?:\/|$)|\/lstng(?:\/|$)|\/sell(?:\/|$)/i.test(location.pathname)||
+ (itEditorTitle&&itPhotos)||(itPhotos&&itPhotoTools&&/\b0\s*\/\s*25\b/.test(itBodyText))
+);
 const looksLikeEditor=/\/sl\/list|\/sell\//i.test(location.pathname)||/complete your listing|list it|photos & video|item specifics/i.test(pageText)||itEditor;
-if(!isEbay||!looksLikeEditor){alert('Questa non sembra la pagina di modifica eBay aperta da “Sell one like this”.');return}
+if(!isEbay||!looksLikeEditor){
+ if(EBAY_SOURCE_HOST==='ebay.it'){
+  console.warn('Sell Like Clone IT TEST: riconoscimento editor fallito',{
+   path:location.pathname,title:itEditorTitle,photos:itPhotos,photoTools:itPhotoTools
+  });
+  alert('Sell Like Clone IT TEST: editor non riconosciuto. Percorso: '+location.pathname+
+   ' · Titolo: '+(itEditorTitle?'OK':'NO')+' · Foto: '+(itPhotos?'OK':'NO'));
+ }else alert('Questa non sembra la pagina di modifica eBay aperta da “Sell one like this”.');
+ return
+}
 let itemId=detectSourceItemId();
 if(!/^\d{9,12}$/.test(itemId)){
   const previous=localStorage.getItem(SOURCE_KEY)||'';
