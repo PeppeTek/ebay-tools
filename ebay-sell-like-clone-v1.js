@@ -633,6 +633,7 @@ async function initialNonAiData(){
   }
   return {mode:(mi&&mi.mode==='variants')||(pre&&pre.hasVariations)?'variants':'mono',data}
 }
+let pendingPreviewAiResponse=null;
 async function ensurePreviewFullData(){
   if(previewReady)return true;
   if(previewPreparePromise)return previewPreparePromise;
@@ -640,7 +641,9 @@ async function ensurePreviewFullData(){
     const ep=endpoint();if(!ep)throw Error('URL backend mancante.');
     status.textContent='Generazione Template AI-HTML in corso…';
     operationalLog('Generazione Template AI-HTML in corso…','warn');
-    let response=await jsonp(ep);
+    let response=pendingPreviewAiResponse;
+    if(response)operationalLog('Template AI-HTML riutilizzato: nessuna nuova chiamata AI','warn');
+    else response=await jsonp(ep);
     if((!response||!response.ok)&&isAiDescriptionError(response&&response.error)){
       try{const recovered=await jsonpAction(AI_RECOVERY_ENDPOINT,'clone_prepare',{itemId},90000);if(recovered&&recovered.ok)response=recovered}catch(recoveryError){console.warn('Sell Like AI fallback endpoint',recoveryError)}
     }
@@ -654,6 +657,7 @@ async function ensurePreviewFullData(){
       }catch(aiErr){console.warn('Sell Like Preview AI retry',aiErr)}
     }
     if(response.aiFallback||!clean(response.descriptionHtml))throw Error('Template AI-HTML non disponibile: Preview non avviata.');
+    pendingPreviewAiResponse=response;
 
     status.textContent='Inserimento Template AI-HTML nella descrizione…';
     operationalLog('Template AI-HTML ricevuto · verifico l’editor','ok');
@@ -674,6 +678,7 @@ async function ensurePreviewFullData(){
     try{window.dispatchEvent(new CustomEvent('capitan-ai-description-updated',{detail:{itemId,descriptionHtml:response.descriptionHtml,aiModel:current.aiModel}}))}catch(_){}
     operationalLog('Template AI-HTML scritto nella descrizione eBay','ok');
     previewReady=true;
+    pendingPreviewAiResponse=null;
     status.textContent='Template AI-HTML pronto.';
     return true
   })();
