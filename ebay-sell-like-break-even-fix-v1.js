@@ -82,7 +82,7 @@ function refresh(){
   const costUSD=typeof rawCost==='number'&&Number.isFinite(rawCost)?rawCost:null;
   const fx=fxRate();
   const result=computeFinancials(sp,activeRates(),costUSD,fx);
-  el.textContent=result&&result.trueBreakEvenLocal!==null?result.trueBreakEvenLocal.toFixed(2)+' '+(window.__capitanSellLikeCurrency||'USD'):'—';
+  el.textContent=result&&result.trueBreakEvenLocal!==null?(window.__capitanSellLikeCurrency==='EUR'&&/^(?:www\.)?ebay\.it$/i.test(location.hostname)?result.trueBreakEvenLocal.toFixed(2).replace('.',','):result.trueBreakEvenLocal.toFixed(2))+' '+(window.__capitanSellLikeCurrency||'USD'):'—';
   el.style.color=result&&result.trueBreakEvenLocal!==null?'#1668e8':'';
   el.style.fontWeight=result&&result.trueBreakEvenLocal!==null?'700':'400';
   window.__capitanSellLikePricingSnapshot=result;
